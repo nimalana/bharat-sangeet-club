@@ -104,7 +104,7 @@ export default function Home() {
 
   if (authLoading) return <LoadingScreen />;
   if (!supabase) return <SetupScreen />;
-  if (!user) return <LoginScreen notify={notify} />;
+  if (!user) return <LoginScreen />;
 
   return (
     <main>
@@ -144,15 +144,25 @@ export default function Home() {
   );
 }
 
-function LoginScreen({ notify }: { notify: (message: string) => void }) {
-  const [email, setEmail] = useState("");
+function LoginScreen() {
   const [sending, setSending] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); if (!supabase) return; setSending(true);
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: window.location.origin } });
-    setSending(false); notify(error ? error.message : "Check your email for a secure sign-in link");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  async function signInWithGoogle() {
+    if (!supabase) return;
+    setSending(true);
+    setErrorMessage("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) {
+      setErrorMessage(error.message);
+      setSending(false);
+    }
   }
-  return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">MEMBER PORTAL</p><h2>Welcome to Bharat Sangeet</h2><p>Enter the email invited by your club executive. We’ll send you a secure sign-in link—no password needed.</p><form onSubmit={submit}><label>Email address<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@school.edu" /></label><button className="primary" disabled={sending}>{sending ? "Sending link…" : "Email me a sign-in link"}</button></form><small>Access is limited to invited club members.</small></div></section></main>;
+
+  return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">MEMBER PORTAL</p><h2>Welcome to Bharat Sangeet</h2><p>Use the Google account connected to your club membership. No sign-in email or password is required.</p><button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>Access is limited to approved club members and executives.</small></div></section></main>;
 }
 
 function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {

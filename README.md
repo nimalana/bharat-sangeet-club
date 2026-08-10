@@ -1,4 +1,16 @@
-# vinext-starter
+# Bharat Sangeet Club Portal
+
+The private member and executive portal for the Bharat Sangeet Carnatic music club.
+
+## Google authentication
+
+The portal signs members in through Google using Supabase Auth. Configure Google with this authorized redirect URI:
+
+```text
+https://zykujvpioxkktqppeqpu.supabase.co/auth/v1/callback
+```
+
+Then enable Google under Supabase **Authentication → Sign In / Providers → Google** and paste the Google OAuth client ID and secret. Keep the production site URL and localhost URLs in Supabase's URL Configuration allow list.
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
