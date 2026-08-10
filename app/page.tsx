@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-type Section = "home" | "recordings" | "documents" | "gallery" | "finances";
+type Section = "home" | "calendar" | "recordings" | "documents" | "gallery" | "finances";
 type ClubRole = "member" | "executive";
 type ArchiveType = "recording" | "document" | "photo";
 type ArchiveItem = {
@@ -17,6 +17,7 @@ type Transaction = {
   id: number; description: string; amount: number; category: string;
   transaction_date: string; created_at: string;
 };
+type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string };
 
 const heroPhotos = [
   { src: "https://asianartsagency.co.uk/wp-content/uploads/2021/08/Trio-WP.jpg", alt: "Carnatic trio performing with veena and percussion" },
@@ -31,9 +32,11 @@ export default function Home() {
   const [section, setSection] = useState<Section>("home");
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [showEvent, setShowEvent] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
 
   const notify = useCallback((message: string) => {
@@ -62,6 +65,9 @@ export default function Home() {
       item.signedUrl = data?.signedUrl;
     }));
     setArchive(items);
+    const eventsResult = await client.from("events").select("*").order("starts_at", { ascending: true });
+    if (eventsResult.error) notify("The club calendar could not be loaded");
+    setEvents((eventsResult.data || []) as ClubEvent[]);
     if (currentRole === "executive") {
       const result = await client.from("transactions").select("*").order("transaction_date", { ascending: false });
       if (result.error) notify("Financial records could not be loaded");
@@ -102,6 +108,12 @@ export default function Home() {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
+  async function deleteEvent(eventId: number) {
+    if (!supabase || !window.confirm("Remove this date from the club calendar?")) return;
+    const { error } = await supabase.from("events").delete().eq("id", eventId);
+    if (error) notify(error.message); else { notify("Calendar date removed"); loadData(role); }
+  }
+
   if (authLoading) return <LoadingScreen />;
   if (!supabase) return <SetupScreen />;
   if (!user) return <LoginScreen />;
@@ -111,7 +123,7 @@ export default function Home() {
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>Carnatic Music Club</small></span></button>
         <nav aria-label="Main navigation">
-          {(["home", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
+          {(["home", "calendar", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
           {role === "executive" && <button className={section === "finances" ? "active" : ""} onClick={() => navigate("finances")}>Finances</button>}
         </nav>
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
@@ -131,6 +143,8 @@ export default function Home() {
 
       {section === "recordings" && <section className="section-shell page-section"><PageTitle eyebrow="LISTENING ROOM" title="Recordings archive" text="Concerts, rehearsals, workshops, and musical moments from every season." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by title, raga, or description" /></label>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Upload recording</button>}</div>{dataLoading ? <InlineLoading /> : recordings.length ? <div className="recording-list">{recordings.map((item, index) => <article className="recording-row" key={item.id}><button className="play" onClick={() => openFile(item)}>▶</button><div className="track-no">{String(index + 1).padStart(2, "0")}</div><div className="track-main"><h3>{item.title}</h3><p>{[item.raga, item.tala, item.description].filter(Boolean).join(" · ") || "Club recording"}</p></div><span className="pill">Recording</span><time>{formatDate(item.created_at)}</time><button className="more" onClick={() => openFile(item)}>•••</button></article>)}</div> : <EmptyState title="No recordings yet" text={role === "executive" ? "Upload the first rehearsal or concert recording." : "The executives have not added a recording yet."} />}</section>}
 
+      {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Rehearsals, performances, meetings, deadlines, and everything the club needs to remember." /><div className="toolbar"><p className="access-note">✓ Dates are shared with every approved club member</p>{role === "executive" && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : events.length ? <div className="event-list">{events.map((item) => { const date = new Date(item.starts_at); return <article className="event-card" key={item.id}><div className="event-date"><span>{date.toLocaleString("en-US", { month: "short" })}</span><b>{date.getDate()}</b><small>{date.getFullYear()}</small></div><div className="event-details"><p>{date.toLocaleString("en-US", { weekday: "long", hour: "numeric", minute: "2-digit" })}</p><h3>{item.title}</h3>{item.description && <span>{item.description}</span>}{item.location && <b>⌖ {item.location}</b>}</div>{role === "executive" && <button className="event-delete" onClick={() => deleteEvent(item.id)} aria-label={`Delete ${item.title}`}>×</button>}</article>; })}</div> : <EmptyState title="No important dates yet" text={role === "executive" ? "Add the first rehearsal, concert, meeting, or deadline." : "Executives will add upcoming club dates here."} />}</section>}
+
       {section === "documents" && <section className="section-shell page-section"><PageTitle eyebrow="SHARED LIBRARY" title="Club documents" text="The practical side of our community—easy for every member to find and use." /><div className="toolbar"><p className="access-note">✓ All members can view and download shared files</p>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add document</button>}</div>{documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><span className="pill">{item.visibility}</span></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No documents yet" text={role === "executive" ? "Add the constitution, repertoire, or member guide." : "Shared club documents will appear here."} />}</section>}
 
       {section === "gallery" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB MEMORIES" title="Photo archive" text="The rehearsals, stages, and friendships that shape Bharat Sangeet." />{photos.length ? <div className="gallery-grid">{photos.map((item, index) => <figure key={item.id} className={index === 0 ? "wide" : ""}><img src={item.signedUrl} alt={item.title} /><figcaption><b>{item.title}</b><span>{formatDate(item.created_at)}</span></figcaption></figure>)}</div> : <EmptyState title="No club photos yet" text={role === "executive" ? "Upload the first memory from a rehearsal or concert." : "Club photos will appear here."} />}</section>}
@@ -139,9 +153,21 @@ export default function Home() {
 
       <footer><div className="footer-brand"><span className="brand-mark">sa</span><div><b>Bharat Sangeet</b><small>Practice · Perform · Preserve</small></div></div><p>Made for our music, and the community around it.</p><p>2026–27 Season</p></footer>
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(role); notify("Saved to the club archive"); }} notify={notify} />}
+      {showEvent && <EventModal user={user} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(role); notify("Important date added"); }} notify={notify} />}
       {toast && <div className="toast" role="status">✓ {toast}</div>}
     </main>
   );
+}
+
+function EventModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!supabase) return; setSaving(true);
+    const form = new FormData(event.currentTarget);
+    const { error } = await supabase.from("events").insert({ title: String(form.get("title") || ""), description: String(form.get("description") || ""), starts_at: new Date(String(form.get("starts_at") || "")).toISOString(), location: String(form.get("location") || ""), created_by: user.id });
+    setSaving(false); if (error) notify(error.message); else onSaved();
+  }
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add an important date</h2><label>Title<input name="title" required placeholder="Concert, rehearsal, meeting…" /></label><label>Date and time<input name="starts_at" type="datetime-local" required /></label><label>Location<input name="location" placeholder="Room, venue, or online" /></label><label>Details<input name="description" placeholder="Anything members should know" /></label><button className="primary" disabled={saving}>{saving ? "Adding…" : "Add to calendar"}</button></form></div>;
 }
 
 function LoginScreen() {
