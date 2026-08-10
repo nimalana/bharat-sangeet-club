@@ -1,6 +1,6 @@
-# Bharat Sangeet Club Portal
+# Bharat Sangeet at UNC Chapel Hill
 
-The private member and executive portal for the Bharat Sangeet Carnatic music club.
+The private member and executive portal for Bharat Sangeet, the Carnatic music club at the University of North Carolina at Chapel Hill.
 
 ## Google authentication
 
