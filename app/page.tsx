@@ -50,19 +50,20 @@ export default function Home() {
   }, [notify]);
 
   const loadData = useCallback(async (currentRole: ClubRole) => {
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
     setDataLoading(true);
-    const archiveResult = await supabase.from("archive_items").select("*").order("created_at", { ascending: false });
+    const archiveResult = await client.from("archive_items").select("*").order("created_at", { ascending: false });
     if (archiveResult.error) notify("The club archive could not be loaded");
     const items = (archiveResult.data || []) as ArchiveItem[];
     const photos = items.filter((item) => item.type === "photo");
     await Promise.all(photos.map(async (item) => {
-      const { data } = await supabase.storage.from("club-archive").createSignedUrl(item.storage_path, 3600);
+      const { data } = await client.storage.from("club-archive").createSignedUrl(item.storage_path, 3600);
       item.signedUrl = data?.signedUrl;
     }));
     setArchive(items);
     if (currentRole === "executive") {
-      const result = await supabase.from("transactions").select("*").order("transaction_date", { ascending: false });
+      const result = await client.from("transactions").select("*").order("transaction_date", { ascending: false });
       if (result.error) notify("Financial records could not be loaded");
       setTransactions((result.data || []) as Transaction[]);
     } else setTransactions([]);
@@ -113,7 +114,7 @@ export default function Home() {
           {(["home", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
           {role === "executive" && <button className={section === "finances" ? "active" : ""} onClick={() => navigate("finances")}>Finances</button>}
         </nav>
-        <div className="account"><button className="role-button" onClick={() => supabase.auth.signOut()} title="Sign out"><span className="avatar">{role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
+        <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
       {section === "home" && <>
