@@ -2,6 +2,8 @@ create type public.club_role as enum ('member', 'executive');
 create type public.archive_type as enum ('recording', 'document', 'photo');
 create type public.archive_visibility as enum ('members', 'executives');
 
+create schema if not exists private;
+
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,
@@ -54,33 +56,47 @@ alter table public.archive_items enable row level security;
 alter table public.transactions enable row level security;
 alter table public.events enable row level security;
 
-create function public.is_executive()
+create function private.is_executive()
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (
     select 1 from public.profiles
-    where id = auth.uid() and role = 'executive'
+    where id = (select auth.uid()) and role = 'executive'
   );
 $$;
 
-create policy "Members can view profiles" on public.profiles
-for select to authenticated using (true);
+revoke all on function private.is_executive() from public;
+grant usage on schema private to authenticated;
+grant execute on function private.is_executive() to authenticated;
+
+grant select on public.profiles, public.archive_items, public.events to authenticated;
+grant insert, update, delete on public.archive_items, public.events to authenticated;
+grant select, insert, update, delete on public.transactions to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+revoke update on public.profiles from authenticated;
+grant update (full_name) on public.profiles to authenticated;
+
+create policy "Users view own profile and executives view all" on public.profiles
+for select to authenticated
+using (id = (select auth.uid()) or private.is_executive());
 create policy "Users can update their profile" on public.profiles
-for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+for update to authenticated
+using (id = (select auth.uid()))
+with check (id = (select auth.uid()));
 
 create policy "Members can view shared archive" on public.archive_items
-for select to authenticated using (visibility = 'members' or public.is_executive());
+for select to authenticated using (visibility = 'members' or private.is_executive());
 create policy "Executives manage archive" on public.archive_items
-for all to authenticated using (public.is_executive()) with check (public.is_executive());
+for all to authenticated using (private.is_executive()) with check (private.is_executive());
 
 create policy "Executives view finances" on public.transactions
-for select to authenticated using (public.is_executive());
+for select to authenticated using (private.is_executive());
 create policy "Executives manage finances" on public.transactions
-for all to authenticated using (public.is_executive()) with check (public.is_executive());
+for all to authenticated using (private.is_executive()) with check (private.is_executive());
 
 create policy "Members view events" on public.events
 for select to authenticated using (true);
 create policy "Executives manage events" on public.events
-for all to authenticated using (public.is_executive()) with check (public.is_executive());
+for all to authenticated using (private.is_executive()) with check (private.is_executive());
 
 insert into storage.buckets (id, name, public)
 values ('club-archive', 'club-archive', false)
@@ -92,24 +108,26 @@ for select to authenticated using (
   exists (
     select 1 from public.archive_items
     where storage_path = name
-      and (visibility = 'members' or public.is_executive())
+      and (visibility = 'members' or private.is_executive())
   )
 );
 
 create policy "Executives upload archive files" on storage.objects
 for insert to authenticated with check (
-  bucket_id = 'club-archive' and public.is_executive()
+  bucket_id = 'club-archive' and private.is_executive()
 );
 create policy "Executives update archive files" on storage.objects
 for update to authenticated using (
-  bucket_id = 'club-archive' and public.is_executive()
+  bucket_id = 'club-archive' and private.is_executive()
+) with check (
+  bucket_id = 'club-archive' and private.is_executive()
 );
 create policy "Executives delete archive files" on storage.objects
 for delete to authenticated using (
-  bucket_id = 'club-archive' and public.is_executive()
+  bucket_id = 'club-archive' and private.is_executive()
 );
 
-create function public.handle_new_user()
+create function private.handle_new_user()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   insert into public.profiles (id, email, full_name)
@@ -118,6 +136,8 @@ begin
 end;
 $$;
 
+revoke all on function private.handle_new_user() from public;
+
 create trigger on_auth_user_created
 after insert on auth.users
-for each row execute procedure public.handle_new_user();
+for each row execute procedure private.handle_new_user();
