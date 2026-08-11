@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-type Section = "home" | "calendar" | "recordings" | "documents" | "gallery" | "finances";
+type Section = "home" | "calendar" | "attendance" | "recordings" | "documents" | "gallery" | "finances";
 type ClubRole = "member" | "executive";
 type ArchiveType = "recording" | "document" | "photo";
 type ArchiveItem = {
@@ -18,6 +18,11 @@ type Transaction = {
   transaction_date: string; created_at: string;
 };
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string };
+type Subgroup = { id: number; name: string; description: string };
+type SubgroupMembership = { subgroup_id: number; member_id: string };
+type AttendanceSession = { id: number; subgroup_id: number; title: string; session_date: string };
+type AttendanceRecord = { session_id: number; member_id: string; status: "present" | "absent" | "excused" };
+type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole };
 
 const heroPhotos = [
   { src: "https://asianartsagency.co.uk/wp-content/uploads/2021/08/Trio-WP.jpg", alt: "Carnatic trio performing with veena and percussion" },
@@ -123,7 +128,7 @@ export default function Home() {
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
         <nav aria-label="Main navigation">
-          {(["home", "calendar", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
+          {(["home", "calendar", "attendance", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
           {role === "executive" && <button className={section === "finances" ? "active" : ""} onClick={() => navigate("finances")}>Finances</button>}
         </nav>
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
@@ -144,6 +149,8 @@ export default function Home() {
       {section === "recordings" && <section className="section-shell page-section"><PageTitle eyebrow="LISTENING ROOM" title="Recordings archive" text="Concerts, rehearsals, workshops, and musical moments from every season." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by title, raga, or description" /></label>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Upload recording</button>}</div>{dataLoading ? <InlineLoading /> : recordings.length ? <div className="recording-list">{recordings.map((item, index) => <article className="recording-row" key={item.id}><button className="play" onClick={() => openFile(item)}>▶</button><div className="track-no">{String(index + 1).padStart(2, "0")}</div><div className="track-main"><h3>{item.title}</h3><p>{[item.raga, item.tala, item.description].filter(Boolean).join(" · ") || "Club recording"}</p></div><span className="pill">Recording</span><time>{formatDate(item.created_at)}</time><button className="more" onClick={() => openFile(item)}>•••</button></article>)}</div> : <EmptyState title="No recordings yet" text={role === "executive" ? "Upload the first rehearsal or concert recording." : "The executives have not added a recording yet."} />}</section>}
 
       {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Rehearsals, performances, meetings, deadlines, and everything the club needs to remember." /><div className="toolbar"><p className="access-note">✓ Dates are shared with every approved club member</p>{role === "executive" && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={events} canManage={role === "executive"} onDelete={deleteEvent} />}</section>}
+
+      {section === "attendance" && <AttendancePage user={user} role={role} notify={notify} />}
 
       {section === "documents" && <section className="section-shell page-section"><PageTitle eyebrow="SHARED LIBRARY" title="Club documents" text="The practical side of our community—easy for every member to find and use." /><div className="toolbar"><p className="access-note">✓ All members can view and download shared files</p>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add document</button>}</div>{documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><span className="pill">{item.visibility}</span></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No documents yet" text={role === "executive" ? "Add the constitution, repertoire, or member guide." : "Shared club documents will appear here."} />}</section>}
 
@@ -181,7 +188,73 @@ function CalendarView({ events, canManage, onDelete }: { events: ClubEvent[]; ca
   return <div className="month-calendar"><div className="calendar-controls"><button onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="Previous month">←</button><h2>{cursor.toLocaleString("en-US", { month: "long", year: "numeric" })}</h2><div><button className="today-button" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>Today</button><button onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="Next month">→</button></div></div><div className="weekday-row">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{days.map((day) => { const dayEvents = events.filter((item) => sameDay(new Date(item.starts_at), day)); return <div className={`calendar-cell ${day.getMonth() !== month ? "outside" : ""} ${sameDay(day, today) ? "today" : ""}`} key={day.toISOString()}><span className="day-number">{day.getDate()}</span><div className="day-events">{dayEvents.map((item) => <div className="calendar-event" key={item.id} title={[item.description, item.location].filter(Boolean).join(" · ")}><time>{new Date(item.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time><b>{item.title}</b>{item.location && <small>{item.location}</small>}{canManage && <button onClick={() => onDelete(item.id)} aria-label={`Delete ${item.title}`}>×</button>}</div>)}</div></div>; })}</div>{events.length === 0 && <p className="calendar-empty">No dates have been added yet.</p>}</div>;
 }
 
+function AttendancePage({ user, role, notify }: { user: User; role: ClubRole; notify: (message: string) => void }) {
+  const [groups, setGroups] = useState<Subgroup[]>([]);
+  const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
+  const [sessions, setSessions] = useState<AttendanceSession[]>([]);
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [profiles, setProfiles] = useState<MemberProfile[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
+  const [selectedSession, setSelectedSession] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadAttendance = useCallback(async () => {
+    if (!supabase) return;
+    setLoading(true);
+    const [groupResult, membershipResult, sessionResult, recordResult, profileResult] = await Promise.all([
+      supabase.from("subgroups").select("id, name, description").order("name"),
+      supabase.from("subgroup_memberships").select("subgroup_id, member_id"),
+      supabase.from("attendance_sessions").select("id, subgroup_id, title, session_date").order("session_date", { ascending: false }),
+      supabase.from("attendance_records").select("session_id, member_id, status"),
+      role === "executive" ? supabase.from("profiles").select("id, full_name, email, role").order("full_name") : Promise.resolve({ data: [], error: null }),
+    ]);
+    const error = groupResult.error || membershipResult.error || sessionResult.error || recordResult.error || profileResult.error;
+    if (error) notify("Attendance records could not be loaded");
+    const nextGroups = (groupResult.data || []) as Subgroup[];
+    setGroups(nextGroups); setMemberships((membershipResult.data || []) as SubgroupMembership[]); setSessions((sessionResult.data || []) as AttendanceSession[]); setRecords((recordResult.data || []) as AttendanceRecord[]); setProfiles((profileResult.data || []) as MemberProfile[]);
+    setSelectedGroup((current) => current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id ?? null);
+    setLoading(false);
+  }, [notify, role]);
+
+  useEffect(() => { loadAttendance(); }, [loadAttendance]);
+
+  async function createGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!supabase) return; const form = new FormData(event.currentTarget);
+    const { error } = await supabase.from("subgroups").insert({ name: String(form.get("name") || ""), description: String(form.get("description") || ""), created_by: user.id });
+    if (error) notify(error.message); else { event.currentTarget.reset(); notify("Subgroup created"); loadAttendance(); }
+  }
+  async function addMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!supabase || !selectedGroup) return; const form = new FormData(event.currentTarget);
+    const { error } = await supabase.from("subgroup_memberships").insert({ subgroup_id: selectedGroup, member_id: String(form.get("member_id")), added_by: user.id });
+    if (error) notify(error.message); else { notify("Member added to subgroup"); loadAttendance(); }
+  }
+  async function removeMember(memberId: string) {
+    if (!supabase || !selectedGroup) return;
+    const { error } = await supabase.from("subgroup_memberships").delete().eq("subgroup_id", selectedGroup).eq("member_id", memberId);
+    if (error) notify(error.message); else loadAttendance();
+  }
+  async function createSession(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!supabase || !selectedGroup) return; const form = new FormData(event.currentTarget);
+    const { data, error } = await supabase.from("attendance_sessions").insert({ subgroup_id: selectedGroup, title: String(form.get("title") || "Meeting"), session_date: String(form.get("session_date")), created_by: user.id }).select("id").single();
+    if (error) notify(error.message); else { event.currentTarget.reset(); setSelectedSession(data.id); notify("Attendance date created"); loadAttendance(); }
+  }
+  async function markAttendance(memberId: string, status: AttendanceRecord["status"]) {
+    if (!supabase || !selectedSession) return;
+    const { error } = await supabase.from("attendance_records").upsert({ session_id: selectedSession, member_id: memberId, status, marked_by: user.id, marked_at: new Date().toISOString() }, { onConflict: "session_id,member_id" });
+    if (error) notify(error.message); else setRecords((current) => [...current.filter((record) => !(record.session_id === selectedSession && record.member_id === memberId)), { session_id: selectedSession, member_id: memberId, status }]);
+  }
+
+  const activeGroup = groups.find((group) => group.id === selectedGroup);
+  const groupMemberships = memberships.filter((membership) => membership.subgroup_id === selectedGroup);
+  const groupSessions = sessions.filter((session) => session.subgroup_id === selectedGroup);
+  const availableProfiles = profiles.filter((profile) => !groupMemberships.some((membership) => membership.member_id === profile.id));
+  if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
+
+  return <section className="section-shell page-section"><PageTitle eyebrow="SUBGROUPS" title="Attendance" text={role === "executive" ? "Create ensembles and teams, organize their rosters, and keep a clear record of participation." : "See your subgroups and personal attendance history."} />{role === "executive" && <form className="create-group-bar" onSubmit={createGroup}><input name="name" required placeholder="New subgroup name" /><input name="description" placeholder="Short description" /><button className="primary">＋ Create subgroup</button></form>}{groups.length === 0 ? <EmptyState title="No subgroups yet" text={role === "executive" ? "Create the first subgroup above." : "An executive has not assigned you to a subgroup yet."} /> : <div className="attendance-layout"><aside className="subgroup-list"><small>SUBGROUPS</small>{groups.map((group) => <button key={group.id} className={selectedGroup === group.id ? "active" : ""} onClick={() => { setSelectedGroup(group.id); setSelectedSession(null); }}><b>{group.name}</b><span>{memberships.filter((membership) => membership.subgroup_id === group.id).length} members</span></button>)}</aside><div className="attendance-workspace"><div className="subgroup-heading"><div><h2>{activeGroup?.name}</h2><p>{activeGroup?.description || "UNC Chapel Hill Bharat Sangeet subgroup"}</p></div><span>{groupMemberships.length} members · {groupSessions.length} meetings</span></div>{role === "executive" && <><form className="roster-add" onSubmit={addMember}><select name="member_id" required defaultValue=""><option value="" disabled>Add a club member…</option>{availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email} ({profile.email})</option>)}</select><button>Add to subgroup</button></form><div className="roster-chips">{groupMemberships.map((membership) => { const profile = profiles.find((item) => item.id === membership.member_id); return <span key={membership.member_id}>{profile?.full_name || profile?.email || "Member"}<button onClick={() => removeMember(membership.member_id)} aria-label="Remove member">×</button></span>; })}</div><form className="session-create" onSubmit={createSession}><input name="title" required placeholder="Meeting or rehearsal name" /><input name="session_date" type="date" required /><button className="primary">Create attendance date</button></form></>}<div className="session-tabs">{groupSessions.map((session) => <button key={session.id} className={selectedSession === session.id ? "active" : ""} onClick={() => setSelectedSession(session.id)}><b>{formatDate(session.session_date)}</b><span>{session.title}</span></button>)}</div>{selectedSession ? <div className="attendance-table"><div className="attendance-table-head"><b>Member</b><span>Status</span></div>{groupMemberships.map((membership) => { const profile = profiles.find((item) => item.id === membership.member_id); const record = records.find((item) => item.session_id === selectedSession && item.member_id === membership.member_id); return <div className="attendance-row" key={membership.member_id}><div><b>{profile?.full_name || (membership.member_id === user.id ? user.email : "Member")}</b><small>{profile?.email || (membership.member_id === user.id ? user.email : "")}</small></div>{role === "executive" ? <select value={record?.status || ""} onChange={(event) => markAttendance(membership.member_id, event.target.value as AttendanceRecord["status"])}><option value="" disabled>Not marked</option><option value="present">Present</option><option value="absent">Absent</option><option value="excused">Excused</option></select> : <span className={`attendance-status ${record?.status || "unmarked"}`}>{record?.status || "Not marked"}</span>}</div>; })}</div> : <div className="attendance-prompt">Choose an attendance date to view or mark attendance.</div>}</div></div>}</section>;
+}
+
 function LoginScreen() {
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -199,7 +272,7 @@ function LoginScreen() {
     }
   }
 
-  return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">UNC CHAPEL HILL MEMBER PORTAL</p><h2>Welcome to Bharat Sangeet</h2><p>Use the Google account connected to your UNC Chapel Hill club membership. No sign-in email or password is required.</p><button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>Access is limited to approved Bharat Sangeet members and executives.</small></div></section></main>;
+  return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">UNC CHAPEL HILL MEMBER PORTAL</p><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => setMode("signin")}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join the UNC Chapel Hill club. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p><button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, subgroups, and attendance."}</small></div></section></main>;
 }
 
 function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
