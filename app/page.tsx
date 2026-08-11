@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-type Section = "home" | "calendar" | "attendance" | "recordings" | "documents" | "gallery" | "finances";
+type Section = "home" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "gallery" | "finances";
 type ClubRole = "member" | "executive";
 type ArchiveType = "recording" | "document" | "photo";
 type ArchiveItem = {
@@ -23,7 +23,7 @@ type Subgroup = { id: number; name: string; description: string };
 type SubgroupMembership = { subgroup_id: number; member_id: string };
 type AttendanceSession = { id: number; subgroup_id: number; title: string; session_date: string };
 type AttendanceRecord = { session_id: number; member_id: string; status: "present" | "absent" | "excused" };
-type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole };
+type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
 
 const heroPhotos = [
   { src: "https://asianartsagency.co.uk/wp-content/uploads/2021/08/Trio-WP.jpg", alt: "Carnatic trio performing with veena and percussion" },
@@ -130,7 +130,7 @@ export default function Home() {
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
         <nav aria-label="Main navigation">
-          {(["home", "calendar", "attendance", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
+          {(["home", "calendar", "members", "attendance", "recordings", "documents", "gallery"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Club Home" : item}</button>)}
           {role === "executive" && <button className={section === "finances" ? "active" : ""} onClick={() => navigate("finances")}>Finances</button>}
         </nav>
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
@@ -153,6 +153,8 @@ export default function Home() {
       {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Rehearsals, performances, meetings, deadlines, and everything the club needs to remember." /><div className="toolbar"><p className="access-note">✓ Dates are shared with every approved club member</p>{role === "executive" && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={events} canManage={role === "executive"} onDelete={deleteEvent} />}</section>}
 
       {section === "attendance" && <AttendancePage user={user} role={role} notify={notify} />}
+
+      {section === "members" && <MembersPage user={user} notify={notify} />}
 
       {section === "documents" && <section className="section-shell page-section"><PageTitle eyebrow="SHARED LIBRARY" title="Club documents" text="The practical side of our community—easy for every member to find and use." /><div className="toolbar"><p className="access-note">✓ All members can view and download shared files</p>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add document</button>}</div>{documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><span className="pill">{item.visibility}</span></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No documents yet" text={role === "executive" ? "Add the constitution, repertoire, or member guide." : "Shared club documents will appear here."} />}</section>}
 
@@ -188,6 +190,31 @@ function CalendarView({ events, canManage, onDelete }: { events: ClubEvent[]; ca
   const today = new Date();
   const sameDay = (left: Date, right: Date) => left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
   return <div className="month-calendar"><div className="calendar-controls"><button onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="Previous month">←</button><h2>{cursor.toLocaleString("en-US", { month: "long", year: "numeric" })}</h2><div><button className="today-button" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>Today</button><button onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="Next month">→</button></div></div><div className="weekday-row">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{days.map((day) => { const dayEvents = events.filter((item) => sameDay(new Date(item.starts_at), day)); return <div className={`calendar-cell ${day.getMonth() !== month ? "outside" : ""} ${sameDay(day, today) ? "today" : ""}`} key={day.toISOString()}><span className="day-number">{day.getDate()}</span><div className="day-events">{dayEvents.map((item) => <div className="calendar-event" key={item.id} title={[item.description, item.location].filter(Boolean).join(" · ")}><time>{new Date(item.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time><b>{item.title}</b>{item.location && <small>{item.location}</small>}{canManage && <button onClick={() => onDelete(item.id)} aria-label={`Delete ${item.title}`}>×</button>}</div>)}</div></div>; })}</div>{events.length === 0 && <p className="calendar-empty">No dates have been added yet.</p>}</div>;
+}
+
+function MembersPage({ user, notify }: { user: User; notify: (message: string) => void }) {
+  const [members, setMembers] = useState<MemberProfile[]>([]);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const loadMembers = useCallback(async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").order("full_name");
+    if (error) notify("The member directory could not be loaded");
+    setMembers((data || []) as MemberProfile[]); setLoading(false);
+  }, [notify]);
+  useEffect(() => { loadMembers(); }, [loadMembers]);
+  const ownProfile = members.find((member) => member.id === user.id);
+  const filtered = members.filter((member) => `${member.full_name} ${member.email} ${member.specialty || ""} ${member.class_year || ""}`.toLowerCase().includes(query.toLowerCase()));
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!supabase) return; setSaving(true);
+    const form = new FormData(event.currentTarget);
+    const { error } = await supabase.from("profiles").update({ full_name: String(form.get("full_name") || ""), phone: String(form.get("phone") || ""), class_year: String(form.get("class_year") || ""), specialty: String(form.get("specialty") || "") }).eq("id", user.id);
+    setSaving(false); if (error) notify(error.message); else { notify("Your contact information was updated"); setEditing(false); loadMembers(); }
+  }
+  if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
+  return <section className="section-shell page-section"><PageTitle eyebrow="CLUB COMMUNITY" title="Members directory" text="Contact information for the people who make music with Bharat Sangeet at UNC Chapel Hill." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, year, or musical interest" /></label><button className="primary" onClick={() => setEditing(true)}>Edit my contact info</button></div><p className="directory-note">This directory is visible only to signed-in club members.</p>{filtered.length ? <div className="member-grid">{filtered.map((member) => <article className="member-card" key={member.id}><div className="member-initials">{initials(member.full_name || member.email)}</div><div className="member-card-heading"><h3>{member.full_name || member.email.split("@")[0]}</h3><span className={`member-role ${member.role}`}>{member.role}</span></div><p>{member.specialty || "Musical interests not added yet"}</p><dl><div><dt>Email</dt><dd><a href={`mailto:${member.email}`}>{member.email}</a></dd></div>{member.phone && <div><dt>Phone</dt><dd><a href={`tel:${member.phone}`}>{member.phone}</a></dd></div>}{member.class_year && <div><dt>Class year</dt><dd>{member.class_year}</dd></div>}</dl></article>)}</div> : <EmptyState title="No members found" text="Try another search." />}{editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><form className="modal" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setEditing(false)}>×</button><p className="eyebrow">MY MEMBER PROFILE</p><h2>Contact information</h2><label>Preferred name<input name="full_name" required defaultValue={ownProfile?.full_name || ""} /></label><label>Email<input value={ownProfile?.email || user.email || ""} disabled /></label><label>Phone number<input name="phone" type="tel" defaultValue={ownProfile?.phone || ""} placeholder="Optional" /></label><div className="form-pair"><label>Class year<input name="class_year" defaultValue={ownProfile?.class_year || ""} placeholder="2028" /></label><label>Voice / instrument<input name="specialty" defaultValue={ownProfile?.specialty || ""} placeholder="Vocal, violin, mridangam…" /></label></div><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form></div>}</section>;
 }
 
 function AttendancePage({ user, role, notify }: { user: User; role: ClubRole; notify: (message: string) => void }) {
@@ -322,3 +349,4 @@ function InlineLoading() { return <div className="inline-loading">Loading the ar
 function SetupScreen() { return <main className="loading-screen"><span className="brand-mark">sa</span><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
 function formatDate(value: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)); }
 function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value); }
+function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "BS"; }
