@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-:root { --ivory:#f6f0e5; --paper:#fbf8f1; --ink:#29231f; --maroon:#762d37; --maroon-dark:#501b25; --brass:#b7833f; --sage:#727761; --line:#d9cdbc; }
+:root { --ivory:#f4f6f5; --paper:#fffdf8; --ink:#172332; --maroon:#13294b; --maroon-dark:#071a33; --brass:#7bafd4; --sage:#5f7180; --line:#cbd7df; --carolina:#7bafd4; --carolina-pale:#dceaf4; }
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
 body { margin:0; background:var(--ivory); color:var(--ink); font-family:var(--font-geist-sans),Arial,sans-serif; }
@@ -34,7 +34,7 @@ h1,h2,h3,p { margin-top:0; }
 .secondary:hover { border-color:var(--maroon); color:var(--maroon); }
 .hero-image { position:relative; overflow:hidden; min-height:480px; }
 .hero-image:after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(41,35,31,.15),transparent 40%),linear-gradient(0deg,rgba(41,35,31,.5),transparent 45%); }
-.hero-image img,.photo-card img,.gallery-grid img { width:100%; height:100%; object-fit:cover; display:block; filter:saturate(.78) sepia(.08); }
+.hero-image img,.photo-card img,.gallery-grid img { width:100%; height:100%; object-fit:cover; display:block; filter:saturate(.76) contrast(.97); }
 .image-caption { position:absolute; z-index:2; bottom:32px; left:35px; color:white; border-left:2px solid #d5a766; padding-left:14px; }
 .image-caption span,.image-caption b { display:block; }.image-caption span { font-size:10px; letter-spacing:.15em; text-transform:uppercase; }.image-caption b { font-family:Georgia,serif; font-size:20px; margin-top:5px; }
 .welcome-strip { height:62px; display:flex; align-items:center; justify-content:space-between; padding:0 8vw; background:var(--maroon-dark); color:#f8eee3; font-size:11px; letter-spacing:.04em; }
@@ -71,3 +71,23 @@ footer { min-height:130px; padding:30px 5vw; background:#29231f; color:#eee4d7; 
 @media(max-width:760px){.create-group-bar,.session-create{grid-template-columns:1fr}.attendance-layout{grid-template-columns:1fr}.subgroup-list{border-right:0;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;padding:12px}.subgroup-list>small{display:none}.subgroup-list>button{min-width:160px;border-left:0;border-bottom:3px solid transparent}.subgroup-list>button.active{border-left:0;border-bottom-color:var(--maroon)}.attendance-workspace{padding:22px 16px}.subgroup-heading{display:block}.subgroup-heading>span{display:block;margin-top:10px}.attendance-table-head,.attendance-row{grid-template-columns:1fr 120px}.roster-add{flex-direction:column}.roster-add button{min-height:40px}}
 .public-header{height:82px;padding:0 5vw;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:rgba(251,248,241,.97);position:sticky;top:0;z-index:20}.public-header nav{align-items:center;height:100%}.public-header nav a{display:flex;align-items:center;color:#655d56;text-decoration:none;font-size:13px;border-bottom:2px solid transparent}.public-header nav a:hover{color:var(--maroon);border-bottom-color:var(--maroon)}.public-hero{min-height:650px;display:grid;grid-template-columns:1.04fr .96fr;background:var(--paper);border-bottom:1px solid var(--line)}.public-hero>div:first-child{padding:110px 7vw 80px 8vw}.public-hero h1{font:400 clamp(48px,5.6vw,78px)/1.02 Georgia,serif;letter-spacing:-.04em;margin-bottom:25px}.public-hero h1 em{color:var(--maroon);font-weight:400}.public-link{display:inline-flex;align-items:center;text-decoration:none}.public-about{display:grid;grid-template-columns:1fr 1fr;gap:9vw;padding:90px 10vw;background:#ded8c8;align-items:center}.public-about h2,.public-join h2{font:400 46px/1.1 Georgia,serif;color:var(--maroon);margin:0}.public-about>p{font:17px/1.8 Georgia,serif;color:#5d5a50;margin:0}.public-concerts{scroll-margin-top:90px}.public-recording-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.public-recording-grid article{min-height:300px;border:1px solid var(--line);background:var(--paper);padding:28px;display:flex;flex-direction:column}.public-recording-grid .line-icon{margin-bottom:35px}.public-recording-grid h3{font:400 24px Georgia,serif;margin-bottom:10px}.public-recording-grid article>p:not(.eyebrow){color:#776d65;font-size:12px;line-height:1.6}.public-recording-grid button{margin-top:auto;align-self:flex-start}.public-join{text-align:center;padding:95px 25px;background:var(--maroon-dark);color:white}.public-join h2{color:#f7eee3;font-size:55px}.public-join>p:not(.eyebrow){margin:18px auto 28px;max-width:570px;color:#dcc9ca;font:16px/1.7 Georgia,serif}.public-join .eyebrow{color:#deb36f}.public-join .primary{background:#f2e6d7;border-color:#f2e6d7;color:var(--maroon-dark)}.public-back{position:fixed;top:20px;right:24px;z-index:10;border:0;background:rgba(251,248,241,.9);padding:9px 12px;cursor:pointer;color:var(--maroon);font-size:11px}
 @media(max-width:800px){.public-header nav{display:none}.public-hero{grid-template-columns:1fr}.public-hero>div:first-child{padding:75px 25px}.public-hero .hero-image{min-height:420px}.public-about{grid-template-columns:1fr;padding:70px 25px}.public-recording-grid{grid-template-columns:1fr}.public-header{padding:0 18px}.public-header .brand small{display:none}}
+
+/* UNC Chapel Hill palette with a restrained classical character */
+.topbar,.public-header{box-shadow:0 5px 20px rgba(19,41,75,.05)}
+.brand-mark{background:rgba(123,175,212,.08);border-color:var(--carolina);color:var(--maroon)}
+.hero-copy,.public-hero>div:first-child{background:linear-gradient(135deg,var(--paper) 0%,#f5f9fc 100%)}
+.image-caption{border-left-color:var(--carolina)}
+.welcome-strip{background:var(--maroon-dark);border-top:3px solid var(--carolina)}
+.raga-banner,.public-about{background:var(--carolina-pale)}
+.feature-card.large{background:linear-gradient(145deg,var(--maroon) 0%,#1f416c 100%)}
+.calendar-cell.today .day-number,.avatar{background:var(--maroon);box-shadow:0 0 0 3px rgba(123,175,212,.28)}
+.calendar-event{background:#e6f0f7;border-left-color:var(--carolina)}
+.subgroup-list>button:hover,.subgroup-list>button.active,.session-tabs button.active{background:#e7f0f7}
+.public-recording-grid article{border-top:3px solid var(--carolina)}
+.public-join{border-top:5px solid var(--carolina)}
+.login-art{background:var(--maroon-dark)}
+.login-art:after{background:linear-gradient(0deg,rgba(7,26,51,.92),rgba(19,41,75,.12) 70%)}
+.login-art .brand-mark{color:#dceaf4;border-color:var(--carolina)}
+.login-art h1 em{color:#b9d9eb}
+footer{background:var(--maroon-dark);border-top:4px solid var(--carolina)}
+.footer-brand .brand-mark{color:#b9d9eb}
