@@ -26,6 +26,8 @@ type AttendanceSession = { id: number; subgroup_id: number; title: string; sessi
 type AttendanceRecord = { session_id: number; member_id: string; status: "present" | "absent" | "excused" };
 type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
 
+const pendingSignupNameKey = "bharat-sangeet-pending-signup-name";
+
 const heroPhotos = [
   { src: "https://asianartsagency.co.uk/wp-content/uploads/2021/08/Trio-WP.jpg", alt: "Carnatic trio performing with veena and percussion" },
   { src: "https://static.wixstatic.com/media/08d671_184493ea312d46e89a838c34d1097f42~mv2.jpg/v1/fill/w_2500,h_1203,al_c/08d671_184493ea312d46e89a838c34d1097f42~mv2.jpg", alt: "Carnatic ensemble recital" },
@@ -56,8 +58,18 @@ export default function Home() {
     if (!supabase) return;
     const { data, error } = await supabase.from("profiles").select("full_name, role").eq("id", currentUser.id).single();
     if (error) { notify("We could not load your club profile"); return; }
+    let profileName = data.full_name;
+    const pendingSignupName = window.sessionStorage.getItem(pendingSignupNameKey)?.trim();
+    if (pendingSignupName) {
+      const { error: updateError } = await supabase.from("profiles").update({ full_name: pendingSignupName }).eq("id", currentUser.id);
+      if (updateError) notify("Your account was created, but your preferred name could not be saved");
+      else {
+        profileName = pendingSignupName;
+        window.sessionStorage.removeItem(pendingSignupNameKey);
+      }
+    }
     setRole(data.role as ClubRole);
-    setName(data.full_name || currentUser.email?.split("@")[0] || "Club member");
+    setName(profileName || currentUser.email?.split("@")[0] || "Club member");
   }, [notify]);
 
   const loadData = useCallback(async (currentRole: ClubRole) => {
@@ -131,11 +143,21 @@ export default function Home() {
     <main>
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
-        <nav aria-label="Main navigation">
-          {(["home", "groups", "calendar", "members", "attendance", "recordings", "documents"] as Section[]).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => navigate(item)}>{item === "home" ? "Dashboard" : item === "groups" ? "My subgroups" : item}</button>)}
-          {role === "executive" && <button className={section === "finances" ? "active" : ""} onClick={() => navigate("finances")}>Finances</button>}
-          {role === "admin" && <><button className={section === "finances" ? "active" : ""} onClick={() => navigate("finances")}>Finances</button><button className={section === "admin" ? "active" : ""} onClick={() => navigate("admin")}>Admin</button></>}
-        </nav>
+        <label className="section-picker">
+          <span>Go to</span>
+          <select aria-label="Choose a portal section" value={section} onChange={(event) => navigate(event.target.value as Section)}>
+            <option value="home">Dashboard</option>
+            <option value="groups">My subgroups</option>
+            <option value="calendar">Calendar</option>
+            <option value="members">Members</option>
+            <option value="attendance">Attendance</option>
+            <option value="recordings">Recordings</option>
+            <option value="documents">Documents</option>
+            <option value="gallery">Photo archive</option>
+            {canManage && <option value="finances">Finances</option>}
+            {role === "admin" && <option value="admin">Admin</option>}
+          </select>
+        </label>
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
@@ -342,11 +364,19 @@ function PublicSite({ onSignIn }: { onSignIn: () => void }) {
 
 function LoginScreen({ onBack }: { onBack: () => void }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [preferredName, setPreferredName] = useState("");
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   async function signInWithGoogle() {
     if (!supabase) return;
+    const signupName = preferredName.trim();
+    if (mode === "signup" && !signupName) {
+      setErrorMessage("Please enter the name you would like the club to call you.");
+      return;
+    }
+    if (mode === "signup") window.sessionStorage.setItem(pendingSignupNameKey, signupName);
+    else window.sessionStorage.removeItem(pendingSignupNameKey);
     setSending(true);
     setErrorMessage("");
     const { error } = await supabase.auth.signInWithOAuth({
@@ -354,12 +384,13 @@ function LoginScreen({ onBack }: { onBack: () => void }) {
       options: { redirectTo: window.location.origin },
     });
     if (error) {
+      window.sessionStorage.removeItem(pendingSignupNameKey);
       setErrorMessage(error.message);
       setSending(false);
     }
   }
 
-  return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">UNC CHAPEL HILL MEMBER PORTAL</p><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => setMode("signin")}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join the UNC Chapel Hill club. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p><button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, subgroups, and attendance."}</small></div></section></main>;
+  return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">UNC CHAPEL HILL MEMBER PORTAL</p><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setErrorMessage(""); window.sessionStorage.removeItem(pendingSignupNameKey); }}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setErrorMessage(""); }}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join the UNC Chapel Hill club. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p>{mode === "signup" && <label className="signup-name">Preferred name<input autoComplete="name" value={preferredName} onChange={(event) => setPreferredName(event.target.value)} placeholder="What should we call you?" required /></label>}<button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, subgroups, and attendance."}</small></div></section></main>;
 }
 
 function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
