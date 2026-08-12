@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "gallery" | "finances" | "admin";
@@ -20,8 +20,10 @@ type Transaction = {
   transaction_date: string; created_at: string;
 };
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string };
-type Subgroup = { id: number; name: string; description: string };
-type SubgroupMembership = { subgroup_id: number; member_id: string };
+type EnrollmentMode = "open" | "approval" | "invite";
+type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive";
+type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode };
+type SubgroupMembership = { subgroup_id: number; member_id: string; status: MembershipStatus; membership_role: "member" | "leader" | "manager" };
 type AttendanceSession = { id: number; subgroup_id: number; title: string; session_date: string };
 type AttendanceRecord = { session_id: number; member_id: string; status: "present" | "absent" | "excused" };
 type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
@@ -48,6 +50,9 @@ export default function Home() {
   const [showEvent, setShowEvent] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
+  const [groups, setGroups] = useState<Subgroup[]>([]);
+  const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<number | "club">("club");
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -112,6 +117,18 @@ export default function Home() {
 
   useEffect(() => { if (user) loadData(role); }, [user, role, loadData]);
 
+  const loadWorkspaces = useCallback(async () => {
+    if (!supabase || !user) return;
+    const [groupResult, membershipResult] = await Promise.all([
+      supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
+      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
+    ]);
+    if (groupResult.error || membershipResult.error) { notify("Your subgroup workspaces could not be loaded"); return; }
+    setGroups((groupResult.data || []) as Subgroup[]);
+    setMemberships((membershipResult.data || []) as SubgroupMembership[]);
+  }, [notify, user]);
+  useEffect(() => { loadWorkspaces(); }, [loadWorkspaces]);
+
   const recordings = useMemo(() => archive.filter((item) => item.type === "recording" && `${item.title} ${item.description} ${item.raga || ""}`.toLowerCase().includes(query.toLowerCase())), [archive, query]);
   const documents = archive.filter((item) => item.type === "document");
   const photos = archive.filter((item) => item.type === "photo");
@@ -119,6 +136,8 @@ export default function Home() {
   const income = transactions.filter((item) => Number(item.amount) > 0).reduce((sum, item) => sum + Number(item.amount), 0);
   const expenses = transactions.filter((item) => Number(item.amount) < 0).reduce((sum, item) => sum + Number(item.amount), 0);
   const canManage = role !== "member";
+  const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
+  const availableWorkspaces = canManage ? groups : groups.filter((group) => activeGroupIds.has(group.id));
 
   const navigate = (next: Section) => { setSection(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
@@ -143,21 +162,8 @@ export default function Home() {
     <main>
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
-        <label className="section-picker">
-          <span>Go to</span>
-          <select aria-label="Choose a portal section" value={section} onChange={(event) => navigate(event.target.value as Section)}>
-            <option value="home">Dashboard</option>
-            <option value="groups">My subgroups</option>
-            <option value="calendar">Calendar</option>
-            <option value="members">Members</option>
-            <option value="attendance">Attendance</option>
-            <option value="recordings">Recordings</option>
-            <option value="documents">Documents</option>
-            <option value="gallery">Photo archive</option>
-            {canManage && <option value="finances">Finances</option>}
-            {role === "admin" && <option value="admin">Admin</option>}
-          </select>
-        </label>
+        <WorkspaceSwitcher groups={availableWorkspaces} selected={workspaceId} role={role} onSelect={(next) => { setWorkspaceId(next); navigate(next === "club" ? "home" : "groups"); }} onDiscover={() => navigate("groups")} onManage={() => navigate("attendance")} />
+        <PortalPageMenu section={section} role={role} onNavigate={navigate} />
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
@@ -175,7 +181,7 @@ export default function Home() {
         <section className="raga-banner"><div><p className="eyebrow">RAGA OF THE MONTH</p><h2>Kalyani</h2><p>Expansive, luminous, and full of possibility—a raga that invites both discipline and imagination.</p></div><div className="swara"><small>AROHANAM</small><b>Sa Ri₂ Ga₃ Ma₂ Pa Da₂ Ni₃ Sa</b><small>AVAROHANAM</small><b>Sa Ni₃ Da₂ Pa Ma₂ Ga₃ Ri₂ Sa</b></div></section>
       </>}
 
-      {section === "groups" && <SubgroupSpaces user={user} role={role === "admin" ? "executive" : role} notify={notify} />}
+      {section === "groups" && <SubgroupSpaces user={user} role={role} selectedWorkspace={workspaceId} onWorkspaceChange={setWorkspaceId} onWorkspacesChanged={loadWorkspaces} notify={notify} />}
 
       {section === "admin" && role === "admin" && <AdminPage user={user} notify={notify} />}
 
@@ -183,7 +189,7 @@ export default function Home() {
 
       {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Rehearsals, performances, meetings, deadlines, and everything the club needs to remember." /><div className="toolbar"><p className="access-note">✓ Dates are shared with every approved club member</p>{canManage && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={events} canManage={canManage} onDelete={deleteEvent} />}</section>}
 
-      {section === "attendance" && <AttendancePage user={user} role={role === "admin" ? "executive" : role} notify={notify} />}
+      {section === "attendance" && <AttendancePage user={user} role={role} selectedWorkspace={workspaceId} onWorkspaceChange={setWorkspaceId} onWorkspacesChanged={loadWorkspaces} notify={notify} />}
 
       {section === "members" && <MembersPage user={user} notify={notify} />}
 
@@ -220,14 +226,37 @@ function ClubDashboard({ name, role, events, archive, onNavigate }: { name: stri
   return <section className="portal-dashboard"><div className="dashboard-welcome"><p className="eyebrow">UNC BHARAT SANGEET</p><h1>Welcome back, {name}.</h1><p>Your club announcements, upcoming dates, resources, and subgroup spaces—all in one place.</p></div><div className="dashboard-layout"><div><div className="dashboard-section-title"><h2>My club</h2><span>{role === "executive" ? "Executive view" : "Member view"}</span></div><div className="course-grid"><button onClick={() => onNavigate("groups")}><span>♫</span><small>ENROLLED SPACES</small><h3>My subgroups</h3><p>Open your ensemble spaces, files, recordings, and attendance.</p><b>Enter subgroups →</b></button><button onClick={() => onNavigate("documents")}><span>▤</span><small>CLUB-WIDE</small><h3>Shared resources</h3><p>{clubItems.filter((item) => item.type === "document").length} documents available to the whole club.</p><b>Browse resources →</b></button><button onClick={() => onNavigate("members")}><span>◎</span><small>COMMUNITY</small><h3>Member directory</h3><p>Find and connect with fellow Bharat Sangeet members.</p><b>View members →</b></button></div></div><aside className="dashboard-sidebar"><h2>Coming up</h2>{upcoming.length ? upcoming.map((event) => <article key={event.id}><time>{new Date(event.starts_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time><div><b>{event.title}</b><span>{event.location || "Details in calendar"}</span></div></article>) : <p>No upcoming dates yet.</p>}<button className="secondary" onClick={() => onNavigate("calendar")}>Open full calendar</button></aside></div></section>;
 }
 
-function SubgroupSpaces({ user, role, notify }: { user: User; role: ClubRole; notify: (message: string) => void }) {
-  const [groups, setGroups] = useState<Subgroup[]>([]); const [items, setItems] = useState<ArchiveItem[]>([]); const [selected, setSelected] = useState<number | null>(null); const [showUpload, setShowUpload] = useState(false); const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => { if (!supabase) return; const [g, a] = await Promise.all([supabase.from("subgroups").select("id,name,description").order("name"), supabase.from("archive_items").select("*").not("subgroup_id", "is", null).order("created_at", { ascending: false })]); if (g.error || a.error) notify("Subgroup spaces could not be loaded"); const next = (g.data || []) as Subgroup[]; setGroups(next); setItems((a.data || []) as ArchiveItem[]); setSelected((current) => current && next.some((group) => group.id === current) ? current : next[0]?.id ?? null); setLoading(false); }, [notify]);
+function WorkspaceSwitcher({ groups, selected, role, onSelect, onDiscover, onManage }: { groups: Subgroup[]; selected: number | "club"; role: ClubRole; onSelect: (workspace: number | "club") => void; onDiscover: () => void; onManage: () => void }) {
+  const [open, setOpen] = useState(false);
+  const shell = useRef<HTMLDivElement>(null);
+  const active = groups.find((group) => group.id === selected);
+  useEffect(() => {
+    function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); }
+    function escape(event: KeyboardEvent) { if (event.key === "Escape") { setOpen(false); shell.current?.querySelector<HTMLButtonElement>(".workspace-trigger")?.focus(); } }
+    document.addEventListener("mousedown", close); document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+  }, []);
+  function choose(next: number | "club") { onSelect(next); setOpen(false); }
+  return <div className="workspace-switcher" ref={shell}><button className="workspace-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span className="workspace-seal">{selected === "club" ? "BS" : initials(active?.name || "SG")}</span><span><small>Current workspace</small><b>{selected === "club" ? "Bharat Sangeet" : active?.name || "Subgroup"}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="workspace-menu" role="menu"><p>CLUB-WIDE</p><button role="menuitem" className={selected === "club" ? "selected" : ""} onClick={() => choose("club")}><span className="workspace-seal">BS</span><span><b>Bharat Sangeet</b><small>Shared club workspace</small></span>{selected === "club" && <i>✓</i>}</button><p>{role === "member" ? "MY SUBGROUPS" : "ALL SUBGROUPS"}</p>{groups.map((group) => <button role="menuitem" className={selected === group.id ? "selected" : ""} key={group.id} onClick={() => choose(group.id)}><span className="workspace-seal subgroup">{initials(group.name)}</span><span><b>{group.name}</b><small>{group.enrollment_mode === "invite" ? "Invitation only" : group.enrollment_mode === "approval" ? "Approval required" : "Open enrollment"}</small></span>{selected === group.id && <i>✓</i>}</button>)}{groups.length === 0 && <span className="workspace-menu-empty">No subgroup workspaces yet</span>}<button role="menuitem" className="workspace-discover-link" onClick={() => { setOpen(false); onDiscover(); }}>＋ Discover subgroups</button>{role !== "member" && <button role="menuitem" className="workspace-discover-link" onClick={() => { setOpen(false); onManage(); }}>＋ Create or manage subgroups</button>}</div>}</div>;
+}
+
+function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
+  const [open, setOpen] = useState(false); const shell = useRef<HTMLDivElement>(null);
+  const labels: Record<Section, string> = { home: "Overview", groups: "Subgroups", calendar: "Calendar", members: "Members", attendance: "Attendance", recordings: "Recordings", documents: "Resources", gallery: "Photos", finances: "Finances", admin: "Admin" };
+  const pages: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "gallery", ...(role !== "member" ? ["finances" as Section] : []), ...(role === "admin" ? ["admin" as Section] : [])];
+  useEffect(() => { function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); } function escape(event: KeyboardEvent) { if (event.key === "Escape") setOpen(false); } document.addEventListener("mousedown", close); document.addEventListener("keydown", escape); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); }; }, []);
+  return <div className="page-menu-shell" ref={shell}><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Page</small><b>{labels[section]}</b></span><i>⌄</i></button>{open && <div className="page-menu" role="menu">{pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => { onNavigate(page); setOpen(false); }}><span>{labels[page]}</span>{page === section && <i>✓</i>}</button>)}</div>}</div>;
+}
+
+function SubgroupSpaces({ user, role, selectedWorkspace, onWorkspaceChange, onWorkspacesChanged, notify }: { user: User; role: ClubRole; selectedWorkspace: number | "club"; onWorkspaceChange: (workspace: number | "club") => void; onWorkspacesChanged: () => void; notify: (message: string) => void }) {
+  const [groups, setGroups] = useState<Subgroup[]>([]); const [memberships, setMemberships] = useState<SubgroupMembership[]>([]); const [items, setItems] = useState<ArchiveItem[]>([]); const [showUpload, setShowUpload] = useState(false); const [loading, setLoading] = useState(true); const [joining, setJoining] = useState<number | null>(null); const [inlineMessage, setInlineMessage] = useState("");
+  const load = useCallback(async () => { if (!supabase) return; const [g, m, a] = await Promise.all([supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"), supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id), supabase.from("archive_items").select("*").not("subgroup_id", "is", null).order("created_at", { ascending: false })]); if (g.error || m.error || a.error) notify("Subgroup spaces could not be loaded"); setGroups((g.data || []) as Subgroup[]); setMemberships((m.data || []) as SubgroupMembership[]); setItems((a.data || []) as ArchiveItem[]); setLoading(false); }, [notify, user.id]);
   useEffect(() => { load(); }, [load]);
   async function open(item: ArchiveItem) { if (!supabase) return; const { data, error } = await supabase.storage.from("club-archive").createSignedUrl(item.storage_path, 300); if (error || !data) notify("This file could not be opened"); else window.open(data.signedUrl, "_blank", "noopener,noreferrer"); }
-  const active = groups.find((group) => group.id === selected); const groupItems = items.filter((item) => item.subgroup_id === selected); const docs = groupItems.filter((item) => item.type === "document"); const recordings = groupItems.filter((item) => item.type === "recording");
+  async function requestEnrollment(group: Subgroup) { if (!supabase) return; setJoining(group.id); setInlineMessage(""); const { data, error } = await supabase.rpc("request_subgroup_enrollment", { target_subgroup_id: group.id }); setJoining(null); if (error) { setInlineMessage(error.message); return; } const membership = data as SubgroupMembership; setMemberships((current) => [...current.filter((item) => item.subgroup_id !== group.id), membership]); onWorkspacesChanged(); if (membership.status === "active") { onWorkspaceChange(group.id); notify(`Welcome to ${group.name}`); } else setInlineMessage(`Your request to join ${group.name} was sent.`); }
+  const selected = typeof selectedWorkspace === "number" ? selectedWorkspace : null; const active = groups.find((group) => group.id === selected); const groupItems = items.filter((item) => item.subgroup_id === selected); const docs = groupItems.filter((item) => item.type === "document"); const recordings = groupItems.filter((item) => item.type === "recording"); const membershipFor = (id: number) => memberships.find((item) => item.subgroup_id === id); const canEnter = (id: number) => role !== "member" || membershipFor(id)?.status === "active";
   if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
-  return <section className="section-shell page-section"><PageTitle eyebrow="MY ENROLLMENTS" title="Subgroup spaces" text={role === "executive" ? "As an executive, you can enter and manage every subgroup." : "Subgroups appear here after an executive adds you to their roster."} />{groups.length ? <div className="workspace-shell"><aside className="workspace-courses">{groups.map((group) => <button className={selected === group.id ? "active" : ""} key={group.id} onClick={() => setSelected(group.id)}><span>{initials(group.name)}</span><div><b>{group.name}</b><small>UNC Bharat Sangeet</small></div></button>)}</aside><div className="workspace-main"><div className="workspace-banner"><div><p className="eyebrow">SUBGROUP SPACE</p><h2>{active?.name}</h2><p>{active?.description || "Rehearsal materials and recordings for this subgroup."}</p></div>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add material</button>}</div><div className="workspace-columns"><section><div className="dashboard-section-title"><h3>Documents</h3><span>{docs.length}</span></div>{docs.length ? docs.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><span>▤</span><div><b>{item.title}</b><small>{item.description || formatDate(item.created_at)}</small></div><i>↓</i></button>) : <p className="workspace-empty">No subgroup documents yet.</p>}</section><section><div className="dashboard-section-title"><h3>Recordings</h3><span>{recordings.length}</span></div>{recordings.length ? recordings.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><span>▶</span><div><b>{item.title}</b><small>{[item.raga, item.tala, item.description].filter(Boolean).join(" · ") || formatDate(item.created_at)}</small></div><i>→</i></button>) : <p className="workspace-empty">No subgroup recordings yet.</p>}</section></div></div></div> : <EmptyState title="No subgroup enrollments" text={role === "executive" ? "Create a subgroup from Attendance to begin." : "An executive will add you to a subgroup roster."} />}{showUpload && selected && <SubgroupUploadModal user={user} subgroupId={selected} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); load(); notify("Added to subgroup space"); }} notify={notify} />}</section>;
+  return <section className="section-shell page-section"><PageTitle eyebrow="SUBGROUP WORKSPACES" title={active && canEnter(active.id) ? active.name : "Discover subgroups"} text={active && canEnter(active.id) ? active.description || "Resources, rehearsal recordings, and attendance for this subgroup." : "Find an ensemble, request access, or enter one of your current subgroup spaces."} />{inlineMessage && <p className="action-feedback" role="status">{inlineMessage}</p>}{active && canEnter(active.id) ? <div className="workspace-main standalone"><div className="workspace-banner"><div><p className="eyebrow">ACTIVE WORKSPACE</p><h2>{active.name}</h2><p>{active.description || "Rehearsal materials and recordings for this subgroup."}</p></div>{role !== "member" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add material</button>}</div><div className="workspace-columns"><section><div className="dashboard-section-title"><h3>Documents</h3><span>{docs.length}</span></div>{docs.length ? docs.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><span>▤</span><div><b>{item.title}</b><small>{item.description || formatDate(item.created_at)}</small></div><i>↓</i></button>) : <p className="workspace-empty">No subgroup documents yet.</p>}</section><section><div className="dashboard-section-title"><h3>Recordings</h3><span>{recordings.length}</span></div>{recordings.length ? recordings.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><span>▶</span><div><b>{item.title}</b><small>{[item.raga, item.tala, item.description].filter(Boolean).join(" · ") || formatDate(item.created_at)}</small></div><i>→</i></button>) : <p className="workspace-empty">No subgroup recordings yet.</p>}</section></div></div> : <div className="discover-grid">{groups.map((group) => { const membership = membershipFor(group.id); return <article className="discover-card" key={group.id}><span className="workspace-seal subgroup">{initials(group.name)}</span><p className="eyebrow">{group.enrollment_mode === "open" ? "OPEN ENROLLMENT" : group.enrollment_mode === "approval" ? "REQUEST TO JOIN" : "INVITATION ONLY"}</p><h2>{group.name}</h2><p>{group.description || "A Bharat Sangeet subgroup at UNC Chapel Hill."}</p>{canEnter(group.id) ? <button className="primary" onClick={() => onWorkspaceChange(group.id)}>Open workspace →</button> : membership?.status === "pending" ? <span className="enrollment-status">Request pending</span> : membership?.status === "waitlisted" ? <span className="enrollment-status">Waitlisted</span> : group.enrollment_mode === "invite" ? <span className="enrollment-status muted">Ask an executive for an invitation</span> : <button className="secondary" disabled={joining === group.id} onClick={() => requestEnrollment(group)}>{joining === group.id ? "Sending…" : group.enrollment_mode === "open" ? "Join subgroup" : "Request to join"}</button>}</article>; })}</div>}{showUpload && selected && <SubgroupUploadModal user={user} subgroupId={selected} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); load(); notify("Added to subgroup space"); }} notify={notify} />}</section>;
 }
 function SubgroupUploadModal({ user, subgroupId, onClose, onSaved, notify }: { user: User; subgroupId: number; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
   const [saving, setSaving] = useState(false); const [type, setType] = useState<"document" | "recording">("document");
@@ -282,7 +311,7 @@ function MembersPage({ user, notify }: { user: User; notify: (message: string) =
   return <section className="section-shell page-section"><PageTitle eyebrow="CLUB COMMUNITY" title="Members directory" text="Contact information for the people who make music with Bharat Sangeet at UNC Chapel Hill." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, year, or musical interest" /></label><button className="primary" onClick={() => setEditing(true)}>Edit my contact info</button></div><p className="directory-note">This directory is visible only to signed-in club members.</p>{filtered.length ? <div className="member-grid">{filtered.map((member) => <article className="member-card" key={member.id}><div className="member-initials">{initials(member.full_name || member.email)}</div><div className="member-card-heading"><h3>{member.full_name || member.email.split("@")[0]}</h3><span className={`member-role ${member.role}`}>{member.role}</span></div><p>{member.specialty || "Musical interests not added yet"}</p><dl><div><dt>Email</dt><dd><a href={`mailto:${member.email}`}>{member.email}</a></dd></div>{member.phone && <div><dt>Phone</dt><dd><a href={`tel:${member.phone}`}>{member.phone}</a></dd></div>}{member.class_year && <div><dt>Class year</dt><dd>{member.class_year}</dd></div>}</dl></article>)}</div> : <EmptyState title="No members found" text="Try another search." />}{editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><form className="modal" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setEditing(false)}>×</button><p className="eyebrow">MY MEMBER PROFILE</p><h2>Contact information</h2><label>Preferred name<input name="full_name" required defaultValue={ownProfile?.full_name || ""} /></label><label>Email<input value={ownProfile?.email || user.email || ""} disabled /></label><label>Phone number<input name="phone" type="tel" defaultValue={ownProfile?.phone || ""} placeholder="Optional" /></label><div className="form-pair"><label>Class year<input name="class_year" defaultValue={ownProfile?.class_year || ""} placeholder="2028" /></label><label>Voice / instrument<input name="specialty" defaultValue={ownProfile?.specialty || ""} placeholder="Vocal, violin, mridangam…" /></label></div><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form></div>}</section>;
 }
 
-function AttendancePage({ user, role, notify }: { user: User; role: ClubRole; notify: (message: string) => void }) {
+function AttendancePage({ user, role, selectedWorkspace, onWorkspaceChange, onWorkspacesChanged, notify }: { user: User; role: ClubRole; selectedWorkspace: number | "club"; onWorkspaceChange: (workspace: number | "club") => void; onWorkspacesChanged: () => void; notify: (message: string) => void }) {
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
@@ -291,35 +320,43 @@ function AttendancePage({ user, role, notify }: { user: User; role: ClubRole; no
   const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
   const [selectedSession, setSelectedSession] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [createMessage, setCreateMessage] = useState("");
+  const [newGroupId, setNewGroupId] = useState<number | null>(null);
 
   const loadAttendance = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
     const [groupResult, membershipResult, sessionResult, recordResult, profileResult] = await Promise.all([
-      supabase.from("subgroups").select("id, name, description").order("name"),
-      supabase.from("subgroup_memberships").select("subgroup_id, member_id"),
+      supabase.from("subgroups").select("id, name, description, enrollment_mode").order("name"),
+      supabase.from("subgroup_memberships").select("subgroup_id, member_id, status, membership_role"),
       supabase.from("attendance_sessions").select("id, subgroup_id, title, session_date").order("session_date", { ascending: false }),
       supabase.from("attendance_records").select("session_id, member_id, status"),
-      role === "executive" ? supabase.from("profiles").select("id, full_name, email, role").order("full_name") : Promise.resolve({ data: [], error: null }),
+      role !== "member" ? supabase.from("profiles").select("id, full_name, email, role").order("full_name") : Promise.resolve({ data: [], error: null }),
     ]);
     const error = groupResult.error || membershipResult.error || sessionResult.error || recordResult.error || profileResult.error;
     if (error) notify("Attendance records could not be loaded");
-    const nextGroups = (groupResult.data || []) as Subgroup[];
-    setGroups(nextGroups); setMemberships((membershipResult.data || []) as SubgroupMembership[]); setSessions((sessionResult.data || []) as AttendanceSession[]); setRecords((recordResult.data || []) as AttendanceRecord[]); setProfiles((profileResult.data || []) as MemberProfile[]);
+    const allGroups = (groupResult.data || []) as Subgroup[];
+    const nextMemberships = (membershipResult.data || []) as SubgroupMembership[];
+    const nextGroups = role !== "member" ? allGroups : allGroups.filter((group) => nextMemberships.some((membership) => membership.subgroup_id === group.id && membership.status === "active"));
+    setGroups(nextGroups); setMemberships(nextMemberships); setSessions((sessionResult.data || []) as AttendanceSession[]); setRecords((recordResult.data || []) as AttendanceRecord[]); setProfiles((profileResult.data || []) as MemberProfile[]);
     setSelectedGroup((current) => current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id ?? null);
     setLoading(false);
   }, [notify, role]);
 
   useEffect(() => { loadAttendance(); }, [loadAttendance]);
+  useEffect(() => { if (typeof selectedWorkspace === "number") { setSelectedGroup(selectedWorkspace); setSelectedSession(null); } }, [selectedWorkspace]);
 
   async function createGroup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return; const form = new FormData(event.currentTarget);
-    const { error } = await supabase.from("subgroups").insert({ name: String(form.get("name") || ""), description: String(form.get("description") || ""), created_by: user.id });
-    if (error) notify(error.message); else { event.currentTarget.reset(); notify("Subgroup created"); loadAttendance(); }
+    event.preventDefault(); if (!supabase) return; const formElement = event.currentTarget; const form = new FormData(formElement); setCreatingGroup(true); setCreateMessage("");
+    const { data, error } = await supabase.rpc("create_subgroup", { subgroup_name: String(form.get("name") || ""), subgroup_description: String(form.get("description") || ""), subgroup_mode: String(form.get("enrollment_mode") || "invite") });
+    setCreatingGroup(false);
+    if (error) { setCreateMessage(error.message); return; }
+    const created = data as Subgroup; setGroups((current) => [...current, created].sort((left, right) => left.name.localeCompare(right.name))); setMemberships((current) => [...current, { subgroup_id: created.id, member_id: user.id, status: "active", membership_role: "manager" }]); setSelectedGroup(created.id); setSelectedSession(null); setNewGroupId(created.id); onWorkspaceChange(created.id); onWorkspacesChanged(); formElement.reset(); setCreateMessage(`${created.name} was created and opened.`); notify("Subgroup created"); window.setTimeout(() => setNewGroupId(null), 2600);
   }
   async function addMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase || !selectedGroup) return; const form = new FormData(event.currentTarget);
-    const { error } = await supabase.from("subgroup_memberships").insert({ subgroup_id: selectedGroup, member_id: String(form.get("member_id")), added_by: user.id });
+    const { error } = await supabase.from("subgroup_memberships").upsert({ subgroup_id: selectedGroup, member_id: String(form.get("member_id")), added_by: user.id, reviewed_by: user.id, status: "active", membership_role: "member" }, { onConflict: "subgroup_id,member_id" });
     if (error) notify(error.message); else { notify("Member added to subgroup"); loadAttendance(); }
   }
   async function removeMember(memberId: string) {
@@ -339,12 +376,12 @@ function AttendancePage({ user, role, notify }: { user: User; role: ClubRole; no
   }
 
   const activeGroup = groups.find((group) => group.id === selectedGroup);
-  const groupMemberships = memberships.filter((membership) => membership.subgroup_id === selectedGroup);
+  const groupMemberships = memberships.filter((membership) => membership.subgroup_id === selectedGroup && membership.status === "active");
   const groupSessions = sessions.filter((session) => session.subgroup_id === selectedGroup);
   const availableProfiles = profiles.filter((profile) => !groupMemberships.some((membership) => membership.member_id === profile.id));
   if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
 
-  return <section className="section-shell page-section"><PageTitle eyebrow="SUBGROUPS" title="Attendance" text={role === "executive" ? "Create ensembles and teams, organize their rosters, and keep a clear record of participation." : "See your subgroups and personal attendance history."} />{role === "executive" && <form className="create-group-bar" onSubmit={createGroup}><input name="name" required placeholder="New subgroup name" /><input name="description" placeholder="Short description" /><button className="primary">＋ Create subgroup</button></form>}{groups.length === 0 ? <EmptyState title="No subgroups yet" text={role === "executive" ? "Create the first subgroup above." : "An executive has not assigned you to a subgroup yet."} /> : <div className="attendance-layout"><aside className="subgroup-list"><small>SUBGROUPS</small>{groups.map((group) => <button key={group.id} className={selectedGroup === group.id ? "active" : ""} onClick={() => { setSelectedGroup(group.id); setSelectedSession(null); }}><b>{group.name}</b><span>{memberships.filter((membership) => membership.subgroup_id === group.id).length} members</span></button>)}</aside><div className="attendance-workspace"><div className="subgroup-heading"><div><h2>{activeGroup?.name}</h2><p>{activeGroup?.description || "UNC Chapel Hill Bharat Sangeet subgroup"}</p></div><span>{groupMemberships.length} members · {groupSessions.length} meetings</span></div>{role === "executive" && <><form className="roster-add" onSubmit={addMember}><select name="member_id" required defaultValue=""><option value="" disabled>Add a club member…</option>{availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email} ({profile.email})</option>)}</select><button>Add to subgroup</button></form><div className="roster-chips">{groupMemberships.map((membership) => { const profile = profiles.find((item) => item.id === membership.member_id); return <span key={membership.member_id}>{profile?.full_name || profile?.email || "Member"}<button onClick={() => removeMember(membership.member_id)} aria-label="Remove member">×</button></span>; })}</div><form className="session-create" onSubmit={createSession}><input name="title" required placeholder="Meeting or rehearsal name" /><input name="session_date" type="date" required /><button className="primary">Create attendance date</button></form></>}<div className="session-tabs">{groupSessions.map((session) => <button key={session.id} className={selectedSession === session.id ? "active" : ""} onClick={() => setSelectedSession(session.id)}><b>{formatDate(session.session_date)}</b><span>{session.title}</span></button>)}</div>{selectedSession ? <div className="attendance-table"><div className="attendance-table-head"><b>Member</b><span>Status</span></div>{groupMemberships.map((membership) => { const profile = profiles.find((item) => item.id === membership.member_id); const record = records.find((item) => item.session_id === selectedSession && item.member_id === membership.member_id); return <div className="attendance-row" key={membership.member_id}><div><b>{profile?.full_name || (membership.member_id === user.id ? user.email : "Member")}</b><small>{profile?.email || (membership.member_id === user.id ? user.email : "")}</small></div>{role === "executive" ? <select value={record?.status || ""} onChange={(event) => markAttendance(membership.member_id, event.target.value as AttendanceRecord["status"])}><option value="" disabled>Not marked</option><option value="present">Present</option><option value="absent">Absent</option><option value="excused">Excused</option></select> : <span className={`attendance-status ${record?.status || "unmarked"}`}>{record?.status || "Not marked"}</span>}</div>; })}</div> : <div className="attendance-prompt">Choose an attendance date to view or mark attendance.</div>}</div></div>}</section>;
+  return <section className="section-shell page-section"><PageTitle eyebrow="SUBGROUPS" title="Attendance" text={role !== "member" ? "Create ensembles, organize rosters, and manage attendance inside each subgroup workspace." : "See your subgroups and personal attendance history."} />{role !== "member" && <><form className="create-group-bar" onSubmit={createGroup} aria-busy={creatingGroup}><input name="name" required disabled={creatingGroup} placeholder="New subgroup name" /><input name="description" disabled={creatingGroup} placeholder="Short description" /><select name="enrollment_mode" defaultValue="invite" disabled={creatingGroup} aria-label="Enrollment type"><option value="open">Open enrollment</option><option value="approval">Approval required</option><option value="invite">Invite only</option></select><button className="primary" disabled={creatingGroup}>{creatingGroup ? "Creating…" : "＋ Create subgroup"}</button></form>{createMessage && <p className={`action-feedback ${createMessage.includes("created") ? "success" : "error"}`} role="status">{createMessage}</p>}</>}{groups.length === 0 ? <EmptyState title="No subgroups yet" text={role !== "member" ? "Create the first subgroup above." : "An executive has not assigned you to a subgroup yet."} /> : <div className="attendance-layout"><aside className="subgroup-list"><small>SUBGROUPS</small>{groups.map((group) => <button key={group.id} className={`${selectedGroup === group.id ? "active" : ""} ${newGroupId === group.id ? "is-new" : ""}`} onClick={() => { setSelectedGroup(group.id); onWorkspaceChange(group.id); setSelectedSession(null); }}><b>{group.name}</b><span>{memberships.filter((membership) => membership.subgroup_id === group.id && membership.status === "active").length} members</span></button>)}</aside><div className="attendance-workspace"><div className="subgroup-heading"><div><h2>{activeGroup?.name}</h2><p>{activeGroup?.description || "UNC Chapel Hill Bharat Sangeet subgroup"}</p></div><span>{groupMemberships.length} members · {groupSessions.length} meetings</span></div>{role !== "member" && <><form className="roster-add" onSubmit={addMember}><select name="member_id" required defaultValue=""><option value="" disabled>Add a club member…</option>{availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email} ({profile.email})</option>)}</select><button>Add to subgroup</button></form><div className="roster-chips">{groupMemberships.map((membership) => { const profile = profiles.find((item) => item.id === membership.member_id); return <span key={membership.member_id}>{profile?.full_name || profile?.email || "Member"}<button onClick={() => removeMember(membership.member_id)} aria-label="Remove member">×</button></span>; })}</div><form className="session-create" onSubmit={createSession}><input name="title" required placeholder="Meeting or rehearsal name" /><input name="session_date" type="date" required /><button className="primary">Create attendance date</button></form></>}<div className="session-tabs">{groupSessions.map((session) => <button key={session.id} className={selectedSession === session.id ? "active" : ""} onClick={() => setSelectedSession(session.id)}><b>{formatDate(session.session_date)}</b><span>{session.title}</span></button>)}</div>{selectedSession ? <div className="attendance-table"><div className="attendance-table-head"><b>Member</b><span>Status</span></div>{groupMemberships.map((membership) => { const profile = profiles.find((item) => item.id === membership.member_id); const record = records.find((item) => item.session_id === selectedSession && item.member_id === membership.member_id); return <div className="attendance-row" key={membership.member_id}><div><b>{profile?.full_name || (membership.member_id === user.id ? user.email : "Member")}</b><small>{profile?.email || (membership.member_id === user.id ? user.email : "")}</small></div>{role !== "member" ? <select value={record?.status || ""} onChange={(event) => markAttendance(membership.member_id, event.target.value as AttendanceRecord["status"])}><option value="" disabled>Not marked</option><option value="present">Present</option><option value="absent">Absent</option><option value="excused">Excused</option></select> : <span className={`attendance-status ${record?.status || "unmarked"}`}>{record?.status || "Not marked"}</span>}</div>; })}</div> : <div className="attendance-prompt">Choose an attendance date to view or mark attendance.</div>}</div></div>}</section>;
 }
 
 function PublicSite({ onSignIn }: { onSignIn: () => void }) {
