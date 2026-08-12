@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { FinancePage } from "./finance";
 
 type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "gallery" | "finances" | "admin";
 type ClubRole = "member" | "executive" | "admin";
@@ -14,10 +15,6 @@ type ArchiveItem = {
   signedUrl?: string;
   is_public?: boolean;
   subgroup_id?: number | null;
-};
-type Transaction = {
-  id: number; description: string; amount: number; category: string;
-  transaction_date: string; created_at: string;
 };
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string };
 type EnrollmentMode = "open" | "approval" | "invite";
@@ -42,7 +39,6 @@ export default function Home() {
   const [name, setName] = useState("");
   const [section, setSection] = useState<Section>("home");
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
@@ -77,7 +73,7 @@ export default function Home() {
     setName(profileName || currentUser.email?.split("@")[0] || "Club member");
   }, [notify]);
 
-  const loadData = useCallback(async (currentRole: ClubRole) => {
+  const loadData = useCallback(async () => {
     const client = supabase;
     if (!client) return;
     setDataLoading(true);
@@ -93,11 +89,6 @@ export default function Home() {
     const eventsResult = await client.from("events").select("*").order("starts_at", { ascending: true });
     if (eventsResult.error) notify("The club calendar could not be loaded");
     setEvents((eventsResult.data || []) as ClubEvent[]);
-    if (currentRole !== "member") {
-      const result = await client.from("transactions").select("*").order("transaction_date", { ascending: false });
-      if (result.error) notify("Financial records could not be loaded");
-      setTransactions((result.data || []) as Transaction[]);
-    } else setTransactions([]);
     setDataLoading(false);
   }, [notify]);
 
@@ -115,7 +106,7 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, [loadProfile]);
 
-  useEffect(() => { if (user) loadData(role); }, [user, role, loadData]);
+  useEffect(() => { if (user) loadData(); }, [user, loadData]);
 
   const loadWorkspaces = useCallback(async () => {
     if (!supabase || !user) return;
@@ -132,9 +123,6 @@ export default function Home() {
   const recordings = useMemo(() => archive.filter((item) => item.type === "recording" && `${item.title} ${item.description} ${item.raga || ""}`.toLowerCase().includes(query.toLowerCase())), [archive, query]);
   const documents = archive.filter((item) => item.type === "document");
   const photos = archive.filter((item) => item.type === "photo");
-  const balance = transactions.reduce((sum, item) => sum + Number(item.amount), 0);
-  const income = transactions.filter((item) => Number(item.amount) > 0).reduce((sum, item) => sum + Number(item.amount), 0);
-  const expenses = transactions.filter((item) => Number(item.amount) < 0).reduce((sum, item) => sum + Number(item.amount), 0);
   const canManage = role !== "member";
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
   const availableWorkspaces = canManage ? groups : groups.filter((group) => activeGroupIds.has(group.id));
@@ -151,7 +139,7 @@ export default function Home() {
   async function deleteEvent(eventId: number) {
     if (!supabase || !window.confirm("Remove this date from the club calendar?")) return;
     const { error } = await supabase.from("events").delete().eq("id", eventId);
-    if (error) notify(error.message); else { notify("Calendar date removed"); loadData(role); }
+    if (error) notify(error.message); else { notify("Calendar date removed"); loadData(); }
   }
 
   if (authLoading) return <LoadingScreen />;
@@ -197,11 +185,11 @@ export default function Home() {
 
       {section === "gallery" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB MEMORIES" title="Photo archive" text="The rehearsals, stages, and friendships that shape Bharat Sangeet." />{photos.length ? <div className="gallery-grid">{photos.map((item, index) => <figure key={item.id} className={index === 0 ? "wide" : ""}><img src={item.signedUrl} alt={item.title} /><figcaption><b>{item.title}</b><span>{formatDate(item.created_at)}</span></figcaption></figure>)}</div> : <EmptyState title="No club photos yet" text={role === "executive" ? "Upload the first memory from a rehearsal or concert." : "Club photos will appear here."} />}</section>}
 
-      {section === "finances" && canManage && <section className="section-shell page-section"><PageTitle eyebrow="EXECUTIVE ACCESS" title="Club finances" text="A private, clear record of the funds that support our music." /><div className="finance-summary"><div><small>AVAILABLE BALANCE</small><strong>{money(balance)}</strong><span>Live club ledger</span></div><div><small>TOTAL INCOME</small><b className="income">{money(income)}</b><span>Recorded funds</span></div><div><small>TOTAL EXPENSES</small><b>{money(expenses)}</b><span>Recorded spending</span></div><button className="primary" onClick={() => setShowUpload(true)}>＋ Add transaction</button></div>{transactions.length ? <div className="ledger"><div className="ledger-head"><b>Recent activity</b><span>Club ledger</span></div>{transactions.map((item) => <div className="ledger-row" key={item.id}><span className={`money-mark ${Number(item.amount) > 0 ? "income" : "expense"}`}>{Number(item.amount) > 0 ? "+" : "−"}</span><b>{item.description}</b><span>{formatDate(item.transaction_date)}</span><strong className={Number(item.amount) > 0 ? "income" : "expense"}>{money(Number(item.amount))}</strong></div>)}</div> : <EmptyState title="No transactions yet" text="Add the first allocation, donation, or expense." />}</section>}
+      {section === "finances" && <FinancePage user={user} role={role} groups={availableWorkspaces} events={events} notify={notify} />}
 
       <footer><div className="footer-brand"><span className="brand-mark">sa</span><div><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></div></div><p>Carnatic music at the University of North Carolina at Chapel Hill.</p><p>2026–27 Season</p></footer>
-      {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(role); notify("Saved to the club archive"); }} notify={notify} />}
-      {showEvent && <EventModal user={user} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(role); notify("Important date added"); }} notify={notify} />}
+      {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
+      {showEvent && <EventModal user={user} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(); notify("Important date added"); }} notify={notify} />}
       {toast && <div className="toast" role="status">✓ {toast}</div>}
     </main>
   );
@@ -243,7 +231,7 @@ function WorkspaceSwitcher({ groups, selected, role, onSelect, onDiscover, onMan
 function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
   const [open, setOpen] = useState(false); const shell = useRef<HTMLDivElement>(null);
   const labels: Record<Section, string> = { home: "Overview", groups: "Subgroups", calendar: "Calendar", members: "Members", attendance: "Attendance", recordings: "Recordings", documents: "Resources", gallery: "Photos", finances: "Finances", admin: "Admin" };
-  const pages: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "gallery", ...(role !== "member" ? ["finances" as Section] : []), ...(role === "admin" ? ["admin" as Section] : [])];
+  const pages: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "gallery", "finances", ...(role === "admin" ? ["admin" as Section] : [])];
   useEffect(() => { function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); } function escape(event: KeyboardEvent) { if (event.key === "Escape") setOpen(false); } document.addEventListener("mousedown", close); document.addEventListener("keydown", escape); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); }; }, []);
   return <div className="page-menu-shell" ref={shell}><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Page</small><b>{labels[section]}</b></span><i>⌄</i></button>{open && <div className="page-menu" role="menu">{pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => { onNavigate(page); setOpen(false); }}><span>{labels[page]}</span>{page === section && <i>✓</i>}</button>)}</div>}</div>;
 }
@@ -431,16 +419,11 @@ function LoginScreen({ onBack }: { onBack: () => void }) {
 }
 
 function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
-  const [type, setType] = useState<ArchiveType | "financial">("recording");
+  const [type, setType] = useState<ArchiveType>("recording");
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase) return; setSaving(true);
     const form = new FormData(event.currentTarget); const title = String(form.get("title") || "");
-    if (type === "financial") {
-      const amount = Number(form.get("amount"));
-      const { error } = await supabase.from("transactions").insert({ description: title, amount, category: String(form.get("category") || "General"), created_by: user.id });
-      setSaving(false); if (error) notify(error.message); else onSaved(); return;
-    }
     const file = form.get("file") as File; if (!file?.size) { setSaving(false); notify("Choose a file to upload"); return; }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-"); const storagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
     const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
@@ -450,7 +433,7 @@ function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose:
     if (saved.error) { await supabase.storage.from("club-archive").remove([storagePath]); setSaving(false); notify(saved.error.message); return; }
     setSaving(false); onSaved();
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add to club records</h2><label>Item type<select value={type} onChange={(e) => setType(e.target.value as ArchiveType | "financial")}><option value="recording">Recording</option><option value="document">Document</option><option value="photo">Photo</option><option value="financial">Financial transaction</option></select></label><label>{type === "financial" ? "Description" : "Title"}<input name="title" required placeholder="Give this item a clear name" /></label>{type === "financial" ? <><label>Amount<input name="amount" type="number" step="0.01" required placeholder="Use a negative number for expenses" /></label><label>Category<input name="category" required placeholder="Venue, donation, equipment…" /></label></> : <><label>Description<input name="description" placeholder="Optional context for members" /></label>{type === "recording" && <div className="form-pair"><label>Raga<input name="raga" /></label><label>Tala<input name="tala" /></label></div>}<label>Choose file<input name="file" type="file" required accept={type === "recording" ? "audio/*,video/*" : type === "photo" ? "image/*" : undefined} /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option>{type === "recording" && <option value="public">Everyone (public concert)</option>}</select></label></>}<button className="primary" disabled={saving}>{saving ? "Saving…" : "Save to archive"}</button></form></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add to club records</h2><label>Item type<select value={type} onChange={(e) => setType(e.target.value as ArchiveType)}><option value="recording">Recording</option><option value="document">Document</option><option value="photo">Photo</option></select></label><label>Title<input name="title" required placeholder="Give this item a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label>{type === "recording" && <div className="form-pair"><label>Raga<input name="raga" /></label><label>Tala<input name="tala" /></label></div>}<label>Choose file<input name="file" type="file" required accept={type === "recording" ? "audio/*,video/*" : type === "photo" ? "image/*" : undefined} /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option>{type === "recording" && <option value="public">Everyone (public concert)</option>}</select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save to archive"}</button></form></div>;
 }
 
 function PageTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) { return <div className="page-title"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div>; }
@@ -459,5 +442,4 @@ function LoadingScreen() { return <main className="loading-screen"><span classNa
 function InlineLoading() { return <div className="inline-loading">Loading the archive…</div>; }
 function SetupScreen() { return <main className="loading-screen"><span className="brand-mark">sa</span><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
 function formatDate(value: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)); }
-function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value); }
 function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "BS"; }

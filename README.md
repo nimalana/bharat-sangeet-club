@@ -27,6 +27,8 @@ Legend: ✅ shipped · 🚧 in progress · 📌 planned · 💡 future idea
 - [x] Subgroup-specific documents and recordings
 - [x] Subgroup rosters and attendance sessions
 - [x] Executive finance ledger with income, expenses, categories, and running totals
+- [x] Member reimbursement requests with receipt uploads, review, approval, and payment tracking
+- [x] Senate/GPSG funding claim workspaces with requirement checklists and private supporting documents
 - [x] Administrator tools for member removal, role changes, announcements, and audit history
 - [x] Automatic production deployments from `main` and preview deployments from other Git branches
 
@@ -36,20 +38,20 @@ Legend: ✅ shipped · 🚧 in progress · 📌 planned · 💡 future idea
 
 The finance ledger should be the source of truth. Balances must be calculated from transactions rather than entered manually.
 
-- [ ] Replace signed amounts with explicit transaction types: income, expense, reimbursement, and transfer
-- [ ] Add transaction statuses: draft, submitted, approved, paid, reconciled, and voided
-- [ ] Add payment accounts, transaction dates, categories, notes, and related people
-- [ ] Associate transactions with a subgroup, concert, or other event when relevant
+- [x] Replace signed amounts with explicit cash direction and payment purposes for income, expenses, reimbursements, refunds, transfers, fees, and adjustments
+- [x] Add separate lifecycle statuses for expenses, payments, reimbursements, and funding claims
+- [x] Add payment accounts, transaction dates, categories, notes, counterparties, and related members
+- [x] Associate expenses with a subgroup, calendar event, or documented external event
 - [ ] Add receipt and invoice uploads with an in-page preview
-- [ ] Build a searchable and filterable ledger with date, category, subgroup, event, account, and status filters
+- [ ] Expand the searchable cash ledger with date, category, subgroup, event, account, and status filters
 - [ ] Add a transaction detail panel showing its receipt, approvals, and complete history
-- [ ] Show available balance, semester income, semester expenses, pending reimbursements, and missing-receipt alerts
+- [x] Show available cash, recorded income, club spending, pending reimbursements, and expected external funding
 - [ ] Preserve approved transactions by voiding them with a reason instead of permanently deleting them
 - [ ] Add CSV export for treasurer and university reporting
 
 ### 2. Reimbursements and budgets
 
-- [ ] Let members submit reimbursement requests and track their status
+- [x] Let members submit reimbursement requests with receipts and track their status
 - [ ] Let treasurers request corrections or missing documentation
 - [ ] Add review, approval, payment, and reconciliation steps
 - [ ] Support club-wide, semester, subgroup, event, and category budgets
@@ -115,6 +117,8 @@ The finance ledger should be the source of truth. Balances must be calculated fr
 | 2026-08-12 | Allow members to belong to multiple subgroups and support open, approval-based, and invitation-only enrollment. |
 | 2026-08-12 | Model attendance as real sessions; a canceled rehearsal creates no absence-producing session. |
 | 2026-08-12 | Treat the finance ledger as the source of truth and preserve approved records through voiding and audit history. |
+| 2026-08-12 | Separate purchases, cash payments, personal reimbursements, and external funding claims so linked workflows never double-count spending. |
+| 2026-08-12 | Store sensitive finance files in a dedicated private area; statements must be PDFs and never appear in the general club archive. |
 | 2026-08-12 | Deploy `main` automatically to production and use other branches for Vercel previews. |
 
 ## Updating this roadmap
