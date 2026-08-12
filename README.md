@@ -1,112 +1,155 @@
 # Bharat Sangeet at UNC Chapel Hill
 
-The private member and executive portal for Bharat Sangeet, the Carnatic music club at the University of North Carolina at Chapel Hill.
+Bharat Sangeet's shared digital home for the Carnatic music community at the University of North Carolina at Chapel Hill. The application combines a public club presence with private club-wide and subgroup workspaces for members, executives, and administrators.
 
-## Google authentication
+## Living roadmap
 
-The portal signs members in through Google using Supabase Auth. Configure Google with this authorized redirect URI:
+Last updated: **August 12, 2026**
 
-```text
-https://zykujvpioxkktqppeqpu.supabase.co/auth/v1/callback
-```
+This README is the project's source of truth for product direction. Update the checkboxes and decision log whenever a roadmap item is shipped or the club changes direction.
 
-Then enable Google under Supabase **Authentication → Sign In / Providers → Google** and paste the Google OAuth client ID and secret. Keep the production site URL and localhost URLs in Supabase's URL Configuration allow list.
+Legend: ✅ shipped · 🚧 in progress · 📌 planned · 💡 future idea
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+## Product model
 
-## Prerequisites
+- **Public site:** Club information and selected concert recordings for anyone.
+- **Club workspace:** Announcements, dates, members, and resources shared across Bharat Sangeet.
+- **Subgroup workspaces:** A member can belong to several subgroups, each with its own roster, recordings, documents, and attendance.
+- **Permissions:** New accounts become members automatically. Executives manage club operations and all subgroups; administrators also manage identities and permissions.
 
-- Node.js `>=22.13.0`
+## Current capabilities
 
-## Quick Start
+- [x] Google sign-in and automatic member profile creation
+- [x] Member names and contact-information directory
+- [x] Public club page with a curated concert archive
+- [x] Club-wide dashboard, calendar, documents, recordings, and photos
+- [x] Switchable subgroup workspaces with open, approval-based, or invitation-only enrollment
+- [x] Subgroup-specific documents and recordings
+- [x] Subgroup rosters and attendance sessions
+- [x] Executive finance ledger with income, expenses, categories, and running totals
+- [x] Administrator tools for member removal, role changes, announcements, and audit history
+- [x] Automatic production deployments from `main` and preview deployments from other Git branches
+
+## Roadmap
+
+### 1. Finance workspace — next priority
+
+The finance ledger should be the source of truth. Balances must be calculated from transactions rather than entered manually.
+
+- [ ] Replace signed amounts with explicit transaction types: income, expense, reimbursement, and transfer
+- [ ] Add transaction statuses: draft, submitted, approved, paid, reconciled, and voided
+- [ ] Add payment accounts, transaction dates, categories, notes, and related people
+- [ ] Associate transactions with a subgroup, concert, or other event when relevant
+- [ ] Add receipt and invoice uploads with an in-page preview
+- [ ] Build a searchable and filterable ledger with date, category, subgroup, event, account, and status filters
+- [ ] Add a transaction detail panel showing its receipt, approvals, and complete history
+- [ ] Show available balance, semester income, semester expenses, pending reimbursements, and missing-receipt alerts
+- [ ] Preserve approved transactions by voiding them with a reason instead of permanently deleting them
+- [ ] Add CSV export for treasurer and university reporting
+
+### 2. Reimbursements and budgets
+
+- [ ] Let members submit reimbursement requests and track their status
+- [ ] Let treasurers request corrections or missing documentation
+- [ ] Add review, approval, payment, and reconciliation steps
+- [ ] Support club-wide, semester, subgroup, event, and category budgets
+- [ ] Compare budgeted, committed, and actual spending
+- [ ] Warn executives at configurable budget thresholds without automatically blocking valid spending
+- [ ] Consider two-person approval for unusually large expenses
+
+### 3. Self-service attendance
+
+- [ ] Let an executive open a time-limited attendance session for a subgroup
+- [ ] Generate a short code that members enter while the session is open
+- [ ] Prevent members outside the subgroup from checking into its session
+- [ ] Close sessions explicitly and calculate absences only after closure
+- [ ] Allow executives to mark excused absences and correct exceptional cases
+- [ ] Flag members after a configurable number of absences
+- [ ] Notify relevant executives while keeping attendance private from other members
+- [ ] Keep canceled rehearsals out of attendance calculations by not creating or by canceling their session
+
+### 4. Subgroup-centered organization
+
+- [ ] Make the workspace selector the consistent way to move between the whole club and a member's subgroups
+- [ ] Show each workspace's overview, dates, documents, recordings, announcements, roster, and attendance in one logical place
+- [ ] Distinguish club-wide resources from subgroup resources to remove redundant archive pages
+- [ ] Add an enrollment-request queue for executives and subgroup managers
+- [ ] Add clear join, pending, approved, waitlisted, and invitation-only states
+- [ ] Preserve access for members who belong to multiple subgroups
+- [ ] Add subgroup-level leadership permissions without granting full executive access
+
+### 5. UI, reliability, and accessibility
+
+- [ ] Replace remaining native-looking controls with accessible components that match the Carolina/classical visual system
+- [ ] Add loading, disabled, success, error, and optimistic states to every mutation
+- [ ] Confirm destructive actions and explain what data will be retained
+- [ ] Improve mobile layouts, keyboard navigation, focus states, and screen-reader labels
+- [ ] Add friendly empty states and first-use guidance for new members and executives
+- [ ] Add automated tests for authentication, permissions, subgroup enrollment, uploads, and finance calculations
+- [ ] Add monitoring for failed uploads, database errors, and failed production deployments
+
+## Future ideas
+
+- [ ] Email or in-app notifications for announcements, approvals, attendance flags, and upcoming dates
+- [ ] Calendar subscription or Google Calendar synchronization
+- [ ] Concert planning checklists and event-specific workspaces
+- [ ] Semester rollover and archived seasons
+- [ ] Member participation summaries that respect privacy
+- [ ] Optional receipt data extraction after the manual finance workflow is reliable
+
+## Technical guardrails
+
+- Authorization must be enforced in the database, not only by hiding UI controls.
+- All database changes should be captured as versioned migrations in `supabase/migrations/`.
+- Financial balances must be derived from ledger entries.
+- Approved financial records and administrative actions need an audit trail.
+- Private subgroup content must require an active subgroup membership or an appropriate management role.
+- Public concert recordings must be explicitly marked public; internal files remain private by default.
+- Every asynchronous action needs visible feedback and a recoverable failure state.
+
+## Decision log
+
+| Date | Decision |
+| --- | --- |
+| 2026-08-12 | Organize the member experience around club-wide and subgroup workspaces rather than disconnected resource pages. |
+| 2026-08-12 | Allow members to belong to multiple subgroups and support open, approval-based, and invitation-only enrollment. |
+| 2026-08-12 | Model attendance as real sessions; a canceled rehearsal creates no absence-producing session. |
+| 2026-08-12 | Treat the finance ledger as the source of truth and preserve approved records through voiding and audit history. |
+| 2026-08-12 | Deploy `main` automatically to production and use other branches for Vercel previews. |
+
+## Updating this roadmap
+
+When a change is made:
+
+1. Mark completed roadmap items with `[x]`.
+2. Add newly discovered work beneath the appropriate phase.
+3. Record consequential product or architecture choices in the decision log.
+4. Keep roadmap entries focused on user outcomes rather than implementation details.
+5. Commit the README update with the related feature whenever possible.
+
+## Local development
+
+Requirements: Node.js `>=22.13.0` and a configured Supabase project.
 
 ```bash
 npm install
 npm run dev
 npm run build
+npm test
 ```
 
-This starter does not use `wrangler.jsonc`.
+Create `.env.local` with:
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Google authentication uses this Supabase callback URL:
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+```text
+https://zykujvpioxkktqppeqpu.supabase.co/auth/v1/callback
+```
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Production: [bharat-sangeet-club.vercel.app](https://bharat-sangeet-club.vercel.app/)
