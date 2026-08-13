@@ -17,6 +17,7 @@ type ArchiveItem = {
   subgroup_id?: number | null;
 };
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string };
+type Announcement = { id: number; title: string; body: string; is_pinned: boolean; published_at: string };
 type EnrollmentMode = "open" | "approval" | "invite";
 type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive";
 type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode };
@@ -26,6 +27,7 @@ type AttendanceRecord = { session_id: number; member_id: string; status: "presen
 type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
 
 const pendingSignupNameKey = "bharat-sangeet-pending-signup-name";
+const clubWideSections = new Set<Section>(["home", "calendar", "members", "recordings", "documents", "gallery", "finances", "admin"]);
 
 const heroPhotos = [
   { src: "https://asianartsagency.co.uk/wp-content/uploads/2021/08/Trio-WP.jpg", alt: "Carnatic trio performing with veena and percussion" },
@@ -40,9 +42,11 @@ export default function Home() {
   const [section, setSection] = useState<Section>("home");
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [uploadType, setUploadType] = useState<ArchiveType>("recording");
   const [showEvent, setShowEvent] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -77,7 +81,7 @@ export default function Home() {
     const client = supabase;
     if (!client) return;
     setDataLoading(true);
-    const archiveResult = await client.from("archive_items").select("*").order("created_at", { ascending: false });
+    const archiveResult = await client.from("archive_items").select("*").is("subgroup_id", null).order("created_at", { ascending: false });
     if (archiveResult.error) notify("The club archive could not be loaded");
     const items = (archiveResult.data || []) as ArchiveItem[];
     const photos = items.filter((item) => item.type === "photo");
@@ -89,6 +93,9 @@ export default function Home() {
     const eventsResult = await client.from("events").select("*").order("starts_at", { ascending: true });
     if (eventsResult.error) notify("The club calendar could not be loaded");
     setEvents((eventsResult.data || []) as ClubEvent[]);
+    const announcementResult = await client.from("announcements").select("id,title,body,is_pinned,published_at").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(6);
+    if (announcementResult.error) notify("Club announcements could not be loaded");
+    setAnnouncements((announcementResult.data || []) as Announcement[]);
     setDataLoading(false);
   }, [notify]);
 
@@ -124,10 +131,19 @@ export default function Home() {
   const documents = archive.filter((item) => item.type === "document");
   const photos = archive.filter((item) => item.type === "photo");
   const canManage = role !== "member";
+  const isSubgroupSection = section === "groups" || section === "attendance";
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
   const availableWorkspaces = canManage ? groups : groups.filter((group) => activeGroupIds.has(group.id));
 
-  const navigate = (next: Section) => { setSection(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const navigate = (next: Section) => {
+    if (clubWideSections.has(next)) setWorkspaceId("club");
+    if (next === "recordings") setUploadType("recording");
+    else if (next === "documents") setUploadType("document");
+    else if (next === "gallery") setUploadType("photo");
+    if (next === "home" && user) loadData();
+    setSection(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   async function openFile(item: ArchiveItem) {
     if (!supabase) return;
@@ -150,12 +166,12 @@ export default function Home() {
     <main>
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
-        <WorkspaceSwitcher groups={availableWorkspaces} selected={workspaceId} role={role} onSelect={(next) => { setWorkspaceId(next); navigate(next === "club" ? "home" : "groups"); }} onDiscover={() => navigate("groups")} onManage={() => navigate("attendance")} />
+        {isSubgroupSection && <WorkspaceSwitcher groups={availableWorkspaces} selected={workspaceId} role={role} onSelect={(next) => { setWorkspaceId(next); navigate(next === "club" ? "home" : "groups"); }} onDiscover={() => navigate("groups")} onManage={() => navigate("attendance")} />}
         <PortalPageMenu section={section} role={role} onNavigate={navigate} />
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
-      {section === "home" && <ClubDashboard name={name} role={role} events={events} archive={archive} onNavigate={navigate} />}
+      {section === "home" && <ClubDashboard name={name} role={role} events={events} archive={archive} announcements={announcements} onNavigate={navigate} />}
 
       {false && section === "home" && <>
         <section className="hero"><div className="hero-copy"><p className="eyebrow">UNC CHAPEL HILL · 2026–27 SEASON</p><h1>Music remembered.<br /><em>Community connected.</em></h1><p className="lede">The shared home for UNC Chapel Hill's Carnatic music community—our recordings, repertoire, club resources, concert memories, and people.</p><div className="hero-actions"><button className="primary" onClick={() => navigate("recordings")}>Listen to the archive <span>→</span></button><button className="secondary" onClick={() => navigate("documents")}>Browse club resources</button></div></div><div className="hero-image"><img src={photos[0]?.signedUrl || heroPhotos[0].src} alt={photos[0]?.title || heroPhotos[0].alt} /><div className="image-caption"><span>UNC club archive</span><b>{photos[0]?.title || "Bharat Sangeet in concert"}</b></div></div></section>
@@ -183,12 +199,12 @@ export default function Home() {
 
       {section === "documents" && <section className="section-shell page-section"><PageTitle eyebrow="SHARED LIBRARY" title="Club documents" text="The practical side of our community—easy for every member to find and use." /><div className="toolbar"><p className="access-note">✓ All members can view and download shared files</p>{role === "executive" && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add document</button>}</div>{documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><span className="pill">{item.visibility}</span></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No documents yet" text={role === "executive" ? "Add the constitution, repertoire, or member guide." : "Shared club documents will appear here."} />}</section>}
 
-      {section === "gallery" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB MEMORIES" title="Photo archive" text="The rehearsals, stages, and friendships that shape Bharat Sangeet." />{photos.length ? <div className="gallery-grid">{photos.map((item, index) => <figure key={item.id} className={index === 0 ? "wide" : ""}><img src={item.signedUrl} alt={item.title} /><figcaption><b>{item.title}</b><span>{formatDate(item.created_at)}</span></figcaption></figure>)}</div> : <EmptyState title="No club photos yet" text={role === "executive" ? "Upload the first memory from a rehearsal or concert." : "Club photos will appear here."} />}</section>}
+      {section === "gallery" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB MEMORIES" title="Photo archive" text="The rehearsals, stages, and friendships that shape Bharat Sangeet." scope="Club-wide" /><div className="toolbar"><p className="access-note">✓ Photos are shared across the whole club</p>{canManage && <button className="primary" onClick={() => { setUploadType("photo"); setShowUpload(true); }}>＋ Add photo</button>}</div>{photos.length ? <div className="gallery-grid">{photos.map((item, index) => <figure key={item.id} className={index === 0 ? "wide" : ""}><img src={item.signedUrl} alt={item.title} /><figcaption><b>{item.title}</b><span>{formatDate(item.created_at)}</span></figcaption></figure>)}</div> : <EmptyState title="No club photos yet" text={canManage ? "Upload the first memory from a rehearsal or concert." : "Club photos will appear here."} />}</section>}
 
       {section === "finances" && <FinancePage user={user} role={role} groups={availableWorkspaces} events={events} notify={notify} />}
 
       <footer><div className="footer-brand"><span className="brand-mark">sa</span><div><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></div></div><p>Carnatic music at the University of North Carolina at Chapel Hill.</p><p>2026–27 Season</p></footer>
-      {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
+      {showUpload && <ArchiveModal user={user} initialType={uploadType} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
       {showEvent && <EventModal user={user} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(); notify("Important date added"); }} notify={notify} />}
       {toast && <div className="toast" role="status">✓ {toast}</div>}
     </main>
@@ -208,10 +224,15 @@ function AdminPage({ user, notify }: { user: User; notify: (message: string) => 
   return <section className="section-shell page-section"><PageTitle eyebrow="ADMINISTRATION" title="Club control center" text="Manage identities, permissions, communications, and the health of the club workspace." /><div className="admin-stats"><div><strong>{members.length}</strong><span>Total members</span></div><div><strong>{members.filter((member) => member.role === "executive").length}</strong><span>Executives</span></div><div><strong>{members.filter((member) => member.role === "admin").length}</strong><span>Administrators</span></div><div><strong>{members.filter((member) => !member.phone || !member.specialty).length}</strong><span>Incomplete profiles</span></div></div><div className="admin-grid"><section className="admin-panel admin-members"><div className="admin-panel-heading"><div><p className="eyebrow">ACCESS & IDENTITIES</p><h2>Manage members</h2></div><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search members" /></label></div><div className="admin-member-head"><span>Member</span><span>Permission</span><span>Action</span></div>{filtered.map((member) => <div className="admin-member-row" key={member.id}><div><b>{member.full_name || member.email}</b><small>{member.email}</small></div><select value={member.role} disabled={member.id === user.id} onChange={(event) => changeRole(member, event.target.value as ClubRole)}><option value="member">Member</option><option value="executive">Executive</option><option value="admin">Admin</option></select><button className="danger-button" disabled={member.id === user.id} onClick={() => deleteMember(member)}>Remove</button></div>)}</section><aside><form className="admin-panel announcement-form" onSubmit={createAnnouncement}><p className="eyebrow">CLUB-WIDE</p><h2>Post announcement</h2><label>Title<input name="title" required maxLength={140} /></label><label>Message<textarea name="body" required rows={5} /></label><label className="check-label"><input name="is_pinned" type="checkbox" /> Pin to dashboard</label><button className="primary">Publish announcement</button></form><section className="admin-panel"><div className="admin-panel-heading"><h2>Announcements</h2><span>{announcements.length}</span></div>{announcements.slice(0, 5).map((item) => <article className="admin-announcement" key={item.id}><div><b>{item.is_pinned ? "◆ " : ""}{item.title}</b><small>{formatDate(item.published_at)}</small></div><button onClick={() => removeAnnouncement(item.id)}>×</button></article>)}</section></aside></div><section className="admin-panel audit-panel"><div className="admin-panel-heading"><div><p className="eyebrow">SECURITY</p><h2>Recent admin activity</h2></div><span>Last 20 actions</span></div>{audit.length ? audit.map((entry) => <div className="audit-row" key={entry.id}><span>{entry.action === "role_changed" ? "Permission changed" : "Member removed"}</span><b>{entry.target_email}</b><small>by {entry.actor_email} · {formatDate(entry.created_at)}</small></div>) : <p className="workspace-empty">No administrative changes recorded yet.</p>}</section></section>;
 }
 
-function ClubDashboard({ name, role, events, archive, onNavigate }: { name: string; role: ClubRole; events: ClubEvent[]; archive: ArchiveItem[]; onNavigate: (section: Section) => void }) {
+function ClubDashboard({ name, role, events, archive, announcements, onNavigate }: { name: string; role: ClubRole; events: ClubEvent[]; archive: ArchiveItem[]; announcements: Announcement[]; onNavigate: (section: Section) => void }) {
   const upcoming = events.filter((event) => new Date(event.starts_at) >= new Date()).slice(0, 4);
   const clubItems = archive.filter((item) => !item.subgroup_id);
+  if (announcements.length) return <><AnnouncementFeed announcements={announcements} /><ClubDashboard name={name} role={role} events={events} archive={archive} announcements={[]} onNavigate={onNavigate} /></>;
   return <section className="portal-dashboard"><div className="dashboard-welcome"><p className="eyebrow">UNC BHARAT SANGEET</p><h1>Welcome back, {name}.</h1><p>Your club announcements, upcoming dates, resources, and subgroup spaces—all in one place.</p></div><div className="dashboard-layout"><div><div className="dashboard-section-title"><h2>My club</h2><span>{role === "executive" ? "Executive view" : "Member view"}</span></div><div className="course-grid"><button onClick={() => onNavigate("groups")}><span>♫</span><small>ENROLLED SPACES</small><h3>My subgroups</h3><p>Open your ensemble spaces, files, recordings, and attendance.</p><b>Enter subgroups →</b></button><button onClick={() => onNavigate("documents")}><span>▤</span><small>CLUB-WIDE</small><h3>Shared resources</h3><p>{clubItems.filter((item) => item.type === "document").length} documents available to the whole club.</p><b>Browse resources →</b></button><button onClick={() => onNavigate("members")}><span>◎</span><small>COMMUNITY</small><h3>Member directory</h3><p>Find and connect with fellow Bharat Sangeet members.</p><b>View members →</b></button></div></div><aside className="dashboard-sidebar"><h2>Coming up</h2>{upcoming.length ? upcoming.map((event) => <article key={event.id}><time>{new Date(event.starts_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time><div><b>{event.title}</b><span>{event.location || "Details in calendar"}</span></div></article>) : <p>No upcoming dates yet.</p>}<button className="secondary" onClick={() => onNavigate("calendar")}>Open full calendar</button></aside></div></section>;
+}
+
+function AnnouncementFeed({ announcements }: { announcements: Announcement[] }) {
+  return <section className="announcement-feed" aria-labelledby="announcement-heading"><div className="announcement-feed-heading"><div><p className="eyebrow">CLUB-WIDE</p><h2 id="announcement-heading">Announcements</h2></div><span>{announcements.length} recent</span></div><div className="announcement-list">{announcements.map((item) => <article className={item.is_pinned ? "pinned" : ""} key={item.id}>{item.is_pinned && <span className="announcement-pin">Pinned</span>}<div><h3>{item.title}</h3><p>{item.body}</p></div><time>{formatDate(item.published_at)}</time></article>)}</div></section>;
 }
 
 function WorkspaceSwitcher({ groups, selected, role, onSelect, onDiscover, onManage }: { groups: Subgroup[]; selected: number | "club"; role: ClubRole; onSelect: (workspace: number | "club") => void; onDiscover: () => void; onManage: () => void }) {
@@ -231,9 +252,23 @@ function WorkspaceSwitcher({ groups, selected, role, onSelect, onDiscover, onMan
 function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
   const [open, setOpen] = useState(false); const shell = useRef<HTMLDivElement>(null);
   const labels: Record<Section, string> = { home: "Overview", groups: "Subgroups", calendar: "Calendar", members: "Members", attendance: "Attendance", recordings: "Recordings", documents: "Resources", gallery: "Photos", finances: "Finances", admin: "Admin" };
-  const pages: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "gallery", "finances", ...(role === "admin" ? ["admin" as Section] : [])];
-  useEffect(() => { function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); } function escape(event: KeyboardEvent) { if (event.key === "Escape") setOpen(false); } document.addEventListener("mousedown", close); document.addEventListener("keydown", escape); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); }; }, []);
-  return <div className="page-menu-shell" ref={shell}><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Page</small><b>{labels[section]}</b></span><i>⌄</i></button>{open && <div className="page-menu" role="menu">{pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => { onNavigate(page); setOpen(false); }}><span>{labels[page]}</span>{page === section && <i>✓</i>}</button>)}</div>}</div>;
+  const primaryPages: Section[] = ["home", "calendar", "members", "gallery"];
+  const libraryPages: Section[] = ["recordings", "documents"];
+  const subgroupPages: Section[] = ["groups", "attendance"];
+  const managePages: Section[] = ["finances", ...(role === "admin" ? ["admin" as Section] : [])];
+  const menuPages = [...primaryPages, ...libraryPages, ...subgroupPages, ...managePages];
+  useEffect(() => {
+    function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); }
+    function escape(event: KeyboardEvent) { if (event.key === "Escape") { setOpen(false); shell.current?.querySelector<HTMLButtonElement>(".page-menu-trigger")?.focus(); } }
+    document.addEventListener("mousedown", close); document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+  }, []);
+  function go(page: Section) { onNavigate(page); setOpen(false); }
+  function menuGroup(title: string, pages: Section[], global = false) {
+    if (!pages.length) return null;
+    return <div className="page-menu-group"><p>{title}</p>{pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => go(page)}><span>{labels[page]}</span>{global && <small>Club-wide</small>}{page === section && <i>✓</i>}</button>)}</div>;
+  }
+  return <div className="portal-navigation" ref={shell}><nav className="primary-navigation" aria-label="Club-wide navigation">{primaryPages.map((page) => <button className={page === section ? "active" : ""} aria-current={page === section ? "page" : undefined} key={page} onClick={() => go(page)}>{labels[page]}</button>)}</nav><div className="page-menu-shell"><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Navigate</small><b>{labels[section]}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="page-menu" role="menu" aria-label="All pages">{menuGroup("CLUB-WIDE", primaryPages, true)}{menuGroup("CLUB LIBRARY", libraryPages, true)}{menuGroup("SUBGROUPS", subgroupPages)}{menuGroup("MANAGE CLUB", managePages, true)}<span className="menu-count">{menuPages.length} destinations</span></div>}</div></div>;
 }
 
 function SubgroupSpaces({ user, role, selectedWorkspace, onWorkspaceChange, onWorkspacesChanged, notify }: { user: User; role: ClubRole; selectedWorkspace: number | "club"; onWorkspaceChange: (workspace: number | "club") => void; onWorkspacesChanged: () => void; notify: (message: string) => void }) {
@@ -418,8 +453,8 @@ function LoginScreen({ onBack }: { onBack: () => void }) {
   return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><span className="brand-mark">sa</span><h1>Music remembered.<br /><em>Community connected.</em></h1></div></div><section className="login-panel"><div className="login-box"><p className="eyebrow">UNC CHAPEL HILL MEMBER PORTAL</p><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setErrorMessage(""); window.sessionStorage.removeItem(pendingSignupNameKey); }}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setErrorMessage(""); }}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join the UNC Chapel Hill club. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p>{mode === "signup" && <label className="signup-name">Preferred name<input autoComplete="name" value={preferredName} onChange={(event) => setPreferredName(event.target.value)} placeholder="What should we call you?" required /></label>}<button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, subgroups, and attendance."}</small></div></section></main>;
 }
 
-function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
-  const [type, setType] = useState<ArchiveType>("recording");
+function ArchiveModal({ user, initialType = "recording", onClose, onSaved, notify }: { user: User; initialType?: ArchiveType; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const [type, setType] = useState<ArchiveType>(initialType);
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase) return; setSaving(true);
@@ -436,7 +471,10 @@ function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose:
   return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add to club records</h2><label>Item type<select value={type} onChange={(e) => setType(e.target.value as ArchiveType)}><option value="recording">Recording</option><option value="document">Document</option><option value="photo">Photo</option></select></label><label>Title<input name="title" required placeholder="Give this item a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label>{type === "recording" && <div className="form-pair"><label>Raga<input name="raga" /></label><label>Tala<input name="tala" /></label></div>}<label>Choose file<input name="file" type="file" required accept={type === "recording" ? "audio/*,video/*" : type === "photo" ? "image/*" : undefined} /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option>{type === "recording" && <option value="public">Everyone (public concert)</option>}</select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save to archive"}</button></form></div>;
 }
 
-function PageTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) { return <div className="page-title"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div>; }
+function PageTitle({ eyebrow, title, text, scope }: { eyebrow: string; title: string; text: string; scope?: "Club-wide" | "Subgroup" }) {
+  const resolvedScope = scope || (["Photo archive", "Club finances", "Club control center"].includes(title) ? "Club-wide" : undefined);
+  return <div className="page-title">{resolvedScope && <span className="scope-badge">{resolvedScope}</span>}<p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div>;
+}
 function EmptyState({ title, text }: { title: string; text: string }) { return <div className="empty-state"><span>sa</span><h3>{title}</h3><p>{text}</p></div>; }
 function LoadingScreen() { return <main className="loading-screen"><span className="brand-mark">sa</span><p>Opening the club archive…</p></main>; }
 function InlineLoading() { return <div className="inline-loading">Loading the archive…</div>; }
