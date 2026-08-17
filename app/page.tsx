@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { AttendancePage } from "./attendance";
 import { FinancePage } from "./finance";
 
 type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "gallery" | "finances" | "admin";
@@ -166,7 +167,7 @@ export default function Home() {
     <main>
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><span className="brand-mark">sa</span><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
-        {isSubgroupSection && <WorkspaceSwitcher groups={availableWorkspaces} selected={workspaceId} role={role} onSelect={(next) => { setWorkspaceId(next); navigate(next === "club" ? "home" : "groups"); }} onDiscover={() => navigate("groups")} onManage={() => navigate("attendance")} />}
+        {isSubgroupSection && <WorkspaceSwitcher groups={availableWorkspaces} selected={workspaceId} role={role} onSelect={(next) => { setWorkspaceId(next); if (section !== "attendance") navigate(next === "club" ? "home" : "groups"); }} onDiscover={() => navigate("groups")} onManage={() => navigate("groups")} />}
         <PortalPageMenu section={section} role={role} onNavigate={navigate} />
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
@@ -193,7 +194,7 @@ export default function Home() {
 
       {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Rehearsals, performances, meetings, deadlines, and everything the club needs to remember." /><div className="toolbar"><p className="access-note">✓ Dates are shared with every approved club member</p>{canManage && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={events} canManage={canManage} onDelete={deleteEvent} />}</section>}
 
-      {section === "attendance" && <AttendancePage user={user} role={role} selectedWorkspace={workspaceId} onWorkspaceChange={setWorkspaceId} onWorkspacesChanged={loadWorkspaces} notify={notify} />}
+      {section === "attendance" && <AttendancePage user={user} role={role} selectedWorkspace={workspaceId} groups={availableWorkspaces} notify={notify} />}
 
       {section === "members" && <MembersPage user={user} notify={notify} />}
 
@@ -334,7 +335,7 @@ function MembersPage({ user, notify }: { user: User; notify: (message: string) =
   return <section className="section-shell page-section"><PageTitle eyebrow="CLUB COMMUNITY" title="Members directory" text="Contact information for the people who make music with Bharat Sangeet at UNC Chapel Hill." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, year, or musical interest" /></label><button className="primary" onClick={() => setEditing(true)}>Edit my contact info</button></div><p className="directory-note">This directory is visible only to signed-in club members.</p>{filtered.length ? <div className="member-grid">{filtered.map((member) => <article className="member-card" key={member.id}><div className="member-initials">{initials(member.full_name || member.email)}</div><div className="member-card-heading"><h3>{member.full_name || member.email.split("@")[0]}</h3><span className={`member-role ${member.role}`}>{member.role}</span></div><p>{member.specialty || "Musical interests not added yet"}</p><dl><div><dt>Email</dt><dd><a href={`mailto:${member.email}`}>{member.email}</a></dd></div>{member.phone && <div><dt>Phone</dt><dd><a href={`tel:${member.phone}`}>{member.phone}</a></dd></div>}{member.class_year && <div><dt>Class year</dt><dd>{member.class_year}</dd></div>}</dl></article>)}</div> : <EmptyState title="No members found" text="Try another search." />}{editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><form className="modal" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setEditing(false)}>×</button><p className="eyebrow">MY MEMBER PROFILE</p><h2>Contact information</h2><label>Preferred name<input name="full_name" required defaultValue={ownProfile?.full_name || ""} /></label><label>Email<input value={ownProfile?.email || user.email || ""} disabled /></label><label>Phone number<input name="phone" type="tel" defaultValue={ownProfile?.phone || ""} placeholder="Optional" /></label><div className="form-pair"><label>Class year<input name="class_year" defaultValue={ownProfile?.class_year || ""} placeholder="2028" /></label><label>Voice / instrument<input name="specialty" defaultValue={ownProfile?.specialty || ""} placeholder="Vocal, violin, mridangam…" /></label></div><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form></div>}</section>;
 }
 
-function AttendancePage({ user, role, selectedWorkspace, onWorkspaceChange, onWorkspacesChanged, notify }: { user: User; role: ClubRole; selectedWorkspace: number | "club"; onWorkspaceChange: (workspace: number | "club") => void; onWorkspacesChanged: () => void; notify: (message: string) => void }) {
+function LegacyAttendancePage({ user, role, selectedWorkspace, onWorkspaceChange, onWorkspacesChanged, notify }: { user: User; role: ClubRole; selectedWorkspace: number | "club"; onWorkspaceChange: (workspace: number | "club") => void; onWorkspacesChanged: () => void; notify: (message: string) => void }) {
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
