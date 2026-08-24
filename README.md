@@ -4,7 +4,7 @@ Bharat Sangeet's shared digital home for the Carnatic music community at the Uni
 
 ## Living roadmap
 
-Last updated: **August 12, 2026**
+Last updated: **August 24, 2026**
 
 This README is the project's source of truth for product direction. Update the checkboxes and decision log whenever a roadmap item is shipped or the club changes direction.
 
@@ -22,7 +22,7 @@ Legend: ✅ shipped · 🚧 in progress · 📌 planned · 💡 future idea
 - [x] Google sign-in and automatic member profile creation
 - [x] Member names and contact-information directory
 - [x] Public club page with a curated concert archive
-- [x] Club-wide dashboard, calendar, documents, recordings, and photos
+- [x] Club-wide dashboard, calendar, useful links, documents, recordings, and photos
 - [x] Switchable subgroup workspaces with open, approval-based, or invitation-only enrollment
 - [x] Subgroup-specific documents and recordings
 - [x] Subgroup rosters and attendance sessions
@@ -120,6 +120,7 @@ The finance ledger should be the source of truth. Balances must be calculated fr
 | 2026-08-12 | Separate purchases, cash payments, personal reimbursements, and external funding claims so linked workflows never double-count spending. |
 | 2026-08-12 | Store sensitive finance files in a dedicated private area; statements must be PDFs and never appear in the general club archive. |
 | 2026-08-12 | Deploy `main` automatically to production and use other branches for Vercel previews. |
+| 2026-08-24 | Store external club links separately from uploaded files while presenting both together in the club-wide Resources page. |
 
 ## Updating this roadmap
 

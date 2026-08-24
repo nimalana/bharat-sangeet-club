@@ -18,6 +18,7 @@ type ArchiveItem = {
 };
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string };
 type Announcement = { id: number; title: string; body: string; is_pinned: boolean; published_at: string };
+type ResourceLink = { id: number; title: string; description: string; url: string; created_at: string };
 type EnrollmentMode = "open" | "approval" | "invite";
 type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive";
 type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode };
@@ -43,11 +44,16 @@ export default function Home() {
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [resourceLinks, setResourceLinks] = useState<ResourceLink[]>([]);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [uploadType, setUploadType] = useState<ArchiveType>("recording");
   const [showEvent, setShowEvent] = useState(false);
+  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [savingLink, setSavingLink] = useState(false);
+  const [deletingLinkId, setDeletingLinkId] = useState<number | null>(null);
+  const [linkError, setLinkError] = useState("");
   const [dataLoading, setDataLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [groups, setGroups] = useState<Subgroup[]>([]);
@@ -81,7 +87,12 @@ export default function Home() {
     const client = supabase;
     if (!client) return;
     setDataLoading(true);
-    const archiveResult = await client.from("archive_items").select("*").is("subgroup_id", null).order("created_at", { ascending: false });
+    const [archiveResult, eventsResult, announcementResult, linksResult] = await Promise.all([
+      client.from("archive_items").select("*").is("subgroup_id", null).order("created_at", { ascending: false }),
+      client.from("events").select("*").order("starts_at", { ascending: true }),
+      client.from("announcements").select("id,title,body,is_pinned,published_at").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(6),
+      client.from("resource_links").select("id,title,description,url,created_at").order("created_at", { ascending: false }),
+    ]);
     if (archiveResult.error) notify("The club archive could not be loaded");
     const items = (archiveResult.data || []) as ArchiveItem[];
     const photos = items.filter((item) => item.type === "photo");
@@ -90,12 +101,12 @@ export default function Home() {
       item.signedUrl = data?.signedUrl;
     }));
     setArchive(items);
-    const eventsResult = await client.from("events").select("*").order("starts_at", { ascending: true });
     if (eventsResult.error) notify("The club calendar could not be loaded");
     setEvents((eventsResult.data || []) as ClubEvent[]);
-    const announcementResult = await client.from("announcements").select("id,title,body,is_pinned,published_at").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(6);
     if (announcementResult.error) notify("Club announcements could not be loaded");
     setAnnouncements((announcementResult.data || []) as Announcement[]);
+    if (linksResult.error) notify("Club resource links could not be loaded");
+    setResourceLinks((linksResult.data || []) as ResourceLink[]);
     setDataLoading(false);
   }, [notify]);
 
@@ -158,6 +169,52 @@ export default function Home() {
     if (error) notify(error.message); else { notify("Calendar date removed"); loadData(); }
   }
 
+  async function addResourceLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || savingLink) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const title = String(form.get("title") || "").trim();
+    const description = String(form.get("description") || "").trim();
+    let url: string;
+
+    if (!title) {
+      setLinkError("Give this resource a clear title.");
+      return;
+    }
+
+    try {
+      url = normalizeResourceUrl(String(form.get("url") || ""));
+    } catch {
+      setLinkError("Enter a complete web address, such as docs.google.com/document/…");
+      return;
+    }
+
+    setSavingLink(true);
+    setLinkError("");
+    const { data, error } = await supabase.from("resource_links").insert({ title, description, url, created_by: user.id }).select("id,title,description,url,created_at").single();
+    setSavingLink(false);
+    if (error || !data) {
+      setLinkError(error?.code === "42501" ? "Your account no longer has permission to add club resources." : "The link could not be saved. Check the address and try again.");
+      return;
+    }
+
+    setResourceLinks((current) => [data as ResourceLink, ...current]);
+    formElement.reset();
+    setShowLinkForm(false);
+    notify("Resource link added");
+  }
+
+  async function deleteResourceLink(link: ResourceLink) {
+    if (!supabase || deletingLinkId || !window.confirm(`Remove “${link.title}” from club resources?`)) return;
+    setDeletingLinkId(link.id);
+    const { error } = await supabase.from("resource_links").delete().eq("id", link.id);
+    setDeletingLinkId(null);
+    if (error) { notify("The resource link could not be removed"); return; }
+    setResourceLinks((current) => current.filter((item) => item.id !== link.id));
+    notify("Resource link removed");
+  }
+
   if (authLoading) return <LoadingScreen />;
   if (!supabase) return <SetupScreen />;
   if (!user) return showLogin ? <LoginScreen onBack={() => setShowLogin(false)} /> : <PublicSite onSignIn={() => setShowLogin(true)} />;
@@ -171,7 +228,7 @@ export default function Home() {
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
-      {section === "home" && <ClubDashboard name={name} role={role} events={events} archive={archive} announcements={announcements} onNavigate={navigate} />}
+      {section === "home" && <ClubDashboard name={name} role={role} events={events} archive={archive} resourceLinks={resourceLinks} announcements={announcements} onNavigate={navigate} />}
 
       {false && section === "home" && <>
         <section className="hero"><div className="hero-copy"><p className="eyebrow">UNC CHAPEL HILL · 2026–27 SEASON</p><h1>Music remembered.<br /><em>Community connected.</em></h1><p className="lede">The shared home for UNC Chapel Hill's Carnatic music community—our recordings, repertoire, club resources, concert memories, and people.</p><div className="hero-actions"><button className="primary" onClick={() => navigate("recordings")}>Listen to the archive <span>→</span></button><button className="secondary" onClick={() => navigate("documents")}>Browse club resources</button></div></div><div className="hero-image"><img src={photos[0]?.signedUrl || heroPhotos[0].src} alt={photos[0]?.title || heroPhotos[0].alt} /><div className="image-caption"><span>UNC club archive</span><b>{photos[0]?.title || "Bharat Sangeet in concert"}</b></div></div></section>
@@ -197,7 +254,7 @@ export default function Home() {
 
       {section === "members" && <MembersPage user={user} notify={notify} />}
 
-      {section === "documents" && <section className="section-shell page-section"><PageTitle eyebrow="SHARED LIBRARY" title="Club documents" text="The practical side of our community—easy for every member to find and use." /><div className="toolbar"><p className="access-note">✓ All members can view and download shared files</p>{canManage && <button className="primary" onClick={() => setShowUpload(true)}>＋ Add document</button>}</div>{documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><span className="pill">{item.visibility}</span></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No documents yet" text={canManage ? "Add the constitution, repertoire, or member guide." : "Shared club documents will appear here."} />}</section>}
+      {section === "documents" && <section className="section-shell page-section resources-page"><PageTitle eyebrow="SHARED LIBRARY" title="Club resources" text="Useful links and shared documents for every Bharat Sangeet member." scope="Club-wide" /><div className="toolbar resource-toolbar"><p className="access-note">All approved members can open these resources</p>{canManage && <div className="toolbar-actions"><button className="secondary" onClick={() => { setShowLinkForm((current) => !current); setLinkError(""); }}>{showLinkForm ? "Cancel link" : "Add link"}</button><button className="primary" onClick={() => setShowUpload(true)}>Upload document</button></div>}</div>{showLinkForm && canManage && <form className="resource-link-form" onSubmit={addResourceLink} aria-busy={savingLink}><div className="resource-form-heading"><div><h2>Add a useful link</h2><p>Share a Google Drive file, sign-up form, sheet, or another trusted club resource.</p></div><span>Visible to all members</span></div><div className="resource-form-fields"><label>Title<input name="title" required maxLength={160} disabled={savingLink} placeholder="Fall concert sign-up" /></label><label>Web address<input name="url" type="text" inputMode="url" autoComplete="url" required maxLength={2048} disabled={savingLink} placeholder="docs.google.com/document/…" /></label><label className="resource-description">Description <span>Optional</span><textarea name="description" maxLength={1000} disabled={savingLink} rows={2} placeholder="Tell members when or why to use this link" /></label><button className="primary" disabled={savingLink}>{savingLink ? "Saving link…" : "Save link"}</button></div>{linkError && <p className="resource-form-error" role="alert">{linkError}</p>}</form>}<section className="resource-collection"><div className="resource-collection-heading"><div><h2>Useful links</h2><p>Forms, shared drives, sheets, and frequently used pages.</p></div><span>{resourceLinks.length} {resourceLinks.length === 1 ? "link" : "links"}</span></div>{dataLoading ? <InlineLoading /> : resourceLinks.length ? <div className="resource-link-list">{resourceLinks.map((link) => <article className="resource-link-row" key={link.id}><div><span>{resourceHostname(link.url)}</span><h3>{link.title}</h3><p>{link.description || `Shared ${formatDate(link.created_at)}`}</p></div><div className="resource-link-actions"><a href={link.url} target="_blank" rel="noopener noreferrer">Open link</a>{canManage && <button disabled={deletingLinkId === link.id} onClick={() => deleteResourceLink(link)} aria-label={`Remove ${link.title}`}>{deletingLinkId === link.id ? "Removing…" : "Remove"}</button>}</div></article>)}</div> : <p className="resource-collection-empty">{canManage ? "No links yet. Add the first frequently used club resource." : "Club links will appear here when executives add them."}</p>}</section><section className="resource-collection"><div className="resource-collection-heading"><div><h2>Documents</h2><p>Files stored securely in the club archive.</p></div><span>{documents.length} {documents.length === 1 ? "file" : "files"}</span></div>{dataLoading ? <InlineLoading /> : documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><span className="pill">{item.visibility}</span></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No documents yet" text={canManage ? "Upload the constitution, repertoire, or member guide." : "Shared club documents will appear here."} />}</section></section>}
 
       {section === "gallery" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB MEMORIES" title="Photo archive" text="The rehearsals, stages, and friendships that shape Bharat Sangeet." scope="Club-wide" /><div className="toolbar"><p className="access-note">✓ Photos are shared across the whole club</p>{canManage && <button className="primary" onClick={() => { setUploadType("photo"); setShowUpload(true); }}>＋ Add photo</button>}</div>{photos.length ? <div className="gallery-grid">{photos.map((item, index) => <figure key={item.id} className={index === 0 ? "wide" : ""}><img src={item.signedUrl} alt={item.title} /><figcaption><b>{item.title}</b><span>{formatDate(item.created_at)}</span></figcaption></figure>)}</div> : <EmptyState title="No club photos yet" text={canManage ? "Upload the first memory from a rehearsal or concert." : "Club photos will appear here."} />}</section>}
 
@@ -224,11 +281,11 @@ function AdminPage({ user, notify }: { user: User; notify: (message: string) => 
   return <section className="section-shell page-section"><PageTitle eyebrow="ADMINISTRATION" title="Club control center" text="Manage identities, permissions, communications, and the health of the club workspace." /><div className="admin-stats"><div><strong>{members.length}</strong><span>Total members</span></div><div><strong>{members.filter((member) => member.role === "executive").length}</strong><span>Executives</span></div><div><strong>{members.filter((member) => member.role === "admin").length}</strong><span>Administrators</span></div><div><strong>{members.filter((member) => !member.phone || !member.specialty).length}</strong><span>Incomplete profiles</span></div></div><div className="admin-grid"><section className="admin-panel admin-members"><div className="admin-panel-heading"><div><p className="eyebrow">ACCESS & IDENTITIES</p><h2>Manage members</h2></div><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search members" /></label></div><div className="admin-member-head"><span>Member</span><span>Permission</span><span>Action</span></div>{filtered.map((member) => <div className="admin-member-row" key={member.id}><div><b>{member.full_name || member.email}</b><small>{member.email}</small></div><select value={member.role} disabled={member.id === user.id} onChange={(event) => changeRole(member, event.target.value as ClubRole)}><option value="member">Member</option><option value="executive">Executive</option><option value="admin">Admin</option></select><button className="danger-button" disabled={member.id === user.id} onClick={() => deleteMember(member)}>Remove</button></div>)}</section><aside><form className="admin-panel announcement-form" onSubmit={createAnnouncement}><p className="eyebrow">CLUB-WIDE</p><h2>Post announcement</h2><label>Title<input name="title" required maxLength={140} /></label><label>Message<textarea name="body" required rows={5} /></label><label className="check-label"><input name="is_pinned" type="checkbox" /> Pin to dashboard</label><button className="primary">Publish announcement</button></form><section className="admin-panel"><div className="admin-panel-heading"><h2>Announcements</h2><span>{announcements.length}</span></div>{announcements.slice(0, 5).map((item) => <article className="admin-announcement" key={item.id}><div><b>{item.is_pinned ? "◆ " : ""}{item.title}</b><small>{formatDate(item.published_at)}</small></div><button onClick={() => removeAnnouncement(item.id)}>×</button></article>)}</section></aside></div><section className="admin-panel audit-panel"><div className="admin-panel-heading"><div><p className="eyebrow">SECURITY</p><h2>Recent admin activity</h2></div><span>Last 20 actions</span></div>{audit.length ? audit.map((entry) => <div className="audit-row" key={entry.id}><span>{entry.action === "role_changed" ? "Permission changed" : "Member removed"}</span><b>{entry.target_email}</b><small>by {entry.actor_email} · {formatDate(entry.created_at)}</small></div>) : <p className="workspace-empty">No administrative changes recorded yet.</p>}</section></section>;
 }
 
-function ClubDashboard({ name, role, events, archive, announcements, onNavigate }: { name: string; role: ClubRole; events: ClubEvent[]; archive: ArchiveItem[]; announcements: Announcement[]; onNavigate: (section: Section) => void }) {
+function ClubDashboard({ name, role, events, archive, resourceLinks, announcements, onNavigate }: { name: string; role: ClubRole; events: ClubEvent[]; archive: ArchiveItem[]; resourceLinks: ResourceLink[]; announcements: Announcement[]; onNavigate: (section: Section) => void }) {
   const upcoming = events.filter((event) => new Date(event.starts_at) >= new Date()).slice(0, 4);
   const clubItems = archive.filter((item) => !item.subgroup_id);
-  if (announcements.length) return <><AnnouncementFeed announcements={announcements} /><ClubDashboard name={name} role={role} events={events} archive={archive} announcements={[]} onNavigate={onNavigate} /></>;
-  return <section className="portal-dashboard"><div className="dashboard-welcome"><p className="eyebrow">UNC BHARAT SANGEET</p><h1>Welcome back, {name}.</h1><p>Your club announcements, upcoming dates, resources, and subgroup spaces—all in one place.</p></div><div className="dashboard-layout"><div><div className="dashboard-section-title"><h2>My club</h2><span>{role === "admin" ? "Admin view" : role === "executive" ? "Executive view" : "Member view"}</span></div><div className="course-grid"><button onClick={() => onNavigate("groups")}><span>♫</span><small>ENROLLED SPACES</small><h3>My subgroups</h3><p>Open your ensemble spaces, files, recordings, and attendance.</p><b>Enter subgroups →</b></button><button onClick={() => onNavigate("documents")}><span>▤</span><small>CLUB-WIDE</small><h3>Shared resources</h3><p>{clubItems.filter((item) => item.type === "document").length} documents available to the whole club.</p><b>Browse resources →</b></button><button onClick={() => onNavigate("members")}><span>◎</span><small>COMMUNITY</small><h3>Member directory</h3><p>Find and connect with fellow Bharat Sangeet members.</p><b>View members →</b></button></div></div><aside className="dashboard-sidebar"><h2>Coming up</h2>{upcoming.length ? upcoming.map((event) => <article key={event.id}><time>{new Date(event.starts_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time><div><b>{event.title}</b><span>{event.location || "Details in calendar"}</span></div></article>) : <p>No upcoming dates yet.</p>}<button className="secondary" onClick={() => onNavigate("calendar")}>Open full calendar</button></aside></div></section>;
+  if (announcements.length) return <><AnnouncementFeed announcements={announcements} /><ClubDashboard name={name} role={role} events={events} archive={archive} resourceLinks={resourceLinks} announcements={[]} onNavigate={onNavigate} /></>;
+  return <section className="portal-dashboard"><div className="dashboard-welcome"><p className="eyebrow">UNC BHARAT SANGEET</p><h1>Welcome back, {name}.</h1><p>Your club announcements, upcoming dates, resources, and subgroup spaces—all in one place.</p></div><div className="dashboard-layout"><div><div className="dashboard-section-title"><h2>My club</h2><span>{role === "admin" ? "Admin view" : role === "executive" ? "Executive view" : "Member view"}</span></div><div className="course-grid"><button onClick={() => onNavigate("groups")}><span>♫</span><small>ENROLLED SPACES</small><h3>My subgroups</h3><p>Open your ensemble spaces, files, recordings, and attendance.</p><b>Enter subgroups →</b></button><button onClick={() => onNavigate("documents")}><span>▤</span><small>CLUB-WIDE</small><h3>Shared resources</h3><p>{clubItems.filter((item) => item.type === "document").length + resourceLinks.length} club resources ready to open.</p><b>Browse resources →</b></button><button onClick={() => onNavigate("members")}><span>◎</span><small>COMMUNITY</small><h3>Member directory</h3><p>Find and connect with fellow Bharat Sangeet members.</p><b>View members →</b></button></div></div><aside className="dashboard-sidebar"><h2>Coming up</h2>{upcoming.length ? upcoming.map((event) => <article key={event.id}><time>{new Date(event.starts_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time><div><b>{event.title}</b><span>{event.location || "Details in calendar"}</span></div></article>) : <p>No upcoming dates yet.</p>}<button className="secondary" onClick={() => onNavigate("calendar")}>Open full calendar</button></aside></div></section>;
 }
 
 function AnnouncementFeed({ announcements }: { announcements: Announcement[] }) {
@@ -480,4 +537,14 @@ function LoadingScreen() { return <main className="loading-screen"><span classNa
 function InlineLoading() { return <div className="inline-loading">Loading the archive…</div>; }
 function SetupScreen() { return <main className="loading-screen"><span className="brand-mark">sa</span><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
 function formatDate(value: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)); }
+function normalizeResourceUrl(value: string) {
+  const candidate = value.trim();
+  const parsed = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error("Unsupported URL");
+  return parsed.toString();
+}
+function resourceHostname(value: string) {
+  try { return new URL(value).hostname.replace(/^www\./i, ""); }
+  catch { return "External resource"; }
+}
 function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "BS"; }
