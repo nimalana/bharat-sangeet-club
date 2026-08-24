@@ -121,6 +121,7 @@ The finance ledger should be the source of truth. Balances must be calculated fr
 | 2026-08-12 | Store sensitive finance files in a dedicated private area; statements must be PDFs and never appear in the general club archive. |
 | 2026-08-12 | Deploy `main` automatically to production and use other branches for Vercel previews. |
 | 2026-08-24 | Store external club links separately from uploaded files while presenting both together in the club-wide Resources page. |
+| 2026-08-24 | Let executives and administrators correct link titles, descriptions, and destinations after posting without changing authorship metadata. |
 
 ## Updating this roadmap
 

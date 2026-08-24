@@ -14,6 +14,10 @@ test("resource links use database-enforced member and manager permissions", asyn
     new URL("supabase/migrations/20260824200959_resource_links_creator_index.sql", projectRoot),
     "utf8",
   );
+  const editMigration = await readFile(
+    new URL("supabase/migrations/20260824213612_edit_resource_links.sql", projectRoot),
+    "utf8",
+  );
 
   assert.match(migration, /create table public\.resource_links/);
   assert.match(migration, /alter table public\.resource_links enable row level security/);
@@ -24,14 +28,20 @@ test("resource links use database-enforced member and manager permissions", asyn
   assert.match(leastPrivilegeMigration, /revoke all on table public\.resource_links from authenticated/);
   assert.match(leastPrivilegeMigration, /grant select, insert, delete on table public\.resource_links to authenticated/);
   assert.match(creatorIndexMigration, /create index resource_links_created_by_idx/);
+  assert.match(editMigration, /grant update \(title, description, url\) on table public\.resource_links to authenticated/);
+  assert.match(editMigration, /for update\s+to authenticated\s+using \(\(select private\.is_executive\(\)\)\)\s+with check \(\(select private\.is_executive\(\)\)\)/s);
 });
 
-test("resources UI supports adding, opening, and removing links", async () => {
+test("resources UI supports adding, opening, editing, and removing links", async () => {
   const page = await readFile(new URL("app/page.tsx", projectRoot), "utf8");
 
   assert.match(page, /from\("resource_links"\)\.select/);
   assert.match(page, /function addResourceLink/);
+  assert.match(page, /function updateResourceLink/);
   assert.match(page, /function deleteResourceLink/);
+  assert.match(page, /from\("resource_links"\)\.update\(\{ title, description, url \}\)/);
+  assert.match(page, />Edit<\/button>/);
+  assert.match(page, /Save changes/);
   assert.match(page, /title="Club resources"/);
   assert.match(page, /target="_blank" rel="noopener noreferrer"/);
   assert.match(page, /aria-busy=\{savingLink\}/);
