@@ -2,6 +2,20 @@
 
 Bharat Sangeet's shared digital home for the Carnatic music community at the University of North Carolina at Chapel Hill. The application combines a public club presence with private club-wide and subgroup workspaces for members, executives, and administrators.
 
+## UI styling conventions
+
+Tailwind CSS v4 is the default styling layer for new and substantially changed UI. Shared primitives live in `components/ui` and follow the shadcn/ui approach: small, composable, locally owned components whose variants are expressed with Tailwind utilities rather than a large runtime theme.
+
+- Use `components/ui` primitives such as `Button`, `Badge`, and `Dialog` before creating a new control style.
+- Use Tailwind utilities for component spacing, responsive grids, typography, states, and overflow behavior.
+- Keep `app/globals.css` for product tokens, the existing shell, broad layout rules, and legacy surfaces that have not been migrated yet.
+- Every constrained grid child should be allowed to shrink (`min-w-0`, `minmax(0, ...)`); long labels and tags must wrap instead of creating horizontal overflow.
+- Keep the Carolina blue, dark navy/ink, ivory, and condensed editorial type system intact while migrating. The current identity is Carolina-led; `--maroon` is a legacy compatibility token and should not be used for new components.
+
+### Migration boundary
+
+The shared primitives are the migration seam. New or substantially changed controls should use `Button`, `Badge`, `Dialog`, `Input`, or `Textarea` and compose Tailwind utilities for layout. The older semantic selectors (`.primary`, `.secondary`, `.modal`, and page-specific shell classes) remain only where replacing them would change an existing surface without a visual review; do not extend those selectors for new UI. When a legacy surface is next touched, migrate its controls first, then remove its unused selectors from `app/globals.css`.
+
 ## Living roadmap
 
 Last updated: **August 24, 2026**
@@ -79,6 +93,11 @@ The finance ledger should be the source of truth. Balances must be calculated fr
 - [ ] Add clear join, pending, approved, waitlisted, and invitation-only states
 - [ ] Preserve access for members who belong to multiple subgroups
 - [ ] Add subgroup-level leadership permissions without granting full executive access
+
+### 4a. Member roster administration
+
+- [x] Let administrators edit member profile details and assign active subgroups in one workflow
+- [x] Show subgroup tags on the member roster and filter the roster by subgroup
 
 ### 5. UI, reliability, and accessibility
 
