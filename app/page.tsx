@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
@@ -10,6 +10,7 @@ import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { AttendancePage } from "./attendance";
 import { FinancePage } from "./finance";
+import { RecordingWorkspace } from "../components/recordings/recording-workspace";
 
 type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "gallery" | "finances" | "admin";
 type ClubRole = "member" | "executive" | "admin";
@@ -35,8 +36,16 @@ type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats:
 const sectionValues: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "gallery", "admin"];
 function sectionFromUrl(): Section {
   if (typeof window === "undefined") return "home";
-  const value = new URLSearchParams(window.location.search).get("page") as Section | null;
+  const rawValue = new URLSearchParams(window.location.search).get("page");
+  if (rawValue === "meetings") return "attendance";
+  const value = rawValue as Section | null;
   return value && sectionValues.includes(value) ? value : "home";
+}
+
+function attendanceTabFromUrl(): "overview" | "meetings" | "excuses" {
+  if (typeof window === "undefined") return "overview";
+  const params = new URLSearchParams(window.location.search);
+  return params.get("page") === "meetings" || params.get("tab") === "meetings" ? "meetings" : "overview";
 }
 
 const pendingSignupNameKey = "bharat-sangeet-pending-signup-name";
@@ -65,7 +74,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [showUpload, setShowUpload] = useState(false);
-  const [uploadType, setUploadType] = useState<ArchiveType>("recording");
+  const [uploadType, setUploadType] = useState<"document" | "photo">("document");
   const [showEvent, setShowEvent] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -191,14 +200,12 @@ export default function Home() {
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
   const availableGroups = canManage ? groups : groups.filter((group) => activeGroupIds.has(group.id));
   const matchesScope = (subgroupId: number | null | undefined, scope: ScopeFilter) => scope === "all" || (scope === "club" ? !subgroupId : subgroupId === scope);
-  const recordings = useMemo(() => archive.filter((item) => item.type === "recording" && matchesScope(item.subgroup_id, recordingScope) && `${item.title} ${item.description} ${item.raga || ""}`.toLowerCase().includes(query.toLowerCase())), [archive, query, recordingScope]);
   const documents = archive.filter((item) => item.type === "document" && matchesScope(item.subgroup_id, documentScope));
   const photos = archive.filter((item) => item.type === "photo" && !item.subgroup_id);
   const visibleEvents = events.filter((item) => matchesScope(item.subgroup_id, calendarScope));
 
   const navigate = (next: Section) => {
-    if (next === "recordings") setUploadType("recording");
-    else if (next === "documents") setUploadType("document");
+    if (next === "documents") setUploadType("document");
     else if (next === "gallery") setUploadType("photo");
     if (next === "home" && user) loadData();
     setSection(next);
@@ -244,15 +251,15 @@ export default function Home() {
 
       {section === "home" && <ClubDashboard name={name} role={role} events={events} archive={archive} announcements={announcements} onNavigate={navigate} />}
 
-      {section === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={(groupId) => { setAttendanceInitialScope(groupId); navigate("attendance"); }} notify={notify} />}
+      {section === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={(groupId) => { setAttendanceInitialScope(groupId); navigate("attendance"); }} onOpenRecordings={(groupId) => { setRecordingScope(groupId); navigate("recordings"); }} notify={notify} />}
 
       {section === "admin" && role === "admin" && <AdminPage user={user} groups={groups} notify={notify} />}
 
-      {section === "recordings" && <section className="section-shell page-section"><PageTitle eyebrow="LISTENING ROOM" title="Recordings archive" text="Club and subgroup performances, rehearsals, workshops, and musical moments in one library." /><div className="toolbar"><label className="search">⌕<input aria-label="Search recordings" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by title, raga, raag, or description" /></label><ScopeFilterBar value={recordingScope} onChange={setRecordingScope} groups={availableGroups} />{canManage && <button className="primary" onClick={() => setShowUpload(true)}>＋ Upload club recording</button>}</div>{dataLoading ? <InlineLoading /> : recordings.length ? <div className="recording-list">{recordings.map((item, index) => <article className="recording-row" key={item.id}><button className="play" onClick={() => openFile(item)} aria-label={`Play ${item.title}`}>▶</button><div className="track-no">{String(index + 1).padStart(2, "0")}</div><div className="track-main"><h3>{item.title}</h3><p><ContentScopeLabel subgroupId={item.subgroup_id} groups={groups} />{[item.raga, item.tala, item.description].filter(Boolean).join(" · ") || "Recording"}</p></div><span className="pill">Recording</span><time>{formatDate(item.created_at)}</time><button className="more" onClick={() => openFile(item)} aria-label={`Open ${item.title}`}>•••</button></article>)}</div> : <EmptyState title="No recordings in this view" text="Choose another group or add the first recording." />}</section>}
+      {section === "recordings" && <RecordingWorkspace user={user} groups={availableGroups} memberships={memberships} canManage={canManage} initialScope={recordingScope === "club" ? "all" : recordingScope} notify={notify} onDataChanged={loadData} />}
 
       {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Club and subgroup rehearsals, performances, meetings, and deadlines in one calendar." /><div className="toolbar"><p className="access-note">Every date shows who it is for</p><ScopeFilterBar value={calendarScope} onChange={setCalendarScope} groups={availableGroups} />{canManage && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={visibleEvents} groups={groups} canManage={canManage} onDelete={deleteEvent} />}</section>}
 
-      {section === "attendance" && <AttendancePage key={String(attendanceInitialScope)} user={user} role={role} groups={availableGroups} initialScope={attendanceInitialScope} notify={notify} />}
+      {section === "attendance" && <AttendancePage key={`${attendanceInitialScope}-${attendanceTabFromUrl()}`} user={user} role={role} groups={availableGroups} initialScope={attendanceInitialScope} initialTab={attendanceTabFromUrl()} notify={notify} />}
 
       {section === "members" && <MembersPage user={user} notify={notify} />}
 
@@ -275,10 +282,10 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [audit, setAudit] = useState<Array<{ id: number; action: string; actor_email: string; target_email: string; details: Record<string, string>; created_at: string }>>([]);
-  const [query, setQuery] = useState("");
   const [editingMember, setEditingMember] = useState<MemberProfile | null>(null);
   const [savingMember, setSavingMember] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -447,7 +454,7 @@ function PortalPageMenu({ section, role, onNavigate }: { section: Section; role:
   return <div className="portal-navigation" ref={shell}><nav className="primary-navigation" aria-label="Portal navigation">{menuPages.map((page) => <button className={page === section ? "active" : ""} aria-current={page === section ? "page" : undefined} key={page} onClick={() => go(page)}>{labels[page]}</button>)}</nav><div className="page-menu-shell"><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Navigate</small><b>{labels[section]}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="page-menu" role="menu" aria-label="All pages">{menuGroup("CLUB", primaryPages, true)}{menuGroup("LIBRARY", libraryPages)}{menuGroup("GROUPS & ATTENDANCE", subgroupPages)}{menuGroup("MANAGE CLUB", managePages, true)}<span className="menu-count">{menuPages.length} destinations</span></div>}</div></div>;
 }
 
-function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; notify: (message: string) => void }) {
+function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; notify: (message: string) => void }) {
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [items, setItems] = useState<ArchiveItem[]>([]);
@@ -527,7 +534,6 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, notify 
   const active = groups.find((group) => group.id === selectedGroupId && canEnter(group.id));
   const groupItems = items.filter((item) => item.subgroup_id === active?.id);
   const docs = groupItems.filter((item) => item.type === "document");
-  const recordings = groupItems.filter((item) => item.type === "recording");
   const groupAnnouncements = announcements.filter((item) => item.subgroup_id === active?.id);
 
   if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
@@ -536,11 +542,11 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, notify 
     <PageTitle eyebrow="GROUPS" title={active ? active.name : role === "member" ? "My groups" : "All groups"} text={active ? active.description || "Announcements, resources, recordings, and attendance for this group." : "Everything connected to your ensembles, without switching the rest of the site into another mode."} />
     {inlineMessage && <p className="action-feedback" role="status">{inlineMessage}</p>}
     {active ? <>
-      <div className="group-detail-actions"><Button variant="secondary" onClick={() => setSelectedGroupId(null)}>← All groups</Button><Button variant="secondary" onClick={() => onOpenAttendance(active.id)}>View attendance</Button>{role !== "member" && <><Button variant="secondary" onClick={() => setShowAnnouncement(true)}>Post update</Button><Button onClick={() => setShowUpload(true)}>Add resource</Button></>}</div>
+      <div className="group-detail-actions"><Button variant="secondary" onClick={() => setSelectedGroupId(null)}>← All groups</Button><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recordings</Button><Button variant="secondary" onClick={() => onOpenAttendance(active.id)}>View attendance</Button>{role !== "member" && <><Button variant="secondary" onClick={() => setShowAnnouncement(true)}>Post update</Button><Button onClick={() => setShowUpload(true)}>Add resource</Button></>}</div>
       <div className="group-detail-grid">
         <section className="group-feed"><div className="dashboard-section-title"><h2>Announcements</h2><span>{groupAnnouncements.length}</span></div>{groupAnnouncements.length ? groupAnnouncements.map((item) => <article key={item.id}><b>{item.title}</b><p>{item.body}</p><small>{formatDate(item.published_at)}</small></article>) : <p className="workspace-empty">No announcements for this group yet.</p>}</section>
         <section><div className="dashboard-section-title"><h2>Resources</h2><span>{docs.length}</span></div>{docs.length ? docs.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><div><b>{item.title}</b><small>{item.description || formatDate(item.created_at)}</small></div><i>Open</i></button>) : <p className="workspace-empty">No resources yet.</p>}</section>
-        <section><div className="dashboard-section-title"><h2>Recordings</h2><span>{recordings.length}</span></div>{recordings.length ? recordings.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><div><b>{item.title}</b><small>{[item.raga, item.tala, item.description].filter(Boolean).join(" · ") || formatDate(item.created_at)}</small></div><i>Listen</i></button>) : <p className="workspace-empty">No recordings yet.</p>}</section>
+        <section><div className="dashboard-section-title"><h2>Recordings</h2><span>Room</span></div><p className="workspace-empty">Capture rehearsals, lessons, and takes in the subgroup recording room.</p><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recording room →</Button></section>
       </div>
     </> : <>
       <div className="group-list-heading"><div><h2>{role === "member" ? "Your groups" : "Groups you manage"}</h2><p>Open a group to see its latest activity.</p></div><div><span>{joinedGroups.length}</span>{role !== "member" && <Button onClick={() => setShowCreate(true)}>＋ New group</Button>}</div></div>
@@ -553,9 +559,9 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, notify 
   </section>;
 }
 function SubgroupUploadModal({ user, subgroupId, onClose, onSaved, notify }: { user: User; subgroupId: number; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
-  const [saving, setSaving] = useState(false); const [type, setType] = useState<"document" | "recording">("document");
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!supabase) return; setSaving(true); const form = new FormData(event.currentTarget); const file = form.get("file") as File; const path = `${user.id}/subgroups/${subgroupId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`; const upload = await supabase.storage.from("club-archive").upload(path, file); if (upload.error) { notify(upload.error.message); setSaving(false); return; } const result = await supabase.from("archive_items").insert({ title: String(form.get("title")), description: String(form.get("description") || ""), type, storage_path: path, visibility: "members", subgroup_id: subgroupId, raga: type === "recording" ? String(form.get("raga") || "") || null : null, uploaded_by: user.id }); if (result.error) { await supabase.storage.from("club-archive").remove([path]); notify(result.error.message); setSaving(false); } else onSaved(); }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">SUBGROUP MATERIAL</p><h2>Add a resource</h2><label>Type<select value={type} onChange={(event) => setType(event.target.value as "document" | "recording")}><option value="document">Document</option><option value="recording">Recording</option></select></label><label>Title<input name="title" required /></label><label>Description<input name="description" /></label>{type === "recording" && <label>Raga<input name="raga" /></label>}<label>File<input name="file" type="file" required accept={type === "recording" ? "audio/*,video/*" : undefined} /></label><Button type="submit" disabled={saving}>{saving ? "Uploading…" : "Add to subgroup"}</Button></form></div>;
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!supabase) return; setSaving(true); const form = new FormData(event.currentTarget); const file = form.get("file") as File; const path = `${user.id}/subgroups/${subgroupId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`; const upload = await supabase.storage.from("club-archive").upload(path, file); if (upload.error) { notify(upload.error.message); setSaving(false); return; } const result = await supabase.from("archive_items").insert({ title: String(form.get("title")), description: String(form.get("description") || ""), type: "document", storage_path: path, visibility: "members", subgroup_id: subgroupId, uploaded_by: user.id }); if (result.error) { await supabase.storage.from("club-archive").remove([path]); notify(result.error.message); setSaving(false); } else onSaved(); }
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">SUBGROUP MATERIAL</p><h2>Add a resource</h2><p className="modal-copy">Recordings now live in the subgroup recording room, where members can capture and review takes.</p><label>Title<input name="title" required /></label><label>Description<input name="description" /></label><label>File<input name="file" type="file" required /></label><Button type="submit" disabled={saving}>{saving ? "Uploading…" : "Add to subgroup"}</Button></form></div>;
 }
 
 function EventModal({ user, groups, onClose, onSaved, notify }: { user: User; groups: Subgroup[]; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
@@ -696,8 +702,8 @@ function LoginScreen({ onBack }: { onBack: () => void }) {
   return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h1>Many traditions.<br /><em>One place to make music.</em></h1></div></div><section className="login-panel"><button className="login-back" type="button" onClick={onBack}>← Back to public site</button><div className="login-box"><span className="login-context">UNC CHAPEL HILL MEMBER PORTAL</span><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setErrorMessage(""); window.sessionStorage.removeItem(pendingSignupNameKey); }}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setErrorMessage(""); }}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join UNC's Carnatic and Hindustani music community. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p>{mode === "signup" && <label className="signup-name">Preferred name<input autoComplete="name" value={preferredName} onChange={(event) => setPreferredName(event.target.value)} placeholder="What should we call you?" required /></label>}<button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, groups, and attendance."}</small></div></section></main>;
 }
 
-function ArchiveModal({ user, initialType = "recording", onClose, onSaved, notify }: { user: User; initialType?: ArchiveType; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
-  const [type, setType] = useState<ArchiveType>(initialType);
+function ArchiveModal({ user, initialType = "document", onClose, onSaved, notify }: { user: User; initialType?: "document" | "photo"; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const [type, setType] = useState<"document" | "photo">(initialType);
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase) return; setSaving(true);
@@ -707,11 +713,11 @@ function ArchiveModal({ user, initialType = "recording", onClose, onSaved, notif
     const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
     if (upload.error) { setSaving(false); notify(upload.error.message); return; }
     const access = String(form.get("visibility") || "members");
-    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type, storage_path: storagePath, visibility: access === "public" ? "members" : access, is_public: type === "recording" && access === "public", raga: type === "recording" ? String(form.get("raga") || "") || null : null, tala: type === "recording" ? String(form.get("tala") || "") || null : null, uploaded_by: user.id });
+    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type, storage_path: storagePath, visibility: access, uploaded_by: user.id });
     if (saved.error) { await supabase.storage.from("club-archive").remove([storagePath]); setSaving(false); notify(saved.error.message); return; }
     setSaving(false); onSaved();
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add to club records</h2><label>Item type<select value={type} onChange={(e) => setType(e.target.value as ArchiveType)}><option value="recording">Recording</option><option value="document">Document</option><option value="photo">Photo</option></select></label><label>Title<input name="title" required placeholder="Give this item a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label>{type === "recording" && <div className="form-pair"><label>Raga / raag<input name="raga" /></label><label>Tala / taal<input name="tala" /></label></div>}<label>Choose file<input name="file" type="file" required accept={type === "recording" ? "audio/*,video/*" : type === "photo" ? "image/*" : undefined} /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option>{type === "recording" && <option value="public">Everyone (public concert)</option>}</select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save to archive"}</button></form></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add to club records</h2><label>Item type<select value={type} onChange={(e) => setType(e.target.value as "document" | "photo")}><option value="document">Document</option><option value="photo">Photo</option></select></label><label>Title<input name="title" required placeholder="Give this item a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label><label>Choose file<input name="file" type="file" required accept={type === "photo" ? "image/*" : undefined} /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option></select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save to archive"}</button></form></div>;
 }
 
 function PageTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
