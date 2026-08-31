@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 type ClubRole = "member" | "executive" | "admin";
 type Workspace = { id: number; name: string };
 type ScopeFilter = "all" | "club" | number;
+type AttendanceTab = "overview" | "meetings" | "excuses";
 type SessionStatus = "draft" | "open" | "closed" | "canceled";
 type RecordStatus = "pending" | "present" | "absent" | "excused" | "tardy";
 type ExcuseStatus = "pending" | "approved" | "denied";
@@ -74,11 +75,12 @@ const categoryLabels: Record<AbsenceCategory, string> = {
   other: "Other",
 };
 
-export function AttendancePage({ user, role, groups, initialScope = "all", notify }: {
+export function AttendancePage({ user, role, groups, initialScope = "all", initialTab = "overview", notify }: {
   user: User;
   role: ClubRole;
   groups: Workspace[];
   initialScope?: ScopeFilter;
+  initialTab?: AttendanceTab;
   notify: (message: string) => void;
 }) {
   const canManage = role !== "member";
@@ -94,7 +96,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", notif
   const [thresholds, setThresholds] = useState({ warning: 2, critical: 3 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"overview" | "meetings" | "excuses">("overview");
+  const [tab, setTab] = useState<AttendanceTab>(initialTab || "overview");
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [showExcuse, setShowExcuse] = useState(false);
@@ -245,10 +247,28 @@ export function AttendancePage({ user, role, groups, initialScope = "all", notif
   async function openAttendance(sessionId: number, duration = 60) {
     if (!supabase) return;
     setSaving(true);
+    setFeedback("");
     const { data, error } = await supabase.rpc("open_attendance_session", { p_session_id: sessionId, p_duration_minutes: duration });
     setSaving(false);
-    if (error) notify(error.message);
-    else { const result = Array.isArray(data) ? data[0] : data; setLiveCode(result?.check_in_code || result?.code || ""); notify("Check-in is open"); load(); }
+    if (error) {
+      const message = `Could not open check-in: ${error.message}`;
+      setFeedback(message);
+      notify(message);
+      return;
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    const code = result?.check_in_code || result?.code || "";
+    if (!code) {
+      const message = "Check-in opened, but no sign-in code was returned. Refresh and try again.";
+      setFeedback(message);
+      notify(message);
+      await load();
+      return;
+    }
+    setLiveCode(code);
+    setTab("meetings");
+    notify("Check-in is open");
+    await load();
   }
 
   async function rotateCode(sessionId: number) {
@@ -379,7 +399,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", notif
     {canManage ? <>
       <div className="attendance-summary-grid"><Stat label="Closed meetings" value={closedSessions.length} /><Stat label="Attendance rate" value={`${overallRate}%`} /><Stat label="At policy limit" value={summaries.filter((item) => item.flag === "warning").length} tone="warning" /><Stat label="Needs review" value={summaries.filter((item) => item.flag === "critical").length} tone="critical" /></div>
       {openSession && <div className="attendance-live"><div><p className="eyebrow">LIVE NOW</p><h2>{openSession.title}</h2><p>{records.filter((record) => record.session_id === openSession.id && (record.status === "present" || record.status === "tardy")).length} of {participants.filter((participant) => participant.session_id === openSession.id).length} checked in</p></div><div className="attendance-live-code"><small>CHECK-IN CODE</small><strong>{liveCode || "Hidden after reload"}</strong><span>{liveCode ? "Share this with members" : "Rotate the code to display a new one"}</span></div><div className="attendance-live-actions"><Button variant="secondary" onClick={() => rotateCode(openSession.id)} disabled={saving}>Rotate code</Button><Button onClick={() => changeSession(openSession.id, "close")} disabled={saving}>Close attendance</Button><Button variant="danger" onClick={() => changeSession(openSession.id, "cancel")} disabled={saving}>Cancel meeting</Button></div></div>}
-      <div className="attendance-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>Overview</button><button type="button" role="tab" aria-selected={tab === "meetings"} className={tab === "meetings" ? "active" : ""} onClick={() => setTab("meetings")}>Meetings</button><button type="button" role="tab" aria-selected={tab === "excuses"} className={tab === "excuses" ? "active" : ""} onClick={() => setTab("excuses")}>Absence forms {pendingExcuseCount ? `(${pendingExcuseCount})` : ""}</button></div>
+       <div className="attendance-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "active" : ""} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTab("overview"); }}>Overview</button><button type="button" role="tab" aria-selected={tab === "meetings"} className={tab === "meetings" ? "active" : ""} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTab("meetings"); }}>Meetings</button><button type="button" role="tab" aria-selected={tab === "excuses"} className={tab === "excuses" ? "active" : ""} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTab("excuses"); }}>Absence forms {pendingExcuseCount ? `(${pendingExcuseCount})` : ""}</button></div>
       {tab === "overview" && <>
         <div className="attendance-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">POLICY FLAGS</p><h2>Members needing attention</h2></div><span>At {thresholds.warning} · Review over {thresholds.critical - 1} unexcused units</span></div>{flagged.length ? <div className="attendance-flags">{flagged.map((summary) => <article key={summary.memberId} className={summary.flag}><div><b>{summary.name}</b><small>{summary.email}</small></div><span>{summary.rate}% attendance</span><strong>{formatUnits(summary.unexcusedUnits)} unexcused</strong><i>{summary.eligibility.replace("_", " ")}</i><div className="attendance-inline-actions"><Button size="sm" variant="secondary" onClick={() => updateEligibility(summary.memberId, "under_review")}>Review</Button><Button size="sm" variant={summary.eligibility === "restricted" ? "secondary" : "danger"} onClick={() => updateEligibility(summary.memberId, summary.eligibility === "restricted" ? "reinstated" : "restricted")}>{summary.eligibility === "restricted" ? "Reinstate" : "Restrict"}</Button></div></article>)}</div> : <div className="attendance-empty">No members are currently flagged in this view.</div>}</div>
         <div className="attendance-panel attendance-remediation-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">REMEDIATION</p><h2>Open follow-up</h2></div><span>{remediations.filter((item) => item.status === "pending" && visibleIds.has(item.session_id)).length} pending</span></div>{remediations.filter((item) => item.status === "pending" && visibleIds.has(item.session_id)).length ? <div className="remediation-list">{remediations.filter((item) => item.status === "pending" && visibleIds.has(item.session_id)).map((item) => { const member = profiles.find((profile) => profile.id === item.member_id); const session = sessions.find((sessionItem) => sessionItem.id === item.session_id); return <article key={item.id}><div><b>{member?.full_name || member?.email || "Member"}</b><small>{session?.title || "Meeting"} · {item.assignment}</small></div><Button size="sm" onClick={() => updateRemediation(item, "complete")}>Mark complete</Button></article>; })}</div> : <div className="attendance-empty">No open remediation items.</div>}</div>
@@ -400,7 +420,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", notif
               <>
                 <div className="attendance-panel-heading">
                   <div><p className="eyebrow">{selectedSession.status.toUpperCase()}</p><h2>{selectedSession.title}</h2><span>{sessionAudience(selectedSession, groups)} · {formatDateTime(selectedSession.starts_at)}</span></div>
-                  <div>{selectedSession.status === "draft" && <Button onClick={() => openAttendance(selectedSession.id)}>Open check-in</Button>}{selectedSession.status === "open" && <Button onClick={() => changeSession(selectedSession.id, "close")}>Close</Button>}</div>
+                  <div>{selectedSession.status === "draft" && <Button type="button" onClick={() => openAttendance(selectedSession.id)} disabled={saving}>Open check-in</Button>}{selectedSession.status === "open" && <Button type="button" onClick={() => changeSession(selectedSession.id, "close")} disabled={saving}>Close</Button>}</div>
                 </div>
                 <div className="attendance-roster">
                   <div className="attendance-roster-head"><span>Member</span><span>Status</span><span>Policy impact</span><span>Action</span></div>
@@ -459,8 +479,14 @@ function sessionAudience(session: AttendanceSession, groups: Workspace[]) {
   return session.scope === "club" ? "Club-wide" : `${groups.find((group) => group.id === session.subgroup_id)?.name || "Subgroup"} rehearsal`;
 }
 
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+function formatDateTime(value: string | null | undefined) {
+  const date = new Date(value || "");
+  if (!Number.isFinite(date.getTime())) return "Date unavailable";
+  try {
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+  } catch {
+    return "Date unavailable";
+  }
 }
 
 function localDateTime() {
