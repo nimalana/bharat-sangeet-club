@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
@@ -11,10 +11,11 @@ import { Input } from "../components/ui/input";
 import { AttendancePage } from "./attendance";
 import { FinancePage } from "./finance";
 import { RecordingWorkspace } from "../components/recordings/recording-workspace";
+import { ResourceLibrary } from "./resources";
 
-type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "gallery" | "finances" | "admin";
+type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "admin";
 type ClubRole = "member" | "executive" | "admin";
-type ArchiveType = "recording" | "document" | "photo";
+type ArchiveType = "recording";
 type ArchiveItem = {
   id: number; title: string; description: string; type: ArchiveType;
   storage_path: string; visibility: "members" | "executives";
@@ -25,7 +26,6 @@ type ArchiveItem = {
 };
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string; subgroup_id: number | null };
 type Announcement = { id: number; title: string; body: string; is_pinned: boolean; published_at: string; subgroup_id: number | null };
-type ResourceLink = { id: number; title: string; description: string; url: string; created_at: string };
 type EnrollmentMode = "open" | "approval" | "invite";
 type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive";
 type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode };
@@ -34,12 +34,12 @@ type MemberProfile = { id: string; full_name: string; email: string; role: ClubR
 type ScopeFilter = "all" | "club" | number;
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
 
-const sectionValues: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "gallery", "admin"];
+const sectionValues: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "admin"];
 function sectionFromUrl(): Section {
   if (typeof window === "undefined") return "home";
   const rawValue = new URLSearchParams(window.location.search).get("page");
   if (rawValue === "meetings") return "attendance";
-  const value = rawValue as Section | null;
+  const value = rawValue === "gallery" ? "documents" : rawValue as Section | null;
   return value && sectionValues.includes(value) ? value : "home";
 }
 
@@ -72,27 +72,19 @@ export default function Home() {
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [resourceLinks, setResourceLinks] = useState<ResourceLink[]>([]);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [showUpload, setShowUpload] = useState(false);
-  const [uploadType, setUploadType] = useState<"document" | "photo">("document");
   const [showEvent, setShowEvent] = useState(false);
-  const [showLinkForm, setShowLinkForm] = useState(false);
-  const [savingLink, setSavingLink] = useState(false);
-  const [editingLinkId, setEditingLinkId] = useState<number | null>(null);
-  const [updatingLinkId, setUpdatingLinkId] = useState<number | null>(null);
-  const [deletingLinkId, setDeletingLinkId] = useState<number | null>(null);
-  const [linkError, setLinkError] = useState("");
-  const [editLinkError, setEditLinkError] = useState("");
   const [dataLoading, setDataLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [recordingScope, setRecordingScope] = useState<ScopeFilter>("all");
-  const [documentScope, setDocumentScope] = useState<ScopeFilter>("all");
   const [calendarScope, setCalendarScope] = useState<ScopeFilter>("all");
   const [attendanceInitialScope, setAttendanceInitialScope] = useState<ScopeFilter>("all");
+  const [resourceInitialScope, setResourceInitialScope] = useState<ScopeFilter>("all");
+  const [resourceCount, setResourceCount] = useState(0);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -122,26 +114,21 @@ export default function Home() {
     if (!client) return;
     setDataLoading(true);
     try {
-      const [archiveResult, eventsResult, announcementResult, linksResult] = await Promise.all([
-        client.from("archive_items").select("*").order("created_at", { ascending: false }),
+      const [archiveResult, eventsResult, announcementResult, resourceCountResult] = await Promise.all([
+        client.from("archive_items").select("*").eq("type", "recording").order("created_at", { ascending: false }),
         client.from("events").select("*").order("starts_at", { ascending: true }),
         client.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(12),
-        client.from("resource_links").select("id,title,description,url,created_at").order("created_at", { ascending: false }),
+        client.from("resources").select("id", { count: "exact", head: true }).neq("status", "archived"),
       ]);
       if (archiveResult.error) notify("The club archive could not be loaded");
       if (eventsResult.error) notify("The calendar could not be loaded");
       if (announcementResult.error) notify("Announcements could not be loaded");
-      if (linksResult.error) notify("Club resource links could not be loaded");
+      if (resourceCountResult.error) notify("The resource count could not be loaded");
       const items = (archiveResult.data || []) as ArchiveItem[];
-      const photos = items.filter((item) => item.type === "photo" && !item.subgroup_id);
-      await Promise.allSettled(photos.map(async (item) => {
-        const { data } = await client.storage.from("club-archive").createSignedUrl(item.storage_path, 3600);
-        item.signedUrl = data?.signedUrl;
-      }));
       setArchive(items);
       setEvents((eventsResult.data || []) as ClubEvent[]);
       setAnnouncements((announcementResult.data || []) as Announcement[]);
-      setResourceLinks((linksResult.data || []) as ResourceLink[]);
+      setResourceCount(resourceCountResult.count || 0);
     } catch {
       notify("The club data could not be loaded. Check your connection and try again.");
     } finally {
@@ -212,13 +199,10 @@ export default function Home() {
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
   const availableGroups = canManage ? groups : groups.filter((group) => activeGroupIds.has(group.id));
   const matchesScope = (subgroupId: number | null | undefined, scope: ScopeFilter) => scope === "all" || (scope === "club" ? !subgroupId : subgroupId === scope);
-  const documents = archive.filter((item) => item.type === "document" && matchesScope(item.subgroup_id, documentScope));
-  const photos = archive.filter((item) => item.type === "photo" && !item.subgroup_id);
+  const recordings = useMemo(() => archive.filter((item) => item.type === "recording" && matchesScope(item.subgroup_id, recordingScope) && `${item.title} ${item.description} ${item.raga || ""}`.toLowerCase().includes(query.toLowerCase())), [archive, query, recordingScope]);
   const visibleEvents = events.filter((item) => matchesScope(item.subgroup_id, calendarScope));
 
   const navigate = (next: Section) => {
-    if (next === "documents") setUploadType("document");
-    else if (next === "gallery") setUploadType("photo");
     if (next === "home" && user) loadData();
     setSection(next);
     const nextUrl = next === "home" ? window.location.pathname : `${window.location.pathname}?page=${next}`;
@@ -249,86 +233,6 @@ export default function Home() {
     if (error) notify(error.message); else { notify("Calendar date removed"); loadData(); }
   }
 
-  async function addResourceLink(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase || !user || savingLink) return;
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const title = String(form.get("title") || "").trim();
-    const description = String(form.get("description") || "").trim();
-    let url: string;
-
-    if (!title) {
-      setLinkError("Give this resource a clear title.");
-      return;
-    }
-
-    try {
-      url = normalizeResourceUrl(String(form.get("url") || ""));
-    } catch {
-      setLinkError("Enter a complete web address, such as docs.google.com/document/…");
-      return;
-    }
-
-    setSavingLink(true);
-    setLinkError("");
-    const { data, error } = await supabase.from("resource_links").insert({ title, description, url, created_by: user.id }).select("id,title,description,url,created_at").single();
-    setSavingLink(false);
-    if (error || !data) {
-      setLinkError(error?.code === "42501" ? "Your account no longer has permission to add club resources." : "The link could not be saved. Check the address and try again.");
-      return;
-    }
-
-    setResourceLinks((current) => [data as ResourceLink, ...current]);
-    formElement.reset();
-    setShowLinkForm(false);
-    notify("Resource link added");
-  }
-
-  async function deleteResourceLink(link: ResourceLink) {
-    if (!supabase || deletingLinkId || !window.confirm(`Remove “${link.title}” from club resources?`)) return;
-    setDeletingLinkId(link.id);
-    const { error } = await supabase.from("resource_links").delete().eq("id", link.id);
-    setDeletingLinkId(null);
-    if (error) { notify("The resource link could not be removed"); return; }
-    setResourceLinks((current) => current.filter((item) => item.id !== link.id));
-    notify("Resource link removed");
-  }
-
-  async function updateResourceLink(event: FormEvent<HTMLFormElement>, link: ResourceLink) {
-    event.preventDefault();
-    if (!supabase || updatingLinkId) return;
-    const form = new FormData(event.currentTarget);
-    const title = String(form.get("title") || "").trim();
-    const description = String(form.get("description") || "").trim();
-    let url: string;
-
-    if (!title) {
-      setEditLinkError("Give this resource a clear title.");
-      return;
-    }
-
-    try {
-      url = normalizeResourceUrl(String(form.get("url") || ""));
-    } catch {
-      setEditLinkError("Enter a complete web address, such as docs.google.com/document/…");
-      return;
-    }
-
-    setUpdatingLinkId(link.id);
-    setEditLinkError("");
-    const { data, error } = await supabase.from("resource_links").update({ title, description, url }).eq("id", link.id).select("id,title,description,url,created_at").single();
-    setUpdatingLinkId(null);
-    if (error || !data) {
-      setEditLinkError(error?.code === "42501" ? "Your account no longer has permission to edit club resources." : "The changes could not be saved. Check the address and try again.");
-      return;
-    }
-
-    setResourceLinks((current) => current.map((item) => item.id === link.id ? data as ResourceLink : item));
-    setEditingLinkId(null);
-    notify("Resource link updated");
-  }
-
   if (authLoading) return <LoadingScreen />;
   if (!supabase) return <SetupScreen />;
   if (!user) return showLogin ? <LoginScreen onBack={closeLogin} /> : <PublicSite onSignIn={openLogin} />;
@@ -341,9 +245,9 @@ export default function Home() {
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
-      {section === "home" && <ClubDashboard name={name} role={role} events={events} archive={archive} resourceLinks={resourceLinks} announcements={announcements} onNavigate={navigate} />}
+      {section === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} />}
 
-      {section === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={(groupId) => { setAttendanceInitialScope(groupId); navigate("attendance"); }} onOpenRecordings={(groupId) => { setRecordingScope(groupId); navigate("recordings"); }} notify={notify} />}
+      {section === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={(groupId) => { setAttendanceInitialScope(groupId); navigate("attendance"); }} onOpenRecordings={(groupId) => { setRecordingScope(groupId); navigate("recordings"); }} onOpenResources={(groupId) => { setResourceInitialScope(groupId); navigate("documents"); }} notify={notify} />}
 
       {section === "admin" && role === "admin" && <AdminPage user={user} groups={groups} notify={notify} />}
 
@@ -355,20 +259,12 @@ export default function Home() {
 
       {section === "members" && <MembersPage user={user} notify={notify} />}
 
-      {section === "documents" && <section className="section-shell page-section resources-page">
-        <PageTitle eyebrow="SHARED LIBRARY" title="Resources" text="Club links and club or subgroup documents together, clearly labeled and easy to filter." />
-        <div className="toolbar resource-toolbar"><p className="access-note">You see only resources available to you</p><ScopeFilterBar value={documentScope} onChange={setDocumentScope} groups={availableGroups} />{canManage && <div className="toolbar-actions"><button className="secondary" onClick={() => { setShowLinkForm((current) => !current); setEditingLinkId(null); setLinkError(""); setEditLinkError(""); }}>{showLinkForm ? "Cancel link" : "Add link"}</button><button className="primary" onClick={() => setShowUpload(true)}>＋ Add club document</button></div>}</div>
-        {showLinkForm && canManage && <form className="resource-link-form" onSubmit={addResourceLink} aria-busy={savingLink}><div className="resource-form-heading"><div><h2>Add a useful link</h2><p>Share a Google Drive file, sign-up form, sheet, or another trusted club resource.</p></div><span>Visible to all members</span></div><div className="resource-form-fields"><label>Title<input name="title" required maxLength={160} disabled={savingLink} placeholder="Fall concert sign-up" /></label><label>Web address<input name="url" type="text" inputMode="url" autoComplete="url" required maxLength={2048} disabled={savingLink} placeholder="docs.google.com/document/…" /></label><label className="resource-description">Description <span>Optional</span><textarea name="description" maxLength={1000} disabled={savingLink} rows={2} placeholder="Tell members when or why to use this link" /></label><button className="primary" disabled={savingLink}>{savingLink ? "Saving link…" : "Save link"}</button></div>{linkError && <p className="resource-form-error" role="alert">{linkError}</p>}</form>}
-        <section className="resource-collection"><div className="resource-collection-heading"><div><h2>Useful links</h2><p>Forms, shared drives, sheets, and frequently used pages.</p></div><span>{resourceLinks.length} {resourceLinks.length === 1 ? "link" : "links"}</span></div>{dataLoading ? <InlineLoading /> : resourceLinks.length ? <div className="resource-link-list">{resourceLinks.map((link) => <ResourceLinkRow key={link.id} link={link} canManage={canManage} editing={editingLinkId === link.id} busy={updatingLinkId === link.id || deletingLinkId === link.id} error={editingLinkId === link.id ? editLinkError : ""} onEdit={() => { setShowLinkForm(false); setLinkError(""); setEditLinkError(""); setEditingLinkId(link.id); }} onCancel={() => { setEditingLinkId(null); setEditLinkError(""); }} onSave={(event) => updateResourceLink(event, link)} onDelete={() => deleteResourceLink(link)} />)}</div> : <p className="resource-collection-empty">{canManage ? "No links yet. Add the first frequently used club resource." : "Club links will appear here when executives add them."}</p>}</section>
-        <section className="resource-collection"><div className="resource-collection-heading"><div><h2>Documents</h2><p>Files stored securely in the club and subgroup archive.</p></div><span>{documents.length} {documents.length === 1 ? "file" : "files"}</span></div>{dataLoading ? <InlineLoading /> : documents.length ? <div className="document-grid">{documents.map((item) => <article className="document-card" key={item.id}><div className="file-top"><span className="file-icon">▤</span><ContentScopeLabel subgroupId={item.subgroup_id} groups={groups} /></div><h3>{item.title}</h3><p>{item.description || `Added ${formatDate(item.created_at)}`}</p><button onClick={() => openFile(item)}>Download <span>↓</span></button></article>)}</div> : <EmptyState title="No resources in this view" text="Choose another group or add the first resource." />}</section>
-      </section>}
-
-      {section === "gallery" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB MEMORIES" title="Photo archive" text="The rehearsals, stages, and friendships that shape Bharat Sangeet." /><div className="toolbar"><p className="access-note">✓ Photos are shared across the whole club</p>{canManage && <button className="primary" onClick={() => { setUploadType("photo"); setShowUpload(true); }}>＋ Add photo</button>}</div>{photos.length ? <div className="gallery-grid">{photos.map((item, index) => <figure key={item.id} className={index === 0 ? "wide" : ""}><img src={item.signedUrl} alt={item.title} /><figcaption><b>{item.title}</b><span>{formatDate(item.created_at)}</span></figcaption></figure>)}</div> : <EmptyState title="No club photos yet" text={canManage ? "Upload the first memory from a rehearsal or concert." : "Club photos will appear here."} />}</section>}
+      {section === "documents" && <ResourceLibrary user={user} role={role} groups={availableGroups} memberships={memberships} events={events} notify={notify} onResourceCountChange={setResourceCount} initialScope={resourceInitialScope} />}
 
       {section === "finances" && <FinancePage user={user} role={role} groups={availableGroups} events={events} notify={notify} />}
 
       <footer><div className="footer-brand"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="" /><div><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></div></div><p>Carnatic and Hindustani music at UNC Chapel Hill.</p><p>2026–27 Season</p></footer>
-      {showUpload && <ArchiveModal user={user} initialType={uploadType} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
+      {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
       {showEvent && <EventModal user={user} groups={groups} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(); notify("Important date added"); }} notify={notify} />}
       {toast && <div className="toast" role="status">✓ {toast}</div>}
     </main>
@@ -507,15 +403,12 @@ function TalamMeasure({ next, nextWhen, onNavigate }: { next?: ClubEvent; nextWh
   return <section ref={measureRef} className="dashboard-measure" aria-labelledby="next-event-heading"><div className="measure-index"><span>TALA / TAAL</span><strong>{pattern?.beats ?? "—"}</strong><small>{pattern?.name ?? "Rhythm cycle"}</small><span>{pattern?.tradition ?? "Visual study"}</span></div><div className="measure-main"><span id="next-event-heading">Next on the calendar</span><h2>{next?.title || "The next gathering starts here"}</h2><p>{nextWhen}{next?.location ? ` · ${next.location}` : ""}</p><div className="measure-actions"><button type="button" onClick={() => onNavigate("calendar")}>View calendar</button><button type="button" onClick={() => onNavigate("groups")}>Open a group</button></div><div className="measure-track" aria-hidden="true"><div className="talam-track-beats">{beatMarkers}</div><motion.b animate={{ opacity: pattern ? 1 : 0.7 }} transition={{ duration: 0.25 }}>{beatLabel}</motion.b></div></div></section>;
 }
 
-function ClubDashboard({ name, role, events, archive, resourceLinks, announcements, onNavigate }: { name: string; role: ClubRole; events: ClubEvent[]; archive: ArchiveItem[]; resourceLinks: ResourceLink[]; announcements: Announcement[]; onNavigate: (section: Section) => void }) {
+function ClubDashboard({ name, role, events, resourceCount, announcements, onNavigate }: { name: string; role: ClubRole; events: ClubEvent[]; resourceCount: number; announcements: Announcement[]; onNavigate: (section: Section) => void }) {
   const upcoming = events.filter((event) => new Date(event.starts_at) >= new Date()).slice(0, 4);
-  const clubItems = archive.filter((item) => !item.subgroup_id);
   const next = upcoming[0];
   const latest = announcements[0];
   const nextWhen = next ? new Date(next.starts_at).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "No upcoming date scheduled";
-  const documentCount = clubItems.filter((item) => item.type === "document").length;
-  const resourceCount = documentCount + resourceLinks.length;
-  return <>{announcements.length > 0 && <AnnouncementFeed announcements={announcements} />}<section className="portal-dashboard"><div className="dashboard-intro"><div><h1>Welcome back, {name}.</h1><p>Carnatic and Hindustani musicians, one shared club home.</p></div><span>{role === "executive" ? "Executive view" : role === "admin" ? "Admin view" : "Member view"}</span></div><TalamMeasure next={next} nextWhen={nextWhen} onNavigate={onNavigate} /><div className="dashboard-beats"><article><span className="beat-number">1</span><h2>Announcements</h2><h3>{latest?.title || "Nothing new to review"}</h3><p>{latest?.body || "Club and group updates will appear here when an executive posts one."}</p><button type="button" onClick={() => onNavigate("home")}>{latest ? "Read update" : "Refresh overview"}</button></article><article><span className="beat-number">2</span><h2>Attendance</h2><h3>Ready for the next meeting</h3><p>Check in with a meeting code, review your history, or submit an absence excuse.</p><button type="button" onClick={() => onNavigate("attendance")}>Open attendance</button></article><article><span className="beat-number">3</span><h2>Resources</h2><h3>{resourceCount} club-wide {resourceCount === 1 ? "resource" : "resources"}</h3><p>Repertoire, planning documents, shared links, and references for every tradition and group.</p><button type="button" onClick={() => onNavigate("documents")}>Open library</button></article></div></section></>;
+  return <>{announcements.length > 0 && <AnnouncementFeed announcements={announcements} />}<section className="portal-dashboard"><div className="dashboard-intro"><div><h1>Welcome back, {name}.</h1><p>Carnatic and Hindustani musicians, one shared club home.</p></div><span>{role === "executive" ? "Executive view" : role === "admin" ? "Admin view" : "Member view"}</span></div><TalamMeasure next={next} nextWhen={nextWhen} onNavigate={onNavigate} /><div className="dashboard-beats"><article><span className="beat-number">1</span><h2>Announcements</h2><h3>{latest?.title || "Nothing new to review"}</h3><p>{latest?.body || "Club and group updates will appear here when an executive posts one."}</p><button type="button" onClick={() => onNavigate("home")}>{latest ? "Read update" : "Refresh overview"}</button></article><article><span className="beat-number">2</span><h2>Attendance</h2><h3>Ready for the next meeting</h3><p>Check in with a meeting code, review your history, or submit an absence excuse.</p><button type="button" onClick={() => onNavigate("attendance")}>Open attendance</button></article><article><span className="beat-number">3</span><h2>Resources</h2><h3>{resourceCount} available {resourceCount === 1 ? "resource" : "resources"}</h3><p>Repertoire, planning documents, shared links, and references for every tradition and group.</p><button type="button" onClick={() => onNavigate("documents")}>Open library</button></article></div></section></>;
 }
 
 function AnnouncementFeed({ announcements }: { announcements: Announcement[] }) {
@@ -533,8 +426,8 @@ function ContentScopeLabel({ subgroupId, groups }: { subgroupId?: number | null;
 
 function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
   const [open, setOpen] = useState(false); const shell = useRef<HTMLDivElement>(null);
-  const labels: Record<Section, string> = { home: "Overview", groups: "My Groups", calendar: "Calendar", members: "Members", attendance: "Attendance", recordings: "Recordings", documents: "Resources", gallery: "Photos", finances: "Finances", admin: "Admin" };
-  const primaryPages: Section[] = ["home", "calendar", "members", "gallery"];
+  const labels: Record<Section, string> = { home: "Overview", groups: "My Groups", calendar: "Calendar", members: "Members", attendance: "Attendance", recordings: "Recordings", documents: "Resources", finances: "Finances", admin: "Admin" };
+  const primaryPages: Section[] = ["home", "calendar", "members"];
   const libraryPages: Section[] = ["recordings", "documents"];
   const subgroupPages: Section[] = ["groups", "attendance"];
   const managePages: Section[] = role === "admin" ? ["admin"] : [];
@@ -553,7 +446,7 @@ function PortalPageMenu({ section, role, onNavigate }: { section: Section; role:
   return <div className="portal-navigation" ref={shell}><nav className="primary-navigation" aria-label="Portal navigation">{menuPages.map((page) => <button className={page === section ? "active" : ""} aria-current={page === section ? "page" : undefined} key={page} onClick={() => go(page)}>{labels[page]}</button>)}</nav><div className="page-menu-shell"><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Navigate</small><b>{labels[section]}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="page-menu" role="menu" aria-label="All pages">{menuGroup("CLUB", primaryPages, true)}{menuGroup("LIBRARY", libraryPages)}{menuGroup("GROUPS & ATTENDANCE", subgroupPages)}{menuGroup("MANAGE CLUB", managePages, true)}<span className="menu-count">{menuPages.length} destinations</span></div>}</div></div>;
 }
 
-function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; notify: (message: string) => void }) {
+function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify: (message: string) => void }) {
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [items, setItems] = useState<ArchiveItem[]>([]);
@@ -571,7 +464,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
     const [groupResult, membershipResult, archiveResult, announcementResult] = await Promise.all([
       supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
-      supabase.from("archive_items").select("*").not("subgroup_id", "is", null).order("created_at", { ascending: false }),
+      supabase.from("archive_items").select("*").eq("type", "recording").not("subgroup_id", "is", null).order("created_at", { ascending: false }),
       supabase.from("announcements").select("*").order("published_at", { ascending: false }),
     ]);
     if (groupResult.error || membershipResult.error || archiveResult.error || announcementResult.error) notify("Some group information could not be loaded");
@@ -632,7 +525,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
   const discoverGroups = groups.filter((group) => !canEnter(group.id));
   const active = groups.find((group) => group.id === selectedGroupId && canEnter(group.id));
   const groupItems = items.filter((item) => item.subgroup_id === active?.id);
-  const docs = groupItems.filter((item) => item.type === "document");
+  const recordings = groupItems.filter((item) => item.type === "recording");
   const groupAnnouncements = announcements.filter((item) => item.subgroup_id === active?.id);
 
   if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
@@ -641,10 +534,10 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
     <PageTitle eyebrow="GROUPS" title={active ? active.name : role === "member" ? "My groups" : "All groups"} text={active ? active.description || "Announcements, resources, recordings, and attendance for this group." : "Everything connected to your ensembles, without switching the rest of the site into another mode."} />
     {inlineMessage && <p className="action-feedback" role="status">{inlineMessage}</p>}
     {active ? <>
-      <div className="group-detail-actions"><Button variant="secondary" onClick={() => setSelectedGroupId(null)}>← All groups</Button><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recordings</Button><Button variant="secondary" onClick={() => onOpenAttendance(active.id)}>View attendance</Button>{role !== "member" && <><Button variant="secondary" onClick={() => setShowAnnouncement(true)}>Post update</Button><Button onClick={() => setShowUpload(true)}>Add resource</Button></>}</div>
+      <div className="group-detail-actions"><Button variant="secondary" onClick={() => setSelectedGroupId(null)}>← All groups</Button><Button variant="secondary" onClick={() => onOpenResources(active.id)}>Open resources</Button><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recordings</Button><Button variant="secondary" onClick={() => onOpenAttendance(active.id)}>View attendance</Button>{role !== "member" && <><Button variant="secondary" onClick={() => setShowAnnouncement(true)}>Post update</Button><Button onClick={() => setShowUpload(true)}>Add recording</Button></>}</div>
       <div className="group-detail-grid">
         <section className="group-feed"><div className="dashboard-section-title"><h2>Announcements</h2><span>{groupAnnouncements.length}</span></div>{groupAnnouncements.length ? groupAnnouncements.map((item) => <article key={item.id}><b>{item.title}</b><p>{item.body}</p><small>{formatDate(item.published_at)}</small></article>) : <p className="workspace-empty">No announcements for this group yet.</p>}</section>
-        <section><div className="dashboard-section-title"><h2>Resources</h2><span>{docs.length}</span></div>{docs.length ? docs.map((item) => <button className="workspace-file" key={item.id} onClick={() => open(item)}><div><b>{item.title}</b><small>{item.description || formatDate(item.created_at)}</small></div><i>Open</i></button>) : <p className="workspace-empty">No resources yet.</p>}</section>
+        <section><div className="dashboard-section-title"><h2>Resources</h2><span>Library</span></div><p className="workspace-empty">Documents, links, and photos live in the shared resource library.</p><Button variant="secondary" onClick={() => onOpenResources(active.id)}>Open resources</Button></section>
         <section><div className="dashboard-section-title"><h2>Recordings</h2><span>Room</span></div><p className="workspace-empty">Capture rehearsals, lessons, and takes in the subgroup recording room.</p><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recording room →</Button></section>
       </div>
     </> : <>
@@ -659,8 +552,8 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
 }
 function SubgroupUploadModal({ user, subgroupId, onClose, onSaved, notify }: { user: User; subgroupId: number; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!supabase) return; setSaving(true); const form = new FormData(event.currentTarget); const file = form.get("file") as File; const path = `${user.id}/subgroups/${subgroupId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`; const upload = await supabase.storage.from("club-archive").upload(path, file); if (upload.error) { notify(upload.error.message); setSaving(false); return; } const result = await supabase.from("archive_items").insert({ title: String(form.get("title")), description: String(form.get("description") || ""), type: "document", storage_path: path, visibility: "members", subgroup_id: subgroupId, uploaded_by: user.id }); if (result.error) { await supabase.storage.from("club-archive").remove([path]); notify(result.error.message); setSaving(false); } else onSaved(); }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">SUBGROUP MATERIAL</p><h2>Add a resource</h2><p className="modal-copy">Recordings now live in the subgroup recording room, where members can capture and review takes.</p><label>Title<input name="title" required /></label><label>Description<input name="description" /></label><label>File<input name="file" type="file" required /></label><Button type="submit" disabled={saving}>{saving ? "Uploading…" : "Add to subgroup"}</Button></form></div>;
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!supabase) return; setSaving(true); const form = new FormData(event.currentTarget); const file = form.get("file") as File; const path = `${user.id}/subgroups/${subgroupId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`; const upload = await supabase.storage.from("club-archive").upload(path, file); if (upload.error) { notify(upload.error.message); setSaving(false); return; } const result = await supabase.from("archive_items").insert({ title: String(form.get("title")), description: String(form.get("description") || ""), type: "recording", storage_path: path, visibility: "members", subgroup_id: subgroupId, raga: String(form.get("raga") || "") || null, uploaded_by: user.id }); if (result.error) { await supabase.storage.from("club-archive").remove([path]); notify(result.error.message); setSaving(false); } else onSaved(); }
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">SUBGROUP RECORDING</p><h2>Add a recording</h2><label>Title<input name="title" required /></label><label>Description<input name="description" /></label><label>Raga<input name="raga" /></label><label>File<input name="file" type="file" required accept="audio/*,video/*" /></label><Button type="submit" disabled={saving}>{saving ? "Uploading…" : "Add recording"}</Button></form></div>;
 }
 
 function EventModal({ user, groups, onClose, onSaved, notify }: { user: User; groups: Subgroup[]; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
@@ -801,8 +694,7 @@ function LoginScreen({ onBack }: { onBack: () => void }) {
   return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h1>Many traditions.<br /><em>One place to make music.</em></h1></div></div><section className="login-panel"><button className="login-back" type="button" onClick={onBack}>← Back to public site</button><div className="login-box"><span className="login-context">UNC CHAPEL HILL MEMBER PORTAL</span><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setErrorMessage(""); window.sessionStorage.removeItem(pendingSignupNameKey); }}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setErrorMessage(""); }}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join UNC's Carnatic and Hindustani music community. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p>{mode === "signup" && <label className="signup-name">Preferred name<input autoComplete="name" value={preferredName} onChange={(event) => setPreferredName(event.target.value)} placeholder="What should we call you?" required /></label>}<button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, groups, and attendance."}</small></div></section></main>;
 }
 
-function ArchiveModal({ user, initialType = "document", onClose, onSaved, notify }: { user: User; initialType?: "document" | "photo"; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
-  const [type, setType] = useState<"document" | "photo">(initialType);
+function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase) return; setSaving(true);
@@ -812,27 +704,11 @@ function ArchiveModal({ user, initialType = "document", onClose, onSaved, notify
     const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
     if (upload.error) { setSaving(false); notify(upload.error.message); return; }
     const access = String(form.get("visibility") || "members");
-    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type, storage_path: storagePath, visibility: access, uploaded_by: user.id });
+    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type: "recording", storage_path: storagePath, visibility: access === "public" ? "members" : access, is_public: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploaded_by: user.id });
     if (saved.error) { await supabase.storage.from("club-archive").remove([storagePath]); setSaving(false); notify(saved.error.message); return; }
     setSaving(false); onSaved();
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add to club records</h2><label>Item type<select value={type} onChange={(e) => setType(e.target.value as "document" | "photo")}><option value="document">Document</option><option value="photo">Photo</option></select></label><label>Title<input name="title" required placeholder="Give this item a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label><label>Choose file<input name="file" type="file" required accept={type === "photo" ? "image/*" : undefined} /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option></select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save to archive"}</button></form></div>;
-}
-
-function ResourceLinkRow({ link, canManage, editing, busy, error, onEdit, onCancel, onSave, onDelete }: {
-  link: ResourceLink;
-  canManage: boolean;
-  editing: boolean;
-  busy: boolean;
-  error: string;
-  onEdit: () => void;
-  onCancel: () => void;
-  onSave: (event: FormEvent<HTMLFormElement>) => void;
-  onDelete: () => void;
-}) {
-  if (editing) return <article className="resource-link-row is-editing"><form className="resource-link-edit-form" onSubmit={onSave} aria-busy={busy}><div className="resource-link-edit-fields"><label>Title<input name="title" defaultValue={link.title} required maxLength={160} disabled={busy} autoFocus /></label><label>Web address<input name="url" defaultValue={link.url} type="text" inputMode="url" autoComplete="url" required maxLength={2048} disabled={busy} /></label><label className="resource-edit-description">Description <em>Optional</em><textarea name="description" defaultValue={link.description} maxLength={1000} disabled={busy} rows={2} /></label></div><div className="resource-link-edit-actions"><button className="primary" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button><button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>{error && <p className="resource-form-error" role="alert">{error}</p>}</form></article>;
-
-  return <article className="resource-link-row"><div><span>{resourceHostname(link.url)}</span><h3>{link.title}</h3><p>{link.description || `Shared ${formatDate(link.created_at)}`}</p></div><div className="resource-link-actions"><a href={link.url} target="_blank" rel="noopener noreferrer">Open link</a>{canManage && <><button onClick={onEdit}>Edit</button><button className="danger-link-action" disabled={busy} onClick={onDelete} aria-label={`Remove ${link.title}`}>{busy ? "Removing…" : "Remove"}</button></>}</div></article>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add a club recording</h2><label>Title<input name="title" required placeholder="Give this recording a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label><div className="form-pair"><label>Raga / raag<input name="raga" /></label><label>Tala / taal<input name="tala" /></label></div><label>Choose file<input name="file" type="file" required accept="audio/*,video/*" /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option><option value="public">Everyone (public concert)</option></select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save recording"}</button></form></div>;
 }
 
 function PageTitle({ eyebrow, title, text, scope }: { eyebrow: string; title: string; text: string; scope?: "Club-wide" | "Subgroup" }) {
@@ -844,14 +720,4 @@ function LoadingScreen() { return <main className="loading-screen"><img classNam
 function InlineLoading() { return <div className="inline-loading">Loading the archive…</div>; }
 function SetupScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
 function formatDate(value: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)); }
-function normalizeResourceUrl(value: string) {
-  const candidate = value.trim();
-  const parsed = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
-  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error("Unsupported URL");
-  return parsed.toString();
-}
-function resourceHostname(value: string) {
-  try { return new URL(value).hostname.replace(/^www\./i, ""); }
-  catch { return "External resource"; }
-}
 function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "BS"; }

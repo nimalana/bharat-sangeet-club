@@ -4,45 +4,49 @@ import test from "node:test";
 
 const projectRoot = new URL("../", import.meta.url);
 
-test("resource links use database-enforced member and manager permissions", async () => {
-  const migration = await readFile(new URL("supabase/migrations/20260824193611_resource_links.sql", projectRoot), "utf8");
-  const leastPrivilegeMigration = await readFile(
-    new URL("supabase/migrations/20260824195043_resource_links_least_privilege.sql", projectRoot),
-    "utf8",
-  );
-  const creatorIndexMigration = await readFile(
-    new URL("supabase/migrations/20260824200959_resource_links_creator_index.sql", projectRoot),
-    "utf8",
-  );
-  const editMigration = await readFile(
-    new URL("supabase/migrations/20260824213612_edit_resource_links.sql", projectRoot),
-    "utf8",
-  );
+test("unified resources use database-enforced hierarchy, storage, and permissions", async () => {
+  const migration = await readFile(new URL("supabase/migrations/20260907000000_unified_resources_library.sql", projectRoot), "utf8");
 
-  assert.match(migration, /create table public\.resource_links/);
-  assert.match(migration, /alter table public\.resource_links enable row level security/);
-  assert.match(migration, /revoke all on table public\.resource_links from anon/);
-  assert.match(migration, /for select\s+to authenticated\s+using \(\(select auth\.uid\(\)\) is not null\)/s);
-  assert.match(migration, /for insert\s+to authenticated\s+with check \(\s*\(select private\.is_executive\(\)\)/s);
-  assert.match(migration, /check \(url ~\* '\^https\?:\/\//);
-  assert.match(leastPrivilegeMigration, /revoke all on table public\.resource_links from authenticated/);
-  assert.match(leastPrivilegeMigration, /grant select, insert, delete on table public\.resource_links to authenticated/);
-  assert.match(creatorIndexMigration, /create index resource_links_created_by_idx/);
-  assert.match(editMigration, /grant update \(title, description, url\) on table public\.resource_links to authenticated/);
-  assert.match(editMigration, /for update\s+to authenticated\s+using \(\(select private\.is_executive\(\)\)\)\s+with check \(\(select private\.is_executive\(\)\)\)/s);
+  assert.match(migration, /create table if not exists public\.resources/);
+  assert.match(migration, /create table if not exists public\.resource_imports/);
+  assert.match(migration, /create type public\.resource_node_kind/);
+  assert.match(migration, /resources_node_shape/);
+  assert.match(migration, /validate_resource_hierarchy/);
+  assert.match(migration, /resource hierarchy cannot exceed three folder levels/);
+  assert.match(migration, /alter table public\.resources enable row level security/);
+  assert.match(migration, /revoke all on table public\.resources, public\.resource_imports/);
+  assert.match(migration, /create policy "Members view permitted resources"/);
+  assert.match(migration, /create policy "Managers create resources"/);
+  assert.match(migration, /create policy "Managers upload resource files"\s+on storage\.objects/);
+  assert.match(migration, /values \('club-resources', 'club-resources', false\)/);
 });
 
-test("resources UI supports adding, opening, editing, and removing links", async () => {
-  const page = await readFile(new URL("app/page.tsx", projectRoot), "utf8");
+test("resources UI is integrated as the single library while recordings stay in the archive", async () => {
+  const [page, resources] = await Promise.all([
+    readFile(new URL("app/page.tsx", projectRoot), "utf8"),
+    readFile(new URL("app/resources.tsx", projectRoot), "utf8"),
+  ]);
 
-  assert.match(page, /from\("resource_links"\)\.select/);
-  assert.match(page, /function addResourceLink/);
-  assert.match(page, /function updateResourceLink/);
-  assert.match(page, /function deleteResourceLink/);
-  assert.match(page, /from\("resource_links"\)\.update\(\{ title, description, url \}\)/);
-  assert.match(page, />Edit<\/button>/);
-  assert.match(page, /Save changes/);
-  assert.match(page, /title="Club resources"/);
-  assert.match(page, /target="_blank" rel="noopener noreferrer"/);
-  assert.match(page, /aria-busy=\{savingLink\}/);
+  assert.match(page, /import \{ ResourceLibrary \} from "\.\/resources"/);
+  assert.match(page, /section === "documents".*<ResourceLibrary/s);
+  assert.match(page, /rawValue === "gallery" \? "documents"/);
+  assert.doesNotMatch(page, /from\("resource_links"\)/);
+  assert.match(page, /from\("archive_items"\)\.select\("\*"\)\.eq\("type", "recording"\)/);
+  assert.match(page, /onOpenResources=\{\(groupId\) => \{ setResourceInitialScope\(groupId\); navigate\("documents"\); \}\}/);
+  assert.match(page, /onClick=\{\(\) => onOpenResources\(active\.id\)\}>Open resources/);
+  assert.doesNotMatch(page, /option value="document"/);
+  assert.doesNotMatch(page, /option value="photo"/);
+  assert.match(resources, /export function ResourceLibrary/);
+  assert.match(resources, /from\("resources"\)/);
+  assert.match(resources, /composer === "folder-upload"[\s\S]*webkitdirectory/);
+  assert.match(resources, /webkitRelativePath/);
+  assert.match(resources, /entry\.relativePath\.split\("\/"\)\.filter\(Boolean\)/);
+  assert.match(resources, /for \(const segment of segments\)[\s\S]*parent_id: parentId/);
+  assert.match(resources, /const parentId = await ensureFolderPath\(parentPath, importId, folderCache\)/);
+  assert.match(resources, /storage_path: path/);
+  const importRowIndex = resources.indexOf('from("resource_imports").insert');
+  const fileRowIndex = resources.indexOf('await uploadOne(entries[index]');
+  assert.ok(importRowIndex >= 0, "folder upload should create a resource_imports row");
+  assert.ok(fileRowIndex > importRowIndex, "folder upload should create its import before resource rows");
+  assert.match(resources, /Array\.from\(\{ length: Math\.min\(3, entries\.length\) \}/);
 });
