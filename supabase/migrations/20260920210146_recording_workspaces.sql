@@ -1,3 +1,4 @@
+-- Recording workspace schema, deployed to production on 2026-09-20.
 do $$
 begin
   create type public.recording_status as enum ('draft', 'published', 'archived');
@@ -80,11 +81,14 @@ on public.recordings for insert to authenticated
 with check (
   uploaded_by = (select auth.uid())
   and subgroup_id is not null
-  and exists (
-    select 1 from public.subgroup_memberships membership
-    where membership.subgroup_id = recordings.subgroup_id
-      and membership.member_id = (select auth.uid())
-      and membership.status = 'active'
+  and (
+    private.is_executive()
+    or exists (
+      select 1 from public.subgroup_memberships membership
+      where membership.subgroup_id = recordings.subgroup_id
+        and membership.member_id = (select auth.uid())
+        and membership.status = 'active'
+    )
   )
 );
 
@@ -190,6 +194,13 @@ using (
     select 1 from public.recording_notes note
     where note.storage_path = name
   )
+);
+
+create policy "Uploaders read own recording objects"
+on storage.objects for select to authenticated
+using (
+  bucket_id in ('recordings', 'recording-notations', 'club-archive')
+  and owner_id = (select auth.uid())::text
 );
 
 create policy "Members delete their recording notation"
