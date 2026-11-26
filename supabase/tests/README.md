@@ -27,3 +27,11 @@ test project before merging changes that depend on them.
 exists and revokes a function only hosted Supabase creates. `bootstrap.sql`
 provides both just before that migration runs. It is never applied to a real
 project.
+
+## The access snapshot
+
+After the tests, the harness prints every table grant, policy and callable
+function (`permissions.sql`) and compares it with `permissions.snapshot`. Any
+change to who can do what therefore shows up as a diff in review. After a
+deliberate change, regenerate it with `UPDATE_SNAPSHOT=1 scripts/db-replay.sh`
+and commit the result.
