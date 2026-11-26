@@ -32,3 +32,16 @@ accounts: an admin, a group manager who is not an executive, and a plain member.
 - [ ] As the group manager: approve, waitlist and decline a join request; rename the group; remove a plain member. Cannot remove another manager.
 - [ ] Edit a calendar date and an announcement; pin and unpin.
 - [ ] Attendance: edit and delete a draft meeting; clear a mark; void a closed meeting and confirm the member's unexcused total drops; change thresholds; as a member, withdraw a pending absence form.
+
+## Finance (branch `phase-1b-finance`)
+
+Use two executives and one member. Note the Available cash figure before each step.
+
+- [ ] Member submits a request with a receipt, edits the amount, then withdraws a second request. The withdrawn one shows as voided.
+- [ ] Executive A requests changes with a note. The member sees the note, adds a new receipt, removes the old one (the file is gone from `finance-private`), and resubmits.
+- [ ] Executive A approves a lower amount with a note, marks it paid, then voids the payment. Available cash returns to the earlier figure and the request is back to approved. Pay it again.
+- [ ] Executive A submits their own request and cannot approve it; Executive B can.
+- [ ] Record a club expense, edit its description, then void it. Its ledger line disappears and Available cash goes back up.
+- [ ] Record income, then void it.
+- [ ] Build a funding claim from two expenses. Mark ready is refused until the documents are there. Remove and re-add an expense. Submit, mark approved for less than requested, record the payment, void the payment, then void the claim. The expenses can go on a new claim.
+- [ ] The five summary cards match a hand total of the ledger.

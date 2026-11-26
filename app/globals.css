@@ -467,3 +467,4 @@ input::placeholder,textarea::placeholder{color:#65757e;opacity:1}
 .calendar-agenda-event{padding-right:104px}
 .admin-announcement>div:first-child{min-width:0}
 .admin-show-deactivated{margin:0 0 10px;font-size:13px}
+.finance-row-action{margin-left:8px;border:0;background:transparent;padding:2px 4px;color:var(--maroon);font-size:11px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}.finance-row-action:hover,.finance-row-action:focus-visible{color:var(--ink)}.finance-row-actions{display:block;font-weight:400}.document-chip-group{display:inline-flex;align-items:center}.reimbursement-actions small{align-self:center;color:#4c5f6b}
