@@ -434,6 +434,9 @@ storage.objects  [Managers upload resource files]  INSERT  to authenticated
 storage.objects  [Members delete own attendance excuse proof]  DELETE  to authenticated
     using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR private.is_executive()))
     check: -
+storage.objects  [Members delete own unregistered finance files]  DELETE  to authenticated
+    using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM finance_documents document WHERE (document.storage_path = objects.name)))))
+    check: -
 storage.objects  [Members delete their recording files]  DELETE  to authenticated
     using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (private.is_executive() OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
     check: -
@@ -491,6 +494,7 @@ private.is_admin()  definer
 private.is_executive()  definer
 private.is_subgroup_lead_manager(target_subgroup_id bigint)  definer
 private.is_subgroup_manager(target_subgroup_id bigint)  definer
+public.add_funding_claim_expense(p_claim_id bigint, p_expense_id bigint)  definer
 public.add_subgroup_member(p_subgroup_id bigint, p_member_id uuid)  definer
 public.admin_change_member_role(p_target_id uuid, p_new_role club_role)  definer
 public.admin_deactivate_member(p_target_id uuid, p_reason text)  definer
@@ -502,8 +506,10 @@ public.check_in_attendance(p_code text)  definer
 public.clear_attendance_status(p_session_id bigint, p_member_id uuid)  definer
 public.close_attendance_session(p_session_id bigint)  definer
 public.create_attendance_session(p_scope text, p_subgroup_id bigint, p_title text, p_starts_at timestamp with time zone)  definer
+public.create_funding_claim(p_title text, p_funder_name text, p_award_reference text, p_heellife_reference text, p_submission_deadline date, p_notes text, p_expense_ids bigint[])  definer
 public.create_subgroup(subgroup_name text, subgroup_description text, subgroup_mode subgroup_enrollment_mode)  definer
 public.delete_attendance_session(p_session_id bigint)  definer
+public.get_finance_summary()  invoker
 public.leave_subgroup(p_subgroup_id bigint)  definer
 public.list_subgroup_roster(p_subgroup_id bigint)  invoker
 public.open_attendance_session(p_session_id bigint, p_duration_minutes integer)  definer
@@ -511,7 +517,10 @@ public.pay_personal_reimbursement(p_reimbursement_id bigint, p_payment_date date
 public.record_club_expense(p_description text, p_vendor text, p_amount numeric, p_purchase_date date, p_category text, p_account_name text, p_payment_card_last4 text, p_subgroup_id bigint, p_club_event_id bigint, p_event_related boolean, p_event_name text, p_event_starts_at timestamp with time zone, p_event_attendee_count integer, p_event_schedule text)  definer
 public.record_finance_income(p_description text, p_amount numeric, p_payment_date date, p_category text, p_counterparty text, p_account_name text)  definer
 public.record_funding_claim_payment(p_claim_id bigint, p_amount numeric, p_payment_date date, p_account_name text)  definer
+public.remove_finance_document(p_document_id bigint)  definer
+public.remove_funding_claim_expense(p_claim_id bigint, p_expense_id bigint)  definer
 public.remove_subgroup_member(p_subgroup_id bigint, p_member_id uuid)  definer
+public.request_reimbursement_changes(p_reimbursement_id bigint, p_note text)  definer
 public.request_subgroup_enrollment(target_subgroup_id bigint)  definer
 public.review_attendance_excuse(p_excuse_id bigint, p_decision text, p_note text)  definer
 public.review_personal_reimbursement(p_reimbursement_id bigint, p_decision text, p_approved_amount numeric, p_review_note text)  definer
@@ -522,6 +531,7 @@ public.set_attendance_eligibility(p_term_key text, p_member_id uuid, p_status at
 public.set_attendance_remediation(p_remediation_id bigint, p_status attendance_remediation_status, p_assignment text, p_due_at timestamp with time zone, p_note text)  definer
 public.set_attendance_status(p_session_id bigint, p_member_id uuid, p_status attendance_status, p_note text, p_minutes_late integer)  definer
 public.set_attendance_thresholds(p_warning integer, p_critical integer)  definer
+public.set_funding_claim_status(p_claim_id bigint, p_status text, p_approved_amount numeric, p_note text)  definer
 public.set_resource_archived(p_resource_id bigint, p_archived boolean)  definer
 public.set_resource_visibility(p_resource_id bigint, p_visibility archive_visibility)  definer
 public.set_subgroup_archived(p_subgroup_id bigint, p_archived boolean)  definer
@@ -530,6 +540,12 @@ public.set_subgroup_member_role(target_subgroup_id bigint, target_member_id uuid
 public.submit_attendance_excuse(p_session_id bigint, p_reason text, p_proof_path text, p_reason_category text, p_notified_at timestamp with time zone)  definer
 public.submit_member_reimbursement(p_description text, p_vendor text, p_amount numeric, p_purchase_date date, p_category text, p_payment_card_last4 text, p_member_note text, p_subgroup_id bigint, p_club_event_id bigint, p_event_related boolean, p_event_name text, p_event_starts_at timestamp with time zone, p_event_attendee_count integer, p_event_schedule text)  definer
 public.update_attendance_session(p_session_id bigint, p_title text, p_starts_at timestamp with time zone)  definer
+public.update_finance_expense(p_expense_id bigint, p_description text, p_vendor text, p_category text, p_payment_card_last4 text, p_subgroup_id bigint, p_club_event_id bigint, p_event_related boolean, p_event_name text, p_event_starts_at timestamp with time zone, p_event_attendee_count integer, p_event_schedule text, p_amount numeric, p_purchase_date date)  definer
+public.update_member_reimbursement(p_reimbursement_id bigint, p_description text, p_vendor text, p_amount numeric, p_purchase_date date, p_category text, p_payment_card_last4 text, p_member_note text, p_subgroup_id bigint, p_club_event_id bigint, p_event_related boolean, p_event_name text, p_event_starts_at timestamp with time zone, p_event_attendee_count integer, p_event_schedule text)  definer
 public.update_subgroup(p_subgroup_id bigint, p_name text, p_description text)  definer
 public.void_attendance_session(p_session_id bigint, p_reason text)  definer
+public.void_finance_expense(p_expense_id bigint, p_reason text)  definer
+public.void_finance_payment(p_payment_id bigint, p_reason text)  definer
+public.void_funding_claim(p_claim_id bigint, p_reason text)  definer
 public.withdraw_attendance_excuse(p_excuse_id bigint)  definer
+public.withdraw_member_reimbursement(p_reimbursement_id bigint)  definer
