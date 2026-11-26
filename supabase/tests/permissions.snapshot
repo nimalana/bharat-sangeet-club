@@ -499,9 +499,11 @@ public.admin_reactivate_member(p_target_id uuid)  definer
 public.admin_update_member_profile(p_target_id uuid, p_full_name text, p_phone text, p_class_year text, p_specialty text, p_subgroup_ids bigint[])  definer
 public.cancel_attendance_session(p_session_id bigint)  definer
 public.check_in_attendance(p_code text)  definer
+public.clear_attendance_status(p_session_id bigint, p_member_id uuid)  definer
 public.close_attendance_session(p_session_id bigint)  definer
 public.create_attendance_session(p_scope text, p_subgroup_id bigint, p_title text, p_starts_at timestamp with time zone)  definer
 public.create_subgroup(subgroup_name text, subgroup_description text, subgroup_mode subgroup_enrollment_mode)  definer
+public.delete_attendance_session(p_session_id bigint)  definer
 public.leave_subgroup(p_subgroup_id bigint)  definer
 public.list_subgroup_roster(p_subgroup_id bigint)  invoker
 public.open_attendance_session(p_session_id bigint, p_duration_minutes integer)  definer
@@ -519,6 +521,7 @@ public.rotate_attendance_code(p_session_id bigint)  definer
 public.set_attendance_eligibility(p_term_key text, p_member_id uuid, p_status attendance_eligibility_status, p_reason text)  invoker
 public.set_attendance_remediation(p_remediation_id bigint, p_status attendance_remediation_status, p_assignment text, p_due_at timestamp with time zone, p_note text)  definer
 public.set_attendance_status(p_session_id bigint, p_member_id uuid, p_status attendance_status, p_note text, p_minutes_late integer)  definer
+public.set_attendance_thresholds(p_warning integer, p_critical integer)  definer
 public.set_resource_archived(p_resource_id bigint, p_archived boolean)  definer
 public.set_resource_visibility(p_resource_id bigint, p_visibility archive_visibility)  definer
 public.set_subgroup_archived(p_subgroup_id bigint, p_archived boolean)  definer
@@ -526,4 +529,7 @@ public.set_subgroup_enrollment_mode(p_subgroup_id bigint, p_mode subgroup_enroll
 public.set_subgroup_member_role(target_subgroup_id bigint, target_member_id uuid, next_role subgroup_membership_role)  definer
 public.submit_attendance_excuse(p_session_id bigint, p_reason text, p_proof_path text, p_reason_category text, p_notified_at timestamp with time zone)  definer
 public.submit_member_reimbursement(p_description text, p_vendor text, p_amount numeric, p_purchase_date date, p_category text, p_payment_card_last4 text, p_member_note text, p_subgroup_id bigint, p_club_event_id bigint, p_event_related boolean, p_event_name text, p_event_starts_at timestamp with time zone, p_event_attendee_count integer, p_event_schedule text)  definer
+public.update_attendance_session(p_session_id bigint, p_title text, p_starts_at timestamp with time zone)  definer
 public.update_subgroup(p_subgroup_id bigint, p_name text, p_description text)  definer
+public.void_attendance_session(p_session_id bigint, p_reason text)  definer
+public.withdraw_attendance_excuse(p_excuse_id bigint)  definer
