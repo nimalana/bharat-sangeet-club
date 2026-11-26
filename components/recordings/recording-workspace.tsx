@@ -8,6 +8,7 @@ import * as Tone from "tone";
 import { supabase } from "../../lib/supabase";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { NoteActions, RecordingManageBar, recordingBucket } from "./recording-manage";
 
 type Group = { id: number; name: string; description: string };
 type Membership = { subgroup_id: number; status: string };
@@ -20,6 +21,7 @@ type Recording = {
   subgroup_id: number | null;
   uploaded_by: string;
   storage_path: string;
+  storage_bucket?: string;
   mime_type: string;
   media_kind: "audio" | "video";
   status: RecordingStatus;
@@ -35,7 +37,7 @@ type Recording = {
   updated_at: string;
   published_at: string | null;
 };
-type RecordingNote = { id: number; recording_id: number; title: string; note_type: "text" | "file"; body: string; storage_path: string | null; mime_type: string | null };
+type RecordingNote = { id: number; recording_id: number; title: string; note_type: "text" | "file"; body: string; storage_path: string | null; mime_type: string | null; uploaded_by?: string };
 type WorkspaceProps = { user: User; groups: Group[]; memberships: Membership[]; canManage: boolean; initialScope?: Scope; notify: (message: string) => void; onDataChanged?: () => void };
 type Scope = "all" | number;
 
@@ -61,7 +63,7 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<"published" | "drafts">("published");
+  const [view, setView] = useState<"published" | "drafts" | "archived">("published");
   const [loading, setLoading] = useState(true);
   const [studioOpen, setStudioOpen] = useState(false);
   const [editingDraft, setEditingDraft] = useState<Recording | null>(null);
@@ -81,7 +83,7 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
   useEffect(() => { void load(); }, [load]);
 
   const visible = recordings.filter((recording) => {
-    const matchesView = view === "drafts" ? recording.status === "draft" && recording.uploaded_by === user.id : recording.status === "published";
+    const matchesView = view === "drafts" ? recording.status === "draft" && recording.uploaded_by === user.id : view === "archived" ? recording.status === "archived" && (canManage || recording.uploaded_by === user.id) : recording.status === "published";
     const matchesScope = scope === "all" || recording.subgroup_id === scope;
     const haystack = `${recording.title} ${recording.description} ${recording.raga || ""} ${recording.tala || ""} ${recording.recording_kind}`.toLowerCase();
     return matchesView && matchesScope && haystack.includes(query.toLowerCase());
@@ -119,6 +121,7 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
         <div className="recording-tabs" role="tablist" aria-label="Recording views">
           <button className={view === "published" ? "active" : ""} role="tab" aria-selected={view === "published"} onClick={() => setView("published")}>Published</button>
           <button className={view === "drafts" ? "active" : ""} role="tab" aria-selected={view === "drafts"} onClick={() => setView("drafts")}>My drafts</button>
+          {(view === "archived" || recordings.some((recording) => recording.status === "archived" && (canManage || recording.uploaded_by === user.id))) && <button className={view === "archived" ? "active" : ""} role="tab" aria-selected={view === "archived"} onClick={() => setView("archived")}>Archived</button>}
         </div>
         <label className="recording-search"><span aria-hidden="true">⌕</span><input aria-label="Search recordings" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, raga, tala, or type" /></label>
         <label className="scope-picker recording-scope-picker"><span>Group</span><select value={scope === "all" ? "all" : String(scope)} onChange={(event) => setScope(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All my groups</option>{activeGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
@@ -130,15 +133,15 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
           <span className="recording-card-index">{String(index + 1).padStart(2, "0")}</span>
           <span className={`recording-card-icon ${recording.media_kind}`} aria-hidden="true">{recording.media_kind === "video" ? "▣" : "◖"}</span>
           <span className="recording-card-main"><strong>{recording.title}</strong><small>{group?.name || "Subgroup"} · {recording.recording_kind} · {formatDuration(recording.duration_seconds)}</small><span>{[recording.raga, recording.tala, recording.sruthi].filter(Boolean).join(" · ") || recording.description || "No musical details added yet"}</span></span>
-          <span className="recording-card-status">{view === "drafts" ? "Draft" : recording.media_kind === "video" ? "Video" : "Audio"}</span>
+          <span className="recording-card-status">{view === "drafts" ? "Draft" : view === "archived" ? "Archived" : recording.media_kind === "video" ? "Video" : "Audio"}</span>
           <span className="recording-card-date">{formatDate(recording.published_at || recording.created_at)}</span>
           <span className="recording-card-arrow" aria-hidden="true">→</span>
         </button>;
-      })}</div> : <div className="recording-empty-state compact"><span className="recording-empty-mark">{view === "drafts" ? "✎" : "♪"}</span><div><h2>{view === "drafts" ? "No drafts yet" : "No published recordings in this view"}</h2><p>{view === "drafts" ? "Start a rehearsal capture or upload a take. You can return to it before publishing." : "Be the first person in your subgroup to publish a rehearsal or performance take."}</p><Button variant="secondary" onClick={beginNewRecording}>Create the first recording</Button></div></div>}
+      })}</div> : <div className="recording-empty-state compact"><span className="recording-empty-mark">{view === "drafts" ? "✎" : "♪"}</span><div><h2>{view === "drafts" ? "No drafts yet" : view === "archived" ? "Nothing archived in this view" : "No published recordings in this view"}</h2><p>{view === "drafts" ? "Start a rehearsal capture or upload a take. You can return to it before publishing." : view === "archived" ? "Archived recordings stay here until they are restored or deleted." : "Be the first person in your subgroup to publish a rehearsal or performance take."}</p><Button variant="secondary" onClick={beginNewRecording}>Create the first recording</Button></div></div>}
     </>}
 
     {studioOpen && <RecordingStudioDialog user={user} groups={activeGroups} draft={editingDraft} notify={notify} onClose={() => { setStudioOpen(false); setEditingDraft(null); }} onSaved={async () => { setStudioOpen(false); setEditingDraft(null); await refresh(); }} />}
-    {selectedRecording && <RecordingDetailDialog recording={selectedRecording} groups={groups} notify={notify} onClose={() => setSelectedRecording(null)} />}
+    {selectedRecording && <RecordingDetailDialog key={selectedRecording.id} recording={recordings.find((item) => item.id === selectedRecording.id) || selectedRecording} user={user} canManage={canManage} groups={groups} notify={notify} onChanged={refresh} onRemoved={async () => { setSelectedRecording(null); await refresh(); }} onClose={() => setSelectedRecording(null)} />}
   </section>;
 }
 
@@ -206,7 +209,7 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
   useEffect(() => {
     let cancelled = false;
     if (!draft || !supabase) return;
-    void supabase.storage.from("recordings").createSignedUrl(draft.storage_path, 1800).then(({ data }) => { if (!cancelled) { setMediaUrl(data?.signedUrl || null); setExistingUrlLoading(false); } });
+    void supabase.storage.from(recordingBucket(draft)).createSignedUrl(draft.storage_path, 1800).then(({ data }) => { if (!cancelled) { setMediaUrl(data?.signedUrl || null); setExistingUrlLoading(false); } });
     return () => { cancelled = true; };
   }, [draft]);
 
@@ -304,22 +307,33 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
     </div><form className="studio-form" onSubmit={(event) => { event.preventDefault(); void save("published"); }}><label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Wednesday rehearsal, varnam take 2" required /></label><label>Subgroup<select value={groupId} onChange={(event) => setGroupId(Number(event.target.value))}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="form-pair"><label>Recording type<select value={recordingKind} onChange={(event) => setRecordingKind(event.target.value)}><option value="practice">Practice</option><option value="rehearsal">Rehearsal</option><option value="lesson">Lesson</option><option value="performance">Performance</option><option value="workshop">Workshop</option></select></label><label>Tempo / laya<input value={tempo} onChange={(event) => setTempo(event.target.value)} placeholder="Madhyama, 96 bpm" /></label></div><div className="form-pair"><label>Raga / raag<input value={raga} onChange={(event) => setRaga(event.target.value)} placeholder="Bhairavi / Bhairav" /></label><label>Tala / taal<input value={tala} onChange={(event) => setTala(event.target.value)} placeholder="Adi / Teentaal" /></label></div><div className="form-pair"><label>Sruthi / tonic<input value={sruthi} onChange={(event) => setSruthi(event.target.value)} placeholder="C, D, or 1 kattai" /></label><label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What should the group listen for?" /></label></div><label>Notation text<textarea value={notationText} onChange={(event) => setNotationText(event.target.value)} rows={5} placeholder="Add lyrics, sahitya, swara, sargam, bols, or rehearsal notes" /></label><label className="notation-file-input">Notation file<input type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(event) => setNotationFile(event.target.files?.[0] || null)} /><small>{notationFile ? notationFile.name : "Optional PDF, DOC, DOCX, image, or text file"}</small></label><div className="studio-publish-note"><span className="scope-dot" /> Publishing shares this recording with <strong>{groups.find((group) => group.id === groupId)?.name || "your subgroup"}</strong> only.</div><div className="studio-actions"><Button variant="secondary" type="button" onClick={() => void save("draft")} disabled={saving || (!file && !draft)}>{saving ? "Saving…" : "Save draft"}</Button><Button type="submit" disabled={saving || (!file && !draft)}>{saving ? "Publishing…" : "Publish to subgroup"}</Button></div></form></div></Dialog>;
 }
 
-function RecordingDetailDialog({ recording, groups, notify, onClose }: { recording: Recording; groups: Group[]; notify: (message: string) => void; onClose: () => void }) {
+function RecordingDetailDialog({ recording, user, canManage, groups, notify, onChanged, onRemoved, onClose }: { recording: Recording; user: User; canManage: boolean; groups: Group[]; notify: (message: string) => void; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState<RecordingNote[]>([]);
   const group = groups.find((item) => item.id === recording.subgroup_id);
+  const recordingId = recording.id;
+  const storagePath = recording.storage_path;
+  const bucket = recordingBucket(recording);
+  const loadNotes = useCallback(async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("recording_notes").select("*").eq("recording_id", recordingId).order("created_at");
+    if (!error) setNotes((data || []) as RecordingNote[]);
+  }, [recordingId]);
   useEffect(() => {
     let cancelled = false;
     if (!supabase) return;
-    void Promise.all([supabase.storage.from("recordings").createSignedUrl(recording.storage_path, 1800), supabase.from("recording_notes").select("*").eq("recording_id", recording.id).order("created_at")]).then(([fileResult, notesResult]) => { if (cancelled) return; if (fileResult.error || !fileResult.data) notify("This recording could not be opened"); else setUrl(fileResult.data.signedUrl); if (!notesResult.error) setNotes((notesResult.data || []) as RecordingNote[]); });
+    void supabase.storage.from(bucket).createSignedUrl(storagePath, 1800).then((fileResult) => { if (cancelled) return; if (fileResult.error || !fileResult.data) notify("This recording could not be opened"); else setUrl(fileResult.data.signedUrl); });
     return () => { cancelled = true; };
-  }, [notify, recording]);
+  }, [notify, bucket, storagePath]);
+  // The loader synchronizes remote Supabase state into this client component.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadNotes(); }, [loadNotes]);
   async function openNote(note: RecordingNote) {
     if (!note.storage_path || !supabase) return;
     const { data, error } = await supabase.storage.from("recording-notations").createSignedUrl(note.storage_path, 900);
     if (error || !data) notify("This notation file could not be opened"); else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
-  return <Dialog open onClose={onClose} className="recording-detail-dialog"><div className="studio-heading"><div><p className="eyebrow">{group?.name || "SUBGROUP"} · {recording.recording_kind}</p><h2>{recording.title}</h2><p>{[recording.raga, recording.tala, recording.sruthi, recording.tempo].filter(Boolean).join(" · ") || recording.description || "No musical details added yet."}</p></div><Button variant="ghost" size="sm" onClick={onClose} aria-label="Close recording">×</Button></div>{url ? recording.media_kind === "video" ? <video className="recording-detail-video" src={url} controls playsInline><track kind="captions" srcLang="en" label="Recording captions" /></video> : <WaveformPlayer url={url} /> : <div className="recording-preview-loading">Loading the recording…</div>}<div className="recording-detail-meta"><span>{recording.description || "Shared with this subgroup"}</span><time>{formatDate(recording.published_at || recording.created_at)}</time></div><section className="notation-panel"><div className="notation-panel-heading"><div><p className="eyebrow">FOLLOW ALONG</p><h3>Notation and notes</h3></div><span>{notes.length}</span></div>{notes.length ? notes.map((note) => <article className="notation-item" key={note.id}>{note.note_type === "file" ? <button type="button" onClick={() => void openNote(note)}><span>▤</span>{note.title}<i>Open file →</i></button> : <><h4>{note.title}</h4><p>{note.body}</p></>}</article>) : <p className="notation-empty">No notation attached yet.</p>}</section></Dialog>;
+  return <Dialog open onClose={onClose} className="recording-detail-dialog"><div className="studio-heading"><div><p className="eyebrow">{group?.name || "SUBGROUP"} · {recording.recording_kind}</p><h2>{recording.title}</h2><p>{[recording.raga, recording.tala, recording.sruthi, recording.tempo].filter(Boolean).join(" · ") || recording.description || "No musical details added yet."}</p></div><Button variant="ghost" size="sm" onClick={onClose} aria-label="Close recording">×</Button></div>{url ? recording.media_kind === "video" ? <video className="recording-detail-video" src={url} controls playsInline><track kind="captions" srcLang="en" label="Recording captions" /></video> : <WaveformPlayer url={url} /> : <div className="recording-preview-loading">Loading the recording…</div>}<div className="recording-detail-meta"><span>{recording.description || "Shared with this subgroup"}</span><time>{formatDate(recording.published_at || recording.created_at)}</time></div><section className="notation-panel"><div className="notation-panel-heading"><div><p className="eyebrow">FOLLOW ALONG</p><h3>Notation and notes</h3></div><span>{notes.length}</span></div>{notes.length ? notes.map((note) => <article className="notation-item" key={note.id}>{note.note_type === "file" ? <button type="button" onClick={() => void openNote(note)}><span>▤</span>{note.title}<i>Open file →</i></button> : <><h4>{note.title}</h4><p>{note.body}</p></>}<NoteActions note={note} user={user} canManage={canManage} notify={notify} onChanged={loadNotes} /></article>) : <p className="notation-empty">No notation attached yet.</p>}</section><RecordingManageBar recording={recording} user={user} canManage={canManage} notes={notes} notify={notify} onChanged={onChanged} onRemoved={onRemoved} /></Dialog>;
 }
 
 function ShruthiCompanion() {

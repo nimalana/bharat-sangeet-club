@@ -1,0 +1,178 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
+import type { User } from "@supabase/supabase-js";
+import { friendlyError } from "../../lib/errors";
+import { supabase } from "../../lib/supabase";
+import { Button } from "../ui/button";
+import { ConfirmDialog } from "../ui/confirm-dialog";
+import { Dialog } from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
+
+export type ManagedRecording = {
+  id: number; title: string; description: string; uploaded_by: string; storage_path: string; storage_bucket?: string;
+  status: "draft" | "published" | "archived"; recording_kind: string;
+  raga: string | null; tala: string | null; sruthi: string | null; tempo: string | null;
+};
+export type ManagedNote = {
+  id: number; recording_id: number; title: string; note_type: "text" | "file"; body: string;
+  storage_path: string | null; mime_type: string | null; uploaded_by?: string;
+};
+
+export const recordingBucket = (recording: { storage_bucket?: string }) => recording.storage_bucket || "recordings";
+
+// Storage only lets a file be deleted while its database row still exists, so
+// files always go first. remove() reports nothing when it is refused, so a
+// file that can still be signed afterwards means the delete did not happen.
+async function removeStoredFile(bucket: string, path: string): Promise<string | null> {
+  if (!supabase) return "The portal is not connected.";
+  const { data, error } = await supabase.storage.from(bucket).remove([path]);
+  if (error) return friendlyError(error, "The file could not be deleted.");
+  if (data && data.length > 0) return null;
+  const check = await supabase.storage.from(bucket).createSignedUrl(path, 60);
+  return check.data?.signedUrl ? "The file could not be deleted, so nothing was removed." : null;
+}
+
+export function RecordingManageBar({ recording, user, canManage, notes, notify, onChanged, onRemoved }: {
+  recording: ManagedRecording; user: User; canManage: boolean; notes: ManagedNote[];
+  notify: (message: string) => void; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
+}) {
+  const [dialog, setDialog] = useState<"edit" | "archive" | "restore" | "delete" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const mine = recording.uploaded_by === user.id;
+  if (!mine && !canManage) return null;
+  const sharedWithLegacy = recordingBucket(recording) !== "recordings";
+
+  async function saveDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+    const form = new FormData(event.currentTarget);
+    const text = (name: string) => String(form.get(name) || "").trim();
+    setBusy(true);
+    const { data, error } = await supabase.from("recordings").update({
+      title: text("title"), description: text("description"), recording_kind: text("recording_kind") || recording.recording_kind,
+      raga: text("raga") || null, tala: text("tala") || null, sruthi: text("sruthi") || null, tempo: text("tempo") || null,
+    }).eq("id", recording.id).select("id");
+    setBusy(false);
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording.")); return; }
+    setDialog(null); notify("Recording details saved"); await onChanged();
+  }
+
+  async function setStatus(status: "archived" | "published") {
+    if (!supabase) return;
+    setBusy(true);
+    const { data, error } = await supabase.from("recordings").update({ status }).eq("id", recording.id).select("id");
+    setBusy(false);
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to change this recording.")); return; }
+    setDialog(null); notify(status === "archived" ? "Recording archived" : "Recording restored"); await onRemoved();
+  }
+
+  async function deleteRecording() {
+    if (!supabase) return;
+    setBusy(true);
+    // 1. notation files, 2. the take itself, 3. the row (notes go with it).
+    for (const note of notes) {
+      if (!note.storage_path) continue;
+      const problem = await removeStoredFile("recording-notations", note.storage_path);
+      if (problem) { setBusy(false); notify(problem); return; }
+    }
+    const problem = await removeStoredFile("recordings", recording.storage_path);
+    if (problem) { setBusy(false); notify(problem); return; }
+    const { data, error } = await supabase.from("recordings").delete().eq("id", recording.id).select("id");
+    setBusy(false);
+    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted.")); return; }
+    setDialog(null); notify("Recording deleted"); await onRemoved();
+  }
+
+  return <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-4">
+    <span className="mr-auto text-xs uppercase tracking-wide text-[#4c5f6b]">{mine ? "Your recording" : "Manage as executive"}{recording.status === "archived" ? " · Archived" : ""}</span>
+    <Button variant="secondary" size="sm" onClick={() => setDialog("edit")}>Edit details</Button>
+    {recording.status === "archived"
+      ? <Button variant="secondary" size="sm" onClick={() => setDialog("restore")}>Restore</Button>
+      : <Button variant="secondary" size="sm" onClick={() => setDialog("archive")}>Archive</Button>}
+    {!sharedWithLegacy && <Button variant="danger" size="sm" onClick={() => setDialog("delete")}>Delete</Button>}
+
+    <Dialog open={dialog === "edit"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[560px]">
+      <h2 className="m-0 text-2xl">Edit recording details</h2>
+      <form className="mt-4 grid gap-3" onSubmit={saveDetails}>
+        <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-title">Title<Input id="recording-edit-title" name="title" defaultValue={recording.title} required maxLength={160} /></label>
+        <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-description">Description<Textarea id="recording-edit-description" name="description" defaultValue={recording.description} rows={3} /></label>
+        <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-kind">Recording type<select id="recording-edit-kind" name="recording_kind" defaultValue={recording.recording_kind}><option value="practice">Practice</option><option value="rehearsal">Rehearsal</option><option value="lesson">Lesson</option><option value="performance">Performance</option><option value="workshop">Workshop</option></select></label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-raga">Raga / raag<Input id="recording-edit-raga" name="raga" defaultValue={recording.raga || ""} /></label>
+          <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-tala">Tala / taal<Input id="recording-edit-tala" name="tala" defaultValue={recording.tala || ""} /></label>
+          <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-sruthi">Sruthi / tonic<Input id="recording-edit-sruthi" name="sruthi" defaultValue={recording.sruthi || ""} /></label>
+          <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-tempo">Tempo / laya<Input id="recording-edit-tempo" name="tempo" defaultValue={recording.tempo || ""} /></label>
+        </div>
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save details"}</Button>
+        </div>
+      </form>
+    </Dialog>
+
+    <ConfirmDialog open={dialog === "archive"} title="Archive this recording?" confirmLabel="Archive" busy={busy} onConfirm={() => setStatus("archived")} onCancel={() => setDialog(null)}>
+      It disappears from the group&apos;s list but nothing is deleted. You can restore it from the Archived tab.
+    </ConfirmDialog>
+    <ConfirmDialog open={dialog === "restore"} title="Restore this recording?" confirmLabel="Restore" busy={busy} onConfirm={() => setStatus("published")} onCancel={() => setDialog(null)}>
+      It becomes visible to the group again.
+    </ConfirmDialog>
+    <ConfirmDialog open={dialog === "delete"} title="Delete this recording for good?" confirmLabel="Delete recording" danger busy={busy} onConfirm={deleteRecording} onCancel={() => setDialog(null)}>
+      The take{notes.length ? ` and its ${notes.length} notation ${notes.length === 1 ? "item" : "items"}` : ""} will be permanently deleted. This cannot be undone. Archive it instead if you might want it back.
+    </ConfirmDialog>
+  </div>;
+}
+
+export function NoteActions({ note, user, canManage, notify, onChanged }: {
+  note: ManagedNote; user: User; canManage: boolean; notify: (message: string) => void; onChanged: () => void | Promise<void>;
+}) {
+  const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (note.uploaded_by !== user.id && !canManage) return null;
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+    const form = new FormData(event.currentTarget);
+    const changes: Record<string, string> = { title: String(form.get("title") || "").trim() };
+    if (note.note_type === "text") changes.body = String(form.get("body") || "").trim();
+    setBusy(true);
+    const { data, error } = await supabase.from("recording_notes").update(changes).eq("id", note.id).select("id");
+    setBusy(false);
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this note.")); return; }
+    setDialog(null); notify("Notation saved"); await onChanged();
+  }
+
+  async function remove() {
+    if (!supabase) return;
+    setBusy(true);
+    if (note.storage_path) {
+      const problem = await removeStoredFile("recording-notations", note.storage_path);
+      if (problem) { setBusy(false); notify(problem); return; }
+    }
+    const { data, error } = await supabase.from("recording_notes").delete().eq("id", note.id).select("id");
+    setBusy(false);
+    if (error || !data?.length) { notify(friendlyError(error, "The notation could not be deleted.")); return; }
+    setDialog(null); notify("Notation deleted"); await onChanged();
+  }
+
+  return <div className="mt-2 flex gap-2">
+    <Button variant="ghost" size="sm" onClick={() => setDialog("edit")}>{note.note_type === "file" ? "Rename" : "Edit"}</Button>
+    <Button variant="ghost" size="sm" onClick={() => setDialog("delete")}>Delete</Button>
+    <Dialog open={dialog === "edit"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[520px]">
+      <h2 className="m-0 text-2xl">{note.note_type === "file" ? "Rename notation file" : "Edit notation"}</h2>
+      <form className="mt-4 grid gap-3" onSubmit={save}>
+        <label className="grid gap-1 text-sm font-semibold" htmlFor={`note-title-${note.id}`}>Title<Input id={`note-title-${note.id}`} name="title" defaultValue={note.title} required maxLength={160} /></label>
+        {note.note_type === "text" && <label className="grid gap-1 text-sm font-semibold" htmlFor={`note-body-${note.id}`}>Notation<Textarea id={`note-body-${note.id}`} name="body" defaultValue={note.body} rows={8} required /></label>}
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+        </div>
+      </form>
+    </Dialog>
+    <ConfirmDialog open={dialog === "delete"} title="Delete this notation?" confirmLabel="Delete" danger busy={busy} onConfirm={remove} onCancel={() => setDialog(null)}>
+      &ldquo;{note.title}&rdquo; will be permanently removed from this recording.
+    </ConfirmDialog>
+  </div>;
+}
