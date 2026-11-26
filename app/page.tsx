@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../components/admin/member-access";
 import { friendlyError } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
@@ -33,7 +34,7 @@ type EnrollmentMode = "open" | "approval" | "invite";
 type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive" | "removed";
 type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode; archived_at: string | null };
 type SubgroupMembership = { subgroup_id: number; member_id: string; status: MembershipStatus; membership_role: "member" | "leader" | "manager" };
-type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
+type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; status?: "active" | "deactivated"; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
 type ScopeFilter = "all" | "club" | number;
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
 
@@ -70,6 +71,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<ClubRole>("member");
+  const [deactivated, setDeactivated] = useState(false);
   const [name, setName] = useState("");
   const [section, setSection] = useState<Section>(sectionFromUrl);
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
@@ -97,8 +99,10 @@ export default function Home() {
 
   const loadProfile = useCallback(async (currentUser: User) => {
     if (!supabase) return;
-    const { data, error } = await supabase.from("profiles").select("full_name, role").eq("id", currentUser.id).single();
+    const { data, error } = await supabase.from("profiles").select("full_name, role, status").eq("id", currentUser.id).single();
     if (error) { notify("We could not load your club profile"); return; }
+    setDeactivated(data.status === "deactivated");
+    if (data.status === "deactivated") return;
     let profileName = data.full_name;
     const pendingSignupName = window.sessionStorage.getItem(pendingSignupNameKey)?.trim();
     if (pendingSignupName) {
@@ -185,10 +189,10 @@ export default function Home() {
     return () => window.removeEventListener("popstate", restoreLocation);
   }, []);
 
-  useEffect(() => { if (user) loadData(); }, [user, loadData]);
+  useEffect(() => { if (user && !deactivated) loadData(); }, [user, deactivated, loadData]);
 
   const loadWorkspaces = useCallback(async () => {
-    if (!supabase || !user) return;
+    if (!supabase || !user || deactivated) return;
     const [groupResult, membershipResult] = await Promise.all([
       supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").is("archived_at", null).order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
@@ -196,7 +200,7 @@ export default function Home() {
     if (groupResult.error || membershipResult.error) { notify("Your groups could not be loaded"); return; }
     setGroups((groupResult.data || []) as Subgroup[]);
     setMemberships((membershipResult.data || []) as SubgroupMembership[]);
-  }, [notify, user]);
+  }, [notify, user, deactivated]);
   useEffect(() => { loadWorkspaces(); }, [loadWorkspaces]);
 
   const canManage = role !== "member";
@@ -240,6 +244,7 @@ export default function Home() {
   if (authLoading) return <LoadingScreen />;
   if (!supabase) return <SetupScreen />;
   if (!user) return showLogin ? <LoginScreen onBack={closeLogin} /> : <PublicSite onSignIn={openLogin} />;
+  if (deactivated) return <DeactivatedScreen onSignOut={() => { setDeactivated(false); void supabase?.auth.signOut(); }} />;
 
   return (
     <main className="portal-shell">
@@ -285,11 +290,12 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
   const [savingMember, setSavingMember] = useState(false);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [showDeactivated, setShowDeactivated] = useState(false);
 
   const load = useCallback(async () => {
     if (!supabase) return;
     const [membersResult, announcementsResult, auditResult] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").order("full_name"),
+      supabase.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").order("full_name"),
       supabase.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }),
       supabase.from("admin_audit_log").select("id,action,actor_email,target_email,details,created_at").order("created_at", { ascending: false }).limit(20),
     ]);
@@ -307,11 +313,6 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
     if (!supabase || member.role === nextRole) return;
     const { error } = await supabase.rpc("admin_change_member_role", { p_target_id: member.id, p_new_role: nextRole });
     if (error) notify(error.message); else { notify(`${member.full_name || member.email} is now ${nextRole}`); load(); }
-  }
-  async function deleteMember(member: MemberProfile) {
-    if (!supabase || !window.confirm(`Permanently remove ${member.full_name || member.email}? Their login, subgroup memberships, and attendance will be deleted.`)) return;
-    const { error } = await supabase.rpc("admin_delete_member", { p_target_id: member.id });
-    if (error) notify(error.message); else { notify("Member removed"); load(); }
   }
   async function saveMemberProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -343,15 +344,17 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
     if (error) notify(friendlyError(error)); else { formElement.reset(); notify("Announcement published"); load(); }
   }
 
-  const filtered = members.filter((member) => `${member.full_name} ${member.email} ${member.role}`.toLowerCase().includes(query.toLowerCase()));
+  const activeMembers = members.filter((member) => member.status !== "deactivated");
+  const deactivatedCount = members.length - activeMembers.length;
+  const filtered = (showDeactivated ? members : activeMembers).filter((member) => `${member.full_name} ${member.email} ${member.role}`.toLowerCase().includes(query.toLowerCase()));
   if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
   return <section className="section-shell page-section">
     <PageTitle eyebrow="ADMINISTRATION" title="Club control center" text="Manage identities, permissions, communications, and club health." />
-    <div className="admin-stats"><div><strong>{members.length}</strong><span>Total members</span></div><div><strong>{members.filter((member) => member.role === "executive").length}</strong><span>Executives</span></div><div><strong>{members.filter((member) => member.role === "admin").length}</strong><span>Administrators</span></div><div><strong>{members.filter((member) => !member.phone || !member.specialty).length}</strong><span>Incomplete profiles</span></div></div>
-    <div className="admin-grid"><section className="admin-panel admin-members"><div className="admin-panel-heading"><div><p className="eyebrow">ACCESS & IDENTITIES</p><h2>Manage members</h2><p className="panel-note">Edit profile details and assign active subgroups from one place.</p></div><label className="search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search members" /></label></div><div className="admin-member-head"><span>Member</span><span>Subgroups</span><span>Permission</span><span>Action</span></div>{filtered.map((member) => { const memberGroups = memberships.filter((item) => item.member_id === member.id && item.status === "active"); return <div className="admin-member-row" key={member.id}><div className="min-w-0"><b className="break-words">{member.full_name || member.email}</b><small className="break-all">{member.email}</small></div><div className="member-tags admin-member-tags">{memberGroups.length ? memberGroups.map((item) => <Badge key={item.subgroup_id}>{groups.find((group) => group.id === item.subgroup_id)?.name || "Subgroup"}</Badge>) : <Badge variant="muted">No subgroup</Badge>}</div><select className="max-w-full min-w-0" value={member.role} disabled={member.id === user.id} onChange={(event) => changeRole(member, event.target.value as ClubRole)} aria-label={`Permission for ${member.full_name || member.email}`}><option value="member">Member</option><option value="executive">Executive</option><option value="admin">Admin</option></select><div className="admin-member-actions"><Button variant="secondary" size="sm" onClick={() => setEditingMember(member)}>Edit</Button><Button variant="danger" size="sm" disabled={member.id === user.id} onClick={() => deleteMember(member)}>Remove</Button></div></div>; })}</section>
+    <div className="admin-stats"><div><strong>{activeMembers.length}</strong><span>Active members</span></div><div><strong>{activeMembers.filter((member) => member.role === "executive").length}</strong><span>Executives</span></div><div><strong>{activeMembers.filter((member) => member.role === "admin").length}</strong><span>Administrators</span></div><div><strong>{activeMembers.filter((member) => !member.phone || !member.specialty).length}</strong><span>Incomplete profiles</span></div></div>
+    <div className="admin-grid"><section className="admin-panel admin-members"><div className="admin-panel-heading"><div><p className="eyebrow">ACCESS & IDENTITIES</p><h2>Manage members</h2><p className="panel-note">Edit profile details and assign active subgroups from one place.</p></div><label className="search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search members" /></label></div>{deactivatedCount > 0 && <label className="check-label admin-show-deactivated"><input type="checkbox" checked={showDeactivated} onChange={(event) => setShowDeactivated(event.target.checked)} /> Show {deactivatedCount} deactivated</label>}<div className="admin-member-head"><span>Member</span><span>Subgroups</span><span>Permission</span><span>Action</span></div>{filtered.map((member) => { const memberGroups = memberships.filter((item) => item.member_id === member.id && item.status === "active"); return <div className="admin-member-row" key={member.id}><div className="min-w-0"><b className="break-words">{member.full_name || member.email}{member.status === "deactivated" && <> <Badge variant="muted">Deactivated</Badge></>}</b><small className="break-all">{member.email}</small></div><div className="member-tags admin-member-tags">{memberGroups.length ? memberGroups.map((item) => <Badge key={item.subgroup_id}>{groups.find((group) => group.id === item.subgroup_id)?.name || "Subgroup"}</Badge>) : <Badge variant="muted">No subgroup</Badge>}</div><select className="max-w-full min-w-0" value={member.role} disabled={member.id === user.id || member.status === "deactivated"} onChange={(event) => changeRole(member, event.target.value as ClubRole)} aria-label={`Permission for ${member.full_name || member.email}`}><option value="member">Member</option><option value="executive">Executive</option><option value="admin">Admin</option></select><div className="admin-member-actions">{member.status !== "deactivated" && <Button variant="secondary" size="sm" onClick={() => setEditingMember(member)}>Edit</Button>}<MemberAccessActions member={member} isSelf={member.id === user.id} onChanged={load} notify={notify} /></div></div>; })}</section>
       <aside><form className="admin-panel announcement-form" onSubmit={createAnnouncement}><p className="eyebrow">COMMUNICATIONS</p><h2>Post announcement</h2><label>Audience<select name="subgroup_id"><option value="">Whole club</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>Title<input name="title" required maxLength={140} /></label><label>Message<textarea name="body" required rows={5} /></label><label className="check-label"><input name="is_pinned" type="checkbox" /> Pin to dashboard</label><button className="primary">Publish announcement</button></form><section className="admin-panel"><div className="admin-panel-heading"><h2>Announcements</h2><span>{announcements.length}</span></div>{announcements.slice(0, 5).map((item) => <article className="admin-announcement" key={item.id}><div><b>{item.is_pinned ? "◆ " : ""}{item.title}</b><small><ContentScopeLabel subgroupId={item.subgroup_id} groups={groups} />{formatDate(item.published_at)}</small></div><AnnouncementActions user={user} groups={groups} announcement={item} onChanged={load} notify={notify} /></article>)}</section></aside>
     </div>
-    <section className="admin-panel audit-panel"><div className="admin-panel-heading"><div><p className="eyebrow">SECURITY</p><h2>Recent admin activity</h2></div><span>Last 20 actions</span></div>{audit.length ? audit.map((entry) => <div className="audit-row" key={entry.id}><span>{entry.action === "role_changed" ? "Permission changed" : entry.action === "member_updated" ? "Member updated" : "Member removed"}</span><b>{entry.target_email}</b><small>by {entry.actor_email} · {formatDate(entry.created_at)}</small></div>) : <p className="workspace-empty">No administrative changes recorded yet.</p>}</section>
+    <section className="admin-panel audit-panel"><div className="admin-panel-heading"><div><p className="eyebrow">SECURITY</p><h2>Recent admin activity</h2></div><span>Last 20 actions</span></div>{audit.length ? audit.map((entry) => <div className="audit-row" key={entry.id}><span>{adminActionLabels[entry.action] || "Admin action"}</span><b>{entry.target_email}</b><small>by {entry.actor_email} · {formatDate(entry.created_at)}</small></div>) : <p className="workspace-empty">No administrative changes recorded yet.</p>}</section>
     {editingMember && <AdminMemberEditor member={editingMember} groups={groups} memberships={memberships} saving={savingMember} onClose={() => setEditingMember(null)} onSubmit={saveMemberProfile} />}
   </section>;
 }
@@ -623,7 +626,7 @@ function MembersPage({ user, notify }: { user: User; notify: (message: string) =
   const loadMembers = useCallback(async () => {
     if (!supabase) return;
     const [memberResult, groupResult, membershipResult] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").order("full_name"),
+      supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name"),
       supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role"),
     ]);

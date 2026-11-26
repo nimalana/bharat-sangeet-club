@@ -466,3 +466,4 @@ input::placeholder,textarea::placeholder{color:#65757e;opacity:1}
 .calendar-agenda-event button.calendar-edit{right:51px;font-size:17px}
 .calendar-agenda-event{padding-right:104px}
 .admin-announcement>div:first-child{min-width:0}
+.admin-show-deactivated{margin:0 0 10px;font-size:13px}

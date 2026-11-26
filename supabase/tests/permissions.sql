@@ -14,8 +14,8 @@ select c.relname from pg_class c
 where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and not c.relrowsecurity order by 1;
 
 select '# policies';
-select format(E'%s.%s  [%s]  %s  to %s\n    using: %s\n    check: %s',
-  schemaname, tablename, policyname, cmd, array_to_string(roles, ','),
+select format(E'%s.%s  [%s]  %s%s  to %s\n    using: %s\n    check: %s',
+  schemaname, tablename, policyname, cmd, case when permissive = 'RESTRICTIVE' then '  RESTRICTIVE' else '' end, array_to_string(roles, ','),
   coalesce(regexp_replace(qual, '\s+', ' ', 'g'), '-'),
   coalesce(regexp_replace(with_check, '\s+', ' ', 'g'), '-'))
 from pg_policies where schemaname in ('public', 'storage')

@@ -119,7 +119,7 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
   async function openAdd() {
     setShowAdd(true); setCandidateQuery("");
     if (!supabase) return;
-    const { data, error } = await supabase.from("profiles").select("id,full_name,email").order("full_name").limit(1000);
+    const { data, error } = await supabase.from("profiles").select("id,full_name,email").eq("status", "active").order("full_name").limit(1000);
     if (error) notify(friendlyError(error, "Members could not be loaded.")); else setCandidates((data || []) as Candidate[]);
   }
 
