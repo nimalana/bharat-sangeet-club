@@ -11,6 +11,7 @@ import { Input } from "../components/ui/input";
 import { AttendancePage } from "./attendance";
 import { FinancePage } from "./finance";
 import { RecordingWorkspace } from "../components/recordings/recording-workspace";
+import { GroupPeople } from "../components/subgroups/group-people";
 import { ResourceLibrary } from "./resources";
 
 type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "admin";
@@ -27,8 +28,8 @@ type ArchiveItem = {
 type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string; subgroup_id: number | null };
 type Announcement = { id: number; title: string; body: string; is_pinned: boolean; published_at: string; subgroup_id: number | null };
 type EnrollmentMode = "open" | "approval" | "invite";
-type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive";
-type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode };
+type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive" | "removed";
+type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode; archived_at: string | null };
 type SubgroupMembership = { subgroup_id: number; member_id: string; status: MembershipStatus; membership_role: "member" | "leader" | "manager" };
 type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
 type ScopeFilter = "all" | "club" | number;
@@ -186,7 +187,7 @@ export default function Home() {
   const loadWorkspaces = useCallback(async () => {
     if (!supabase || !user) return;
     const [groupResult, membershipResult] = await Promise.all([
-      supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
+      supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").is("archived_at", null).order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
     ]);
     if (groupResult.error || membershipResult.error) { notify("Your groups could not be loaded"); return; }
@@ -458,16 +459,22 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState<number | null>(null);
   const [inlineMessage, setInlineMessage] = useState("");
+  const [requestCounts, setRequestCounts] = useState<Record<number, number>>({});
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    const [groupResult, membershipResult, archiveResult, announcementResult] = await Promise.all([
-      supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
+    const [groupResult, membershipResult, archiveResult, announcementResult, requestResult] = await Promise.all([
+      supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
       supabase.from("archive_items").select("*").eq("type", "recording").not("subgroup_id", "is", null).order("created_at", { ascending: false }),
       supabase.from("announcements").select("*").order("published_at", { ascending: false }),
+      // Row-level security returns other people's waiting requests only to executives and to that group's leaders and managers.
+      supabase.from("subgroup_memberships").select("subgroup_id").in("status", ["pending", "waitlisted"]).neq("member_id", user.id),
     ]);
     if (groupResult.error || membershipResult.error || archiveResult.error || announcementResult.error) notify("Some group information could not be loaded");
+    const counts: Record<number, number> = {};
+    for (const row of (requestResult.data || []) as Array<{ subgroup_id: number }>) counts[row.subgroup_id] = (counts[row.subgroup_id] || 0) + 1;
+    setRequestCounts(counts);
     setGroups((groupResult.data || []) as Subgroup[]);
     setMemberships((membershipResult.data || []) as SubgroupMembership[]);
     setItems((archiveResult.data || []) as ArchiveItem[]);
@@ -521,9 +528,12 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
 
   const membershipFor = (id: number) => memberships.find((item) => item.subgroup_id === id);
   const canEnter = (id: number) => role !== "member" || membershipFor(id)?.status === "active";
-  const joinedGroups = groups.filter((group) => canEnter(group.id));
-  const discoverGroups = groups.filter((group) => !canEnter(group.id));
-  const active = groups.find((group) => group.id === selectedGroupId && canEnter(group.id));
+  // Archived groups stay visible to executives (so they can be restored) and are hidden from everyone else.
+  const listedGroups = groups.filter((group) => !group.archived_at || role !== "member");
+  const joinedGroups = listedGroups.filter((group) => canEnter(group.id));
+  const discoverGroups = listedGroups.filter((group) => !canEnter(group.id));
+  const activeMembership = (id: number) => { const membership = membershipFor(id); return membership?.status === "active" ? membership : undefined; };
+  const active = listedGroups.find((group) => group.id === selectedGroupId && canEnter(group.id));
   const groupItems = items.filter((item) => item.subgroup_id === active?.id);
   const recordings = groupItems.filter((item) => item.type === "recording");
   const groupAnnouncements = announcements.filter((item) => item.subgroup_id === active?.id);
@@ -540,10 +550,11 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
         <section><div className="dashboard-section-title"><h2>Resources</h2><span>Library</span></div><p className="workspace-empty">Documents, links, and photos live in the shared resource library.</p><Button variant="secondary" onClick={() => onOpenResources(active.id)}>Open resources</Button></section>
         <section><div className="dashboard-section-title"><h2>Recordings</h2><span>Room</span></div><p className="workspace-empty">Capture rehearsals, lessons, and takes in the subgroup recording room.</p><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recording room →</Button></section>
       </div>
+      <GroupPeople key={active.id} user={user} role={role} group={active} myRole={activeMembership(active.id)?.membership_role ?? null} isMember={Boolean(activeMembership(active.id))} onGroupChanged={async () => { await load(); onGroupsChanged(); }} onLeft={() => setSelectedGroupId(null)} notify={notify} />
     </> : <>
       <div className="group-list-heading"><div><h2>{role === "member" ? "Your groups" : "Groups you manage"}</h2><p>Open a group to see its latest activity.</p></div><div><span>{joinedGroups.length}</span>{role !== "member" && <Button onClick={() => setShowCreate(true)}>＋ New group</Button>}</div></div>
-      {joinedGroups.length ? <div className="group-list">{joinedGroups.map((group) => { const resourceCount = items.filter((item) => item.subgroup_id === group.id).length; const updateCount = announcements.filter((item) => item.subgroup_id === group.id).length; return <button type="button" key={group.id} onClick={() => setSelectedGroupId(group.id)}><span className="workspace-seal subgroup">{initials(group.name)}</span><span><b>{group.name}</b><small>{group.description || "Bharat Sangeet group"}</small></span><span><b>{updateCount}</b><small>updates</small></span><span><b>{resourceCount}</b><small>resources</small></span><i>Open →</i></button>; })}</div> : <EmptyState title="No groups yet" text={role === "member" ? "Join an open group or ask an executive for an invitation." : "Create the first group to organize rehearsals and resources."} />}
-      {discoverGroups.length > 0 && <><div className="group-list-heading discover"><div><h2>Discover groups</h2><p>Find another ensemble to join.</p></div><span>{discoverGroups.length}</span></div><div className="discover-grid">{discoverGroups.map((group) => { const membership = membershipFor(group.id); return <article className="discover-card" key={group.id}><span className="workspace-seal subgroup">{initials(group.name)}</span><h2>{group.name}</h2><p>{group.description || "A Bharat Sangeet group at UNC Chapel Hill."}</p>{membership?.status === "pending" ? <span className="enrollment-status">Request pending</span> : membership?.status === "waitlisted" ? <span className="enrollment-status">Waitlisted</span> : group.enrollment_mode === "invite" ? <span className="enrollment-status muted">Invitation required</span> : <Button variant="secondary" disabled={joining === group.id} onClick={() => requestEnrollment(group)}>{joining === group.id ? "Sending…" : group.enrollment_mode === "open" ? "Join group" : "Request to join"}</Button>}</article>; })}</div></>}
+      {joinedGroups.length ? <div className="group-list">{joinedGroups.map((group) => { const resourceCount = items.filter((item) => item.subgroup_id === group.id).length; const updateCount = announcements.filter((item) => item.subgroup_id === group.id).length; return <button type="button" key={group.id} onClick={() => setSelectedGroupId(group.id)}><span className="workspace-seal subgroup">{initials(group.name)}</span><span><b>{group.name}{group.archived_at ? " (archived)" : ""}</b><small>{requestCounts[group.id] ? `${requestCounts[group.id]} ${requestCounts[group.id] === 1 ? "request" : "requests"} to review` : group.description || "Bharat Sangeet group"}</small></span><span><b>{updateCount}</b><small>updates</small></span><span><b>{resourceCount}</b><small>resources</small></span><i>Open →</i></button>; })}</div> : <EmptyState title="No groups yet" text={role === "member" ? "Join an open group or ask an executive for an invitation." : "Create the first group to organize rehearsals and resources."} />}
+      {discoverGroups.length > 0 && <><div className="group-list-heading discover"><div><h2>Discover groups</h2><p>Find another ensemble to join.</p></div><span>{discoverGroups.length}</span></div><div className="discover-grid">{discoverGroups.map((group) => { const membership = membershipFor(group.id); return <article className="discover-card" key={group.id}><span className="workspace-seal subgroup">{initials(group.name)}</span><h2>{group.name}</h2><p>{group.description || "A Bharat Sangeet group at UNC Chapel Hill."}</p>{membership?.status === "pending" ? <span className="enrollment-status">Request pending</span> : membership?.status === "waitlisted" ? <span className="enrollment-status">Waitlisted</span> : membership?.status === "removed" ? <span className="enrollment-status muted">Ask an executive to add you back</span> : group.enrollment_mode === "invite" ? <span className="enrollment-status muted">Invitation required</span> : <Button variant="secondary" disabled={joining === group.id} onClick={() => requestEnrollment(group)}>{joining === group.id ? "Sending…" : group.enrollment_mode === "open" ? "Join group" : "Request to join"}</Button>}</article>; })}</div></>}
     </>}
     {showUpload && active && <SubgroupUploadModal user={user} subgroupId={active.id} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); load(); notify("Added to group"); }} notify={notify} />}
     {showCreate && <div className="modal-backdrop" onMouseDown={() => setShowCreate(false)}><form className="modal" onSubmit={createGroup} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowCreate(false)}>×</button><p className="eyebrow">NEW GROUP</p><h2>Create a group</h2><label>Name<input name="name" required maxLength={80} placeholder="Hindustani Ensemble" /></label><label>Description<textarea name="description" rows={4} placeholder="What this group rehearses or performs" /></label><label>Enrollment<select name="enrollment_mode" defaultValue="approval"><option value="open">Open — anyone can join</option><option value="approval">Request approval</option><option value="invite">Invitation only</option></select></label><Button type="submit">Create group</Button></form></div>}

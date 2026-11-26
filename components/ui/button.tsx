@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 import { cn } from "../../lib/utils";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -16,6 +16,6 @@ const sizes: Record<ButtonSize, string> = {
   sm: "min-h-9 px-3 text-[0.68rem]",
 };
 
-export function Button({ className, variant = "primary", size = "default", type = "button", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
-  return <button type={type} className={cn("inline-flex max-w-full items-center justify-center gap-2 rounded-none font-bold tracking-[0.02em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--carolina)] disabled:cursor-not-allowed disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
+export function Button({ className, variant = "primary", size = "default", type = "button", ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; ref?: Ref<HTMLButtonElement> }) {
+  return <button ref={ref} type={type} className={cn("inline-flex max-w-full items-center justify-center gap-2 rounded-none font-bold tracking-[0.02em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--carolina)] disabled:cursor-not-allowed disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
 }
