@@ -49,5 +49,14 @@ for testfile in "$ROOT"/supabase/tests/*.test.sql; do
   if "${PSQL[@]}" -f "$testfile" >"$WORK/out" 2>&1; then echo "ok   $(basename "$testfile")"
   else echo "FAIL $(basename "$testfile")"; sed 's/^/     /' "$WORK/out"; status=1; fi
 done
-[ "${KEEP:-0}" = "1" ] && echo "Cluster left running: psql -h $WORK -p $PORT -U postgres postgres"
+
+# Access snapshot: any change to grants, policies or callable functions must
+# be deliberate. UPDATE_SNAPSHOT=1 rewrites the file after a reviewed change.
+SNAPSHOT="$ROOT/supabase/tests/permissions.snapshot"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/permissions.sql" >"$WORK/permissions"
+if [ "${UPDATE_SNAPSHOT:-0}" = "1" ]; then cp "$WORK/permissions" "$SNAPSHOT"; echo "Wrote permissions.snapshot"
+elif diff -u "$SNAPSHOT" "$WORK/permissions" >"$WORK/permdiff" 2>&1; then echo "ok   permissions.snapshot"
+else echo "FAIL permissions.snapshot (run with UPDATE_SNAPSHOT=1 if the change is intended)"; sed 's/^/     /' "$WORK/permdiff"; status=1; fi
+
+if [ "${KEEP:-0}" = "1" ]; then echo "Cluster left running: psql -h $WORK -p $PORT -U postgres postgres"; fi
 exit $status
