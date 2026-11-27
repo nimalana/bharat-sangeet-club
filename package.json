@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "report:bundle": "node scripts/bundle-report.mjs",
     "start": "next start",
     "test": "npm run test:unit",
     "test:db": "scripts/db-replay.sh",

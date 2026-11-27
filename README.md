@@ -160,6 +160,7 @@ Requirements: Node.js `>=22.13.0` and a configured Supabase project.
 npm install
 npm run dev
 npm run build
+npm run report:bundle   # per-route bundle sizes of that build; --compare docs/bundle-baseline.json (docs/BUNDLE_BASELINE.md)
 npm test
 npm run test:contract   # every table, column, RPC and bucket the frontend uses exists in the migrated database (docs/CONTRACT_CHECK.md)
 ```
