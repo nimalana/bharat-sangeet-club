@@ -6,7 +6,7 @@ accounts: an admin, a group manager who is not an executive, and a plain member.
 
 ## Before anything else
 
-- [ ] Apply the new migrations (`20261126230000` onward) to the test project in order. They are additive; the current production frontend keeps working against them.
+- [ ] Apply the new migrations (`20261126230000` onward) to the test project in order, **except `20261127075000_least_privilege_grants.sql`, which waits for the new frontend (see Release order below)**. The others are additive; the current production frontend keeps working against them.
 - [ ] Compare the test project's schema with production (`supabase db dump --schema public,private,storage`) so drift in production is known before the migrations are applied there.
 
 ## Storage deletes (file must go before its row)
@@ -62,14 +62,33 @@ Run the app locally against the test project (`npm run dev`). In the browser con
 - [ ] Resources: open a PDF and a link in Safari and Chrome; each opens in a new tab without a pop-up warning.
 - [ ] Check the Supabase project's region. If it is far from North Carolina, moving it will save more than any change here.
 
-After Phase 1 is live in production (not before, because the current production frontend still writes these tables directly), run:
+The two revokes that used to be listed here (`funding_claims` insert and update, `funding_claim_expenses` insert, update and delete) are now part of `20261127075000_least_privilege_grants.sql`; see Release order. The third revoke of the original list, `review_subgroup_enrollment`, is not manual either: migration `20261127040000` does it, because the removed status made the old function a way to re-admit a removed member. The deployed main frontend never calls it.
 
-```sql
-revoke insert, update on public.funding_claims from authenticated;
-revoke insert, update, delete on public.funding_claim_expenses from authenticated;
-```
+## Release order
 
-The third revoke of the original list, `review_subgroup_enrollment`, is no longer manual: migration `20261127040000` does it, because the removed status made the old function a way to re-admit a removed member. The deployed main frontend never calls it.
+`20261127075000_least_privilege_grants.sql` is the one migration that is **not additive**. It takes write privileges away from `authenticated` (and everything from `anon` except the public concert list) on every table the new frontend does not write directly. The frontend deployed from `main` today still writes `funding_claims` (insert, update) and `funding_claim_expenses` (insert) straight through the REST API, so the order matters:
+
+1. Apply every other migration, including the ones from the finance and attendance branches that sort before `20261127075000`. The production frontend keeps working against them.
+2. Deploy the new frontend (the branch with this file) and run the checks above on it.
+3. Only then apply `20261127075000`. Applied before step 2, "Build a funding claim" and the claim status buttons in the live site answer "permission denied for table funding_claims" (SQLSTATE 42501) until the new frontend is out.
+4. Run the checks under "After the lockdown" below.
+
+If a screen turns out to need a privilege the list missed, give back exactly that one, for example `grant insert on public.some_table to authenticated;`, rather than undoing the file; the row-level policies still decide which rows. Applied migrations are immutable, so make the permanent change as a new migration and add it to the matrix in `supabase/tests/72_grants_matrix.test.sql` (the test fails until both agree).
+
+Undoing it completely means re-granting what the hosted defaults gave: `grant all on all tables in schema public to anon, authenticated;`, `grant all on all sequences in schema public to anon, authenticated;` and `alter default privileges for role postgres in schema public grant all on tables to anon, authenticated;` (and the same for sequences). That reopens the ledger to direct writes; do it only to get a broken release working again.
+
+Adding tables later: with the defaults gone, a migration that creates a table in `public` has to say who may use it (`grant select, insert on public.new_table to authenticated;`, never `grant all`), and the new table needs a row in the matrix of `72_grants_matrix.test.sql`, which fails until it has one. A table with a `serial` column also needs `grant usage on sequence ... to authenticated`; `generated always as identity` columns need nothing.
+
+## After the lockdown (test project, then production)
+
+Run these after applying `20261127075000`, signed in as an executive, a group manager and a plain member. The SQL tests cover the same ground on a scratch database; these confirm it on the real API.
+
+- [ ] Everything the app does still works: post and edit an announcement, add and delete an event, edit your own profile (name, phone, class year, specialty), request to join a group, upload a recording with notation and publish, archive and delete it, add a resource folder, link and file, rename, pin and delete them, check in to a meeting and submit an excuse, record an expense and an income, submit a reimbursement with a receipt, build and update a funding claim, set an eligibility status.
+- [ ] Signed out, the home page still lists the public concerts and **Watch or listen** still opens a recording.
+- [ ] With an executive's token against the REST API, `PATCH /rest/v1/finance_expenses?id=eq.<id>` and `DELETE /rest/v1/finance_payments?id=eq.<id>` answer 401/403 with code `42501` (permission denied), no longer 200 or 204. The same for `POST /rest/v1/funding_claims` and `PATCH /rest/v1/attendance_sessions?id=eq.<id>`.
+- [ ] `PATCH /rest/v1/profiles?id=eq.<own id>` with `{"role":"admin"}` answers `42501` for a plain member; with `{"phone":"1"}` it works.
+- [ ] With the anon key only, `GET /rest/v1/archive_items?select=id,title&is_public=eq.true` returns the public concerts and `GET /rest/v1/profiles?select=id` answers `42501`; the OpenAPI document at `/rest/v1/` no longer lists the ledger tables for the anon key.
+- [ ] On the hosted project (PostgreSQL 17; the SQL tests ran on 16 only) no table gives anon or authenticated `TRUNCATE`, `REFERENCES`, `TRIGGER` or `MAINTAIN`: `select c.relname, r from pg_class c cross join unnest(array['anon','authenticated']) r where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and c.relkind in ('r','p','v','m','f') and (has_table_privilege(r, c.oid, 'truncate') or has_table_privilege(r, c.oid, 'references') or has_table_privilege(r, c.oid, 'trigger') or has_table_privilege(r, c.oid, 'maintain'));` returns no rows, and `select defaclnamespace::regnamespace, defaclobjtype, defaclacl from pg_default_acl;` shows no `anon=` or `authenticated=` entry for tables (`r`) or sequences (`S`).
 
 ## Phase 2 follow-up: Resources per folder and the public concert page
 
