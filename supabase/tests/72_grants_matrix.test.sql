@@ -26,7 +26,7 @@ insert into test.expected_grants (rel, anon, auth, auth_cols) values
   ('public.admin_audit_log',                 '',       'SELECT', ''),
   ('public.announcements',                   '',       'DELETE,INSERT,SELECT,UPDATE', ''),
   ('public.archive_items',                   'SELECT', 'DELETE,INSERT,SELECT,UPDATE', ''),
-  ('public.attendance_eligibility',          '',       'INSERT,SELECT,UPDATE', ''),
+  ('public.attendance_eligibility',          '',       'SELECT', ''),
   ('public.attendance_excuses',              '',       'SELECT', ''),
   ('public.attendance_record_audit',         '',       'SELECT', ''),
   ('public.attendance_records',              '',       'SELECT', ''),
@@ -346,8 +346,8 @@ begin
   assert (public.get_finance_summary() ->> 'available_cash') is not null, 'the summary (security invoker) still reads the ledger';
   perform test.logout();
 
-  -- Attendance: meetings, marks and eligibility go through functions; the eligibility one
-  -- runs as the caller and so keeps insert and update on its own table.
+  -- Attendance: meetings, marks and eligibility all go through functions. The eligibility one
+  -- is SECURITY DEFINER (20261127090000), so the table is select-only for signed-in users.
   perform test.login(v_exec);
   select id into v_session from public.create_attendance_session('club', null, 'Seventytwo meeting', now());
   perform public.open_attendance_session(v_session, 30);
@@ -387,7 +387,11 @@ end $$;
 
 -- Re-running the migration changes nothing that matters: still the matrix, and now the
 -- serial sequence the previous block created gets USAGE because events can be inserted into.
+-- It also hands attendance_eligibility its old insert and update again (the matrix inside it
+-- is frozen), so the later migration that takes them away runs again after it, as it did on
+-- the first replay.
 \ir ../migrations/20261127075000_least_privilege_grants.sql
+\ir ../migrations/20261127090000_attendance_eligibility_definer.sql
 
 do $$
 declare
@@ -453,6 +457,8 @@ begin
   assert test.state_as(v_exec, format('delete from public.funding_claim_expenses where claim_id = %s', v_claim)) = '42501', 'executive: unlink an expense directly';
   assert test.state_as(v_exec, format('update public.attendance_sessions set status = ''closed'' where id = %s', v_session)) = '42501', 'executive: close a meeting directly';
   assert test.state_as(v_exec, 'delete from public.attendance_records') = '42501', 'executive: delete attendance marks directly';
+  assert test.state_as(v_exec, format('insert into public.attendance_eligibility (term_key, member_id, status, updated_by, updated_at) values (''2026-fall'', %L, ''reinstated'', %L, now())', v_member, v_exec)) = '42501', 'executive: write an eligibility row directly, with a chosen author';
+  assert test.state_as(v_exec, 'update public.attendance_eligibility set updated_by = null, updated_at = now() - interval ''1 year''') = '42501', 'executive: rewrite who set an eligibility and when';
   assert test.state_as(v_exec, 'delete from public.finance_audit_log') = '42501', 'executive: erase the finance audit trail';
   assert test.state_as(v_exec, 'update public.attendance_record_audit set note = ''x''') = '42501', 'executive: rewrite the attendance audit trail';
   assert test.state_as(v_exec, 'insert into public.admin_audit_log (action) values (''forged'')') = '42501', 'executive: forge an admin audit entry';
