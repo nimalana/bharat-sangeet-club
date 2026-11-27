@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  DEFAULT_LIST_LIMIT,
   EMPTY_OVERVIEW,
+  LIST_LIMIT_STEPS,
   applyPulse,
   createFailureGate,
   createSequencer,
   flaggedSummaries,
+  nextListLimit,
   normalizeOverview,
   openSessionIds,
   overallRate,
@@ -268,7 +271,25 @@ test("a partial answer never crashes the page and a capped list says so", () => 
   assert.equal(partial.excuses_pending, 0);
   assert.deepEqual(normalizeOverview(null), EMPTY_OVERVIEW);
   assert.equal(queueNote(100, 100, "open items"), "");
-  assert.equal(queueNote(100, 533, "open items"), "Showing the latest 100 of 533 open items.");
+  assert.equal(queueNote(100, 533, "open items"), "Showing the latest 100 of 533 open items. Older ones are hidden.");
+  assert.equal(queueNote(250, 533, "open items", 250), "Showing the latest 250 of 533 open items. Older ones are hidden.");
+  assert.equal(queueNote(1000, 1500, "open items", 1000), "Showing the latest 1000 of 1500 open items. Older ones are hidden. Narrow the view by group or term to reach them.", "at the most the server gives, point to the filters");
+  assert.equal(queueNote(1000, 1000, "open items", 1000), "");
+});
+
+test("Show more climbs 100, 250, 500, 1000 and then stops", () => {
+  assert.equal(DEFAULT_LIST_LIMIT, 100, "the first load is the small one");
+  assert.deepEqual([...LIST_LIMIT_STEPS], [100, 250, 500, 1000]);
+  assert.equal(nextListLimit(100), 250);
+  assert.equal(nextListLimit(250), 500);
+  assert.equal(nextListLimit(500), 1000);
+  assert.equal(nextListLimit(1000), null, "the server gives no more");
+  assert.equal(nextListLimit(5000), null);
+  assert.equal(nextListLimit(1), 100, "a smaller cap steps up to the first");
+  assert.equal(nextListLimit(120), 250, "a cap between two steps goes to the next");
+  // Every note with a larger cap available leaves room to ask for it; at the top it does not.
+  assert.equal(queueNote(500, 800, "open items", 500).includes("Narrow"), false);
+  assert.equal(queueNote(1000, 1400, "open items", 1000).includes("Narrow"), true);
 });
 
 // ---- the screen no longer uses the browser's own dialogs
@@ -306,4 +327,13 @@ test("attendance.tsx reads the roster again after check-in opens or closes", () 
 
 test("attendance.tsx compares the overview's items version in the poll", () => {
   assert.match(pageSource(), /pulseNeedsReload\(state\.data\.sessions, reply, state\.data\.excuses_pending, canManage, state\.data\.items_version\)/);
+});
+
+test("attendance.tsx asks for a larger queue cap only from the overview, never from the poll", () => {
+  const source = pageSource();
+  assert.match(source, /rpc\("get_attendance_overview", \{ \.\.\.scopeArgs, p_list_limit: limit \}\)/);
+  assert.match(source, /rpc\("get_attendance_pulse", scopeArgs\)/, "the poll does not take a list limit");
+  assert.match(source, /Show more/);
+  assert.match(between(source, "function changeScope", "function changeTerm"), /listLimit\.current = DEFAULT_LIST_LIMIT/, "a new audience starts at the first page");
+  assert.match(between(source, "function changeTerm", "if (!data)"), /listLimit\.current = DEFAULT_LIST_LIMIT/, "so does a new term");
 });

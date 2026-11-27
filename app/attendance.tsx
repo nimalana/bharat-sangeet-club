@@ -10,7 +10,7 @@ import { ConfirmDialog } from "../components/ui/confirm-dialog";
 import { FormDialog, type FormField } from "../components/ui/form-dialog";
 import { ClearMarkButton, SessionCorrections, ThresholdSettings, WithdrawExcuseButton } from "../components/attendance/attendance-corrections";
 import {
-  EMPTY_OVERVIEW, applyPulse, createFailureGate, createSequencer, flaggedSummaries, normalizeOverview, overallRate, parseMinutesLate,
+  DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, applyPulse, createFailureGate, createSequencer, flaggedSummaries, nextListLimit, normalizeOverview, overallRate, parseMinutesLate,
   pulseNeedsReload, queueNote, rosterIsStale, shouldPoll, termChoices, termLabel,
   type AbsenceCategory, type AttendanceOverview, type AttendanceSession, type ClubRole, type EligibilityStatus, type Excuse, type Pulse,
   type RecordStatus, type Remediation, type Roster,
@@ -75,6 +75,13 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   const canManage = role !== "member";
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(initialScope);
   const [termFilter, setTermFilter] = useState("all");
+  // How many items each review queue lists for an executive (see queueNote in
+  // attendance-model.ts). 'Show more' raises it once the server has answered
+  // with the larger lists; changing the audience or term puts it back, so a long
+  // list is only loaded on request. A ref, because every load reads the value
+  // in force when it starts and none should start because it changed.
+  const listLimit = useRef<number>(DEFAULT_LIST_LIMIT);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Reopening the screen shows the last data at once and refreshes behind it.
   const cacheKey = viewKey(scopeFilter, termFilter);
   const [cached] = useState(() => readCache<AttendanceOverview>(user.id, viewKey(initialScope, "all")));
@@ -119,7 +126,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     if (failures.shouldNotify(background)) notify(message);
   }, [failures, notify]);
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false, limit: number = listLimit.current) => {
     const client = supabase;
     if (!client) return;
     const id = loadSeq.next();
@@ -133,10 +140,12 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     try {
       // One request for the whole screen. It carries totals and the open
       // review queues, never every mark.
-      const { data: result, error } = await client.rpc("get_attendance_overview", scopeArgs);
+      // The overview alone takes the queue cap; the poll takes the audience only.
+      const { data: result, error } = await client.rpc("get_attendance_overview", { ...scopeArgs, p_list_limit: limit });
       if (!loadSeq.isLatest(id)) return;
       if (error || !result) { reportFailure(silent, "Attendance could not be loaded. Try again in a moment."); setFailedKey(key); return; }
       failures.succeeded();
+      listLimit.current = limit;
       const next = normalizeOverview(result as Partial<AttendanceOverview>);
       const ids = next.sessions.map((session) => session.id);
       setViews((current) => ({ ...current, [key]: next }));
@@ -441,6 +450,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   function changeScope(value: ScopeFilter) {
     setScopeFilter(value);
+    listLimit.current = DEFAULT_LIST_LIMIT;
     setTab("overview");
     setLiveCode("");
     setFeedback("");
@@ -448,6 +458,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   function changeTerm(value: string) {
     setTermFilter(value);
+    listLimit.current = DEFAULT_LIST_LIMIT;
     setTab("overview");
     setLiveCode("");
     setFeedback("");
@@ -463,8 +474,18 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   const form = dialog && dialog.kind !== "session" ? formConfig(dialog) : null;
   const rosterReady = roster !== null && selectedSession !== null && roster.session_id === selectedSession.id;
-  const remediationNote = queueNote(pendingRemediations.length, view.remediations_pending, "open items");
-  const excuseNote = queueNote(view.excuses.length, view.excuses_total, "absence forms");
+  const remediationNote = queueNote(pendingRemediations.length, view.remediations_pending, "open items", view.list_limit);
+  const excuseNote = queueNote(view.excuses.length, view.excuses_total, "absence forms", view.list_limit);
+  // 'Show more' asks the server for the next cap and keeps it for later loads
+  // only once the larger lists have arrived (a failure leaves the page as it was
+  // and the button to try again). It is absent once the most the server gives is
+  // already in force.
+  const nextLimit = canManage ? nextListLimit(view.list_limit) : null;
+  const showMore = nextLimit === null ? null : () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    load(false, nextLimit).finally(() => setLoadingMore(false));
+  };
 
   return <section className="section-shell page-section attendance-page">
     <div className="attendance-title-row">
@@ -484,7 +505,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
        <div className="attendance-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "active" : ""} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTab("overview"); }}>Overview</button><button type="button" role="tab" aria-selected={tab === "meetings"} className={tab === "meetings" ? "active" : ""} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTab("meetings"); }}>Meetings</button><button type="button" role="tab" aria-selected={tab === "excuses"} className={tab === "excuses" ? "active" : ""} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTab("excuses"); }}>Absence forms {pendingExcuseCount ? `(${pendingExcuseCount})` : ""}</button></div>
       {tab === "overview" && <>
         <div className="attendance-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">POLICY FLAGS</p><h2>Members needing attention</h2></div><span>At {warningLevel} · Review over {criticalLevel - 1} unexcused units <ThresholdSettings warning={warningLevel} critical={criticalLevel} notify={notify} onChanged={() => load(true)} /></span></div>{flagged.length ? <div className="attendance-flags">{flagged.map((summary) => <article key={summary.memberId} className={summary.flag}><div><b>{summary.name}</b><small>{summary.email}</small></div><span>{summary.rate}% attendance</span><strong>{formatUnits(summary.unexcusedUnits)} unexcused</strong><i>{summary.eligibility.replace("_", " ")}</i><div className="attendance-inline-actions"><Button size="sm" variant="secondary" disabled={saving} onClick={() => setDialog({ kind: "eligibility", memberId: summary.memberId, memberName: summary.name, status: "under_review" })}>Review</Button><Button size="sm" variant={summary.eligibility === "restricted" ? "secondary" : "danger"} disabled={saving} onClick={() => setDialog({ kind: "eligibility", memberId: summary.memberId, memberName: summary.name, status: summary.eligibility === "restricted" ? "reinstated" : "restricted" })}>{summary.eligibility === "restricted" ? "Reinstate" : "Restrict"}</Button></div></article>)}</div> : <div className="attendance-empty">No members are currently flagged in this view.</div>}</div>
-        <div className="attendance-panel attendance-remediation-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">REMEDIATION</p><h2>Open follow-up</h2></div><span>{view.remediations_pending} pending</span></div>{pendingRemediations.length ? <div className="remediation-list">{pendingRemediations.map((item) => { const session = sessions.find((sessionItem) => sessionItem.id === item.session_id); return <article key={item.id}><div><b>{profileName(item.member_id)}</b><small>{session?.title || "Meeting"} · {item.assignment}</small></div><Button size="sm" disabled={saving} onClick={() => setDialog({ kind: "remediation", item, memberName: profileName(item.member_id) })}>Mark complete</Button></article>; })}</div> : <div className="attendance-empty">No open remediation items.</div>}{remediationNote && <p className="attendance-help">{remediationNote}</p>}</div>
+        <div className="attendance-panel attendance-remediation-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">REMEDIATION</p><h2>Open follow-up</h2></div><span>{view.remediations_pending} pending</span></div>{pendingRemediations.length ? <div className="remediation-list">{pendingRemediations.map((item) => { const session = sessions.find((sessionItem) => sessionItem.id === item.session_id); return <article key={item.id}><div><b>{profileName(item.member_id)}</b><small>{session?.title || "Meeting"} · {item.assignment}</small></div><Button size="sm" disabled={saving} onClick={() => setDialog({ kind: "remediation", item, memberName: profileName(item.member_id) })}>Mark complete</Button></article>; })}</div> : <div className="attendance-empty">No open remediation items.</div>}<QueueNote note={remediationNote} onShowMore={showMore} busy={loadingMore} /></div>
       </>}
       {tab === "meetings" && (
         <div className="attendance-meetings">
@@ -526,7 +547,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
           </div>
         </div>
       )}
-      {tab === "excuses" && <div className="attendance-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">PRIVATE REVIEW QUEUE</p><h2>Absence forms</h2></div><span>{pendingExcuseCount} awaiting review</span></div><div className="excuse-list">{view.excuses.length ? view.excuses.map((excuse) => { const session = sessions.find((item) => item.id === excuse.session_id); return <article key={excuse.id}><div><span className={`attendance-status ${excuse.status}`}>{excuse.status}</span><h3>{profileName(excuse.member_id)}</h3><small>{session?.title} · {session ? formatDateTime(session.starts_at) : "Meeting"} · {categoryLabels[excuse.reason_category]}</small><p>{excuse.reason}</p><small>{excuse.notified_at ? `Executive notified ${formatDateTime(excuse.notified_at)}` : "No notification time recorded"}</small>{excuse.review_note && <p className="review-note">Executive note: {excuse.review_note}</p>}</div><div>{excuse.proof_path && <Button variant="secondary" onClick={() => openProof(excuse)}>View proof</Button>}{excuse.status === "pending" && <><Button disabled={saving} onClick={() => setDialog({ kind: "review", excuse, memberName: profileName(excuse.member_id), decision: "approved" })}>Approve</Button><Button variant="danger" disabled={saving} onClick={() => setDialog({ kind: "review", excuse, memberName: profileName(excuse.member_id), decision: "denied" })}>Deny</Button></>}</div></article>; }) : <div className="attendance-empty">No absence forms have been submitted.</div>}</div>{excuseNote && <p className="attendance-help">{excuseNote}</p>}</div>}
+      {tab === "excuses" && <div className="attendance-panel"><div className="attendance-panel-heading"><div><p className="eyebrow">PRIVATE REVIEW QUEUE</p><h2>Absence forms</h2></div><span>{pendingExcuseCount} awaiting review</span></div><div className="excuse-list">{view.excuses.length ? view.excuses.map((excuse) => { const session = sessions.find((item) => item.id === excuse.session_id); return <article key={excuse.id}><div><span className={`attendance-status ${excuse.status}`}>{excuse.status}</span><h3>{profileName(excuse.member_id)}</h3><small>{session?.title} · {session ? formatDateTime(session.starts_at) : "Meeting"} · {categoryLabels[excuse.reason_category]}</small><p>{excuse.reason}</p><small>{excuse.notified_at ? `Executive notified ${formatDateTime(excuse.notified_at)}` : "No notification time recorded"}</small>{excuse.review_note && <p className="review-note">Executive note: {excuse.review_note}</p>}</div><div>{excuse.proof_path && <Button variant="secondary" onClick={() => openProof(excuse)}>View proof</Button>}{excuse.status === "pending" && <><Button disabled={saving} onClick={() => setDialog({ kind: "review", excuse, memberName: profileName(excuse.member_id), decision: "approved" })}>Approve</Button><Button variant="danger" disabled={saving} onClick={() => setDialog({ kind: "review", excuse, memberName: profileName(excuse.member_id), decision: "denied" })}>Deny</Button></>}</div></article>; }) : <div className="attendance-empty">No absence forms have been submitted.</div>}</div><QueueNote note={excuseNote} onShowMore={showMore} busy={loadingMore} /></div>}
     </> : <>
       <div className="attendance-summary-grid member"><Stat label="Present" value={ownRecords.filter((record) => record.status === "present").length} /><Stat label="Excused" value={ownRecords.filter((record) => record.status === "excused").length} /><Stat label="Tardy" value={ownRecords.filter((record) => record.status === "tardy").length} /><Stat label="Absent" value={ownRecords.filter((record) => record.status === "absent").length} tone={ownRecords.filter((record) => record.status === "absent").length >= 2 ? "warning" : undefined} /></div>
       {ownEligibility && ownEligibility.status !== "eligible" && <div className={`attendance-eligibility-notice ${ownEligibility.status}`}><b>Performance eligibility: {ownEligibility.status.replace("_", " ")}</b>{ownEligibility.reason && <span>{ownEligibility.reason}</span>}</div>}
@@ -549,6 +570,12 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       {dialog?.kind === "session" && dialog.action === "cancel" ? "It will not count toward attendance." : "Everyone still missing is marked absent."}
     </ConfirmDialog>
   </section>;
+}
+
+// Says a list is capped and, when a larger cap exists, offers the next one.
+function QueueNote({ note, onShowMore, busy }: { note: string; onShowMore: (() => void) | null; busy: boolean }) {
+  if (!note) return null;
+  return <p className="attendance-help">{note} {onShowMore && <Button size="sm" variant="secondary" disabled={busy} onClick={onShowMore}>{busy ? "Loading…" : "Show more"}</Button>}</p>;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "warning" | "critical" }) {

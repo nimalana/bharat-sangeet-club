@@ -276,6 +276,26 @@ export function parseMinutesLate(value: string) {
   return minutes <= 1440 ? minutes : null;
 }
 
-export function queueNote(shown: number, total: number, noun: string) {
-  return total > shown ? `Showing the latest ${shown} of ${total} ${noun}.` : "";
+// The review queues an executive sees (waiting absence forms, other absence
+// forms, open follow-up items) come newest first and are capped, so the first
+// load stays small however many items there are. The totals are exact. The cap
+// starts at DEFAULT_LIST_LIMIT and 'Show more' asks for the next step; the
+// server (get_attendance_overview) accepts up to the last step and no more, so
+// keep these in step with its p_list_limit clamp. Past that, the Term and View
+// filters narrow what is listed. Members are never capped.
+export const LIST_LIMIT_STEPS = [100, 250, 500, 1000] as const;
+export const DEFAULT_LIST_LIMIT = LIST_LIMIT_STEPS[0];
+
+// The next cap to ask for after `current`, or null when `current` is the most
+// the server gives.
+export function nextListLimit(current: number): number | null {
+  return LIST_LIMIT_STEPS.find((step) => step > current) ?? null;
+}
+
+// Says what a capped list leaves out. `limit` is the cap in force: when no
+// larger one exists the note points to the filters instead.
+export function queueNote(shown: number, total: number, noun: string, limit: number = DEFAULT_LIST_LIMIT) {
+  if (total <= shown) return "";
+  const base = `Showing the latest ${shown} of ${total} ${noun}. Older ones are hidden.`;
+  return nextListLimit(limit) === null ? `${base} Narrow the view by group or term to reach them.` : base;
 }
