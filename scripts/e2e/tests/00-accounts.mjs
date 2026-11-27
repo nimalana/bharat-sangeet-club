@@ -32,6 +32,18 @@ export default async function accounts(t, ctx) {
   });
 
   await t.test("admin promotes the two executives with admin_change_member_role and the new role applies at once, with the same session", async () => {
+    const emails = [ctx.accounts.execA.email, ctx.accounts.execB.email];
+    const promotions = async () => rowsOf(await c.admin.from("admin_audit_log").select("action,target_email,details").eq("action", "role_changed").in("target_email", emails), "audit log")
+      .filter((row) => row.details?.new_role === "executive");
+    // The accounts stay executives between runs (cleanup.sql keeps them as they are), and admin_change_member_role writes an audit row only
+    // when the role really changes. So start from plain members: the promotion below is then a real change, and it must be audited.
+    for (const key of ["execA", "execB"]) {
+      const now = succeeded(await c[key].rpc("get_portal_bootstrap"), `${key} bootstrap`).profile.role;
+      if (now === "member") continue;
+      equal(succeeded(await c.admin.rpc("admin_change_member_role", { p_target_id: id[key], p_new_role: "member" }), `demote ${key}`).role, "member", `${key} role after demotion`);
+      equal(succeeded(await c[key].rpc("get_portal_bootstrap"), `${key} bootstrap after demotion`).profile.role, "member", `${key} sees the demotion without signing in again`);
+    }
+    const before = (await promotions()).length;
     for (const key of ["execA", "execB"]) {
       const res = await c.admin.rpc("admin_change_member_role", { p_target_id: id[key], p_new_role: "executive" });
       const row = succeeded(res, `promote ${key}`);
@@ -39,8 +51,9 @@ export default async function accounts(t, ctx) {
       const boot = succeeded(await c[key].rpc("get_portal_bootstrap"), `${key} bootstrap`);
       equal(boot.profile.role, "executive", `${key} sees executive without signing in again`);
     }
-    const audit = rowsOf(await c.admin.from("admin_audit_log").select("action,target_email").eq("action", "role_changed").in("target_email", [ctx.accounts.execA.email, ctx.accounts.execB.email]), "audit log");
-    ok(audit.length >= 2, `expected two role_changed audit rows for the executives, got ${audit.length}`);
+    const after = await promotions();
+    equal(after.length - before, 2, "role_changed audit rows written by these two promotions (one each)");
+    for (const email of emails) ok(after.some((row) => row.target_email === email), `no role_changed audit row for ${email}`);
   });
 
   await t.test("an executive is not an administrator: admin RPCs and the audit log are closed to them", async () => {
