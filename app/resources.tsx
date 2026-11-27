@@ -4,6 +4,8 @@ import type { User } from "@supabase/supabase-js";
 import { ResourceActions } from "../components/resources/resource-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { clearCachePrefix, readCache, writeCache } from "../lib/cache";
+import { keepRowsOnFailure } from "../lib/refresh";
+import { LoadErrorBanner } from "../components/ui/load-error";
 import {
   RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS, applyListPlan, buildListPlan, chainFromKnown, crumbCacheKey, folderUrl, isFlatListing, listCacheKey,
   mergePage, orderForDisplay, parseFolderParam, resolveFolderChain, resolveSubtreeFolderIds, subtreeCacheKey, thumbnailCacheKey, thumbnailExpiry, thumbnailsToSign,
@@ -157,6 +159,8 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   const [childCountState, setChildCountState] = useState<{ id: number; count: number } | null>(null);
   const [selectedChain, setSelectedChain] = useState<{ id: number; chain: ResourceItem[] } | null>(null);
   const requestRef = useRef(0);
+  // The list the rows on screen were loaded for; a failed refresh keeps them only for that same list.
+  const shownKeyRef = useRef<string | null>(firstSnapshot ? cacheKey : null);
   const fetchedRef = useRef(0);
   const lastKeyRef = useRef("");
   const previousScopeRef = useRef(initialScope);
@@ -244,7 +248,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
     const requestId = ++requestRef.current;
     const cached = more ? undefined : readCache<ListSnapshot>(user.id, cacheKey);
     if (!more) {
-      if (cached) { setItems(cached.rows); setHasMore(cached.hasMore); setTotal(cached.total); fetchedRef.current = cached.fetched; setLoading(false); }
+      if (cached) { setItems(cached.rows); setHasMore(cached.hasMore); setTotal(cached.total); fetchedRef.current = cached.fetched; shownKeyRef.current = cacheKey; setLoading(false); }
       else if (lastKeyRef.current !== cacheKey) setLoading(true);
       lastKeyRef.current = cacheKey;
     } else setLoadingMore(true);
@@ -252,7 +256,8 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
     const fail = () => {
       if (requestId !== requestRef.current) return;
       setLoadError("Resources could not be loaded. Try again in a moment.");
-      if (!more) { setItems([]); setHasMore(false); }
+      // The rows on screen stay when they belong to this same list; rows of another folder or filter go.
+      if (!more && !keepRowsOnFailure(shownKeyRef.current, cacheKey)) { setItems([]); setHasMore(false); shownKeyRef.current = null; }
       notify("The resource library could not be loaded");
       setLoading(false); setLoadingMore(false);
     };
@@ -291,6 +296,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
       const nextTotal = more ? total : count ?? null;
       const moreAvailable = fetched === RESOURCE_PAGE_SIZE && (count === null || count === undefined || offset + fetched < count);
       fetchedRef.current = offset + fetched;
+      if (!more) shownKeyRef.current = cacheKey;
       setHasMore(moreAvailable); setTotal(nextTotal);
       setItems((current) => more ? mergePage(current, withThumbs) : withThumbs);
       if (!more) writeCache<ListSnapshot>(user.id, cacheKey, { rows: withThumbs, hasMore: moreAvailable, total: nextTotal, fetched: offset + fetched });
@@ -606,7 +612,8 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
 
     <div className={styles.breadcrumbRow}><button type="button" onClick={() => changeFolder(null)} className={folderId === null ? styles.currentCrumb : ""}>Resources</button>{breadcrumb.map((crumb) => <span key={crumb.id} className={styles.crumb}><Icon name="chevron" size={13} /><button type="button" onClick={() => changeFolder(crumb.id)} className={crumb.id === folderId ? styles.currentCrumb : ""}>{crumb.title}</button></span>)}{currentFolder && !showArchived && canManageItem(currentFolder) ? <button type="button" onClick={() => setSelected(currentFolder)}>Folder settings</button> : null}<span className={styles.scopeHint}>{showArchived ? "Archived · " : ""}{scopeLabel}{currentFolder?.visibility === "executives" ? <><span className={styles.dot}>·</span><Icon name="lock" size={13} /></> : null}</span></div>
 
-    {loading ? <div className={styles.state}><span className={styles.loader} /><h2>Opening the library</h2><p>Gathering the latest club resources…</p></div> : loadError ? <div className={styles.state}><div className={styles.stateIcon}><Icon name="refresh" size={22} /></div><h2>Something interrupted the shelf</h2><p>{loadError}</p><button type="button" className={styles.secondaryButton} onClick={() => refreshAll()}>Try again</button></div> : visibleItems.length === 0 ? <div className={styles.state}><div className={styles.stateIcon}><Icon name={search ? "search" : "folder"} size={23} /></div><h2>{showArchived ? "Nothing is archived here" : search ? "No matching resources" : folderId ? "This folder is ready for something" : "Your resource shelf is empty"}</h2><p>{search ? "Try a shorter search or clear the search field." : canAdd ? "Create a folder, add a useful link, or upload a set of files to get started." : "Resources shared with your membership will appear here."}</p>{search ? <button type="button" className={styles.secondaryButton} onClick={() => { setQuery(""); setSearch(""); }}>Clear search</button> : canAdd ? <button type="button" className={styles.secondaryButton} onClick={() => openComposer("menu")}><Icon name="plus" size={15} /> Add the first resource</button> : null}</div> : <div className={display === "grid" || tab === "photos" ? styles.resourceGrid : styles.resourceList}>{visibleItems.map((item) => <button key={item.id} type="button" className={styles.resourceRow} onClick={() => openItem(item)}>
+    {!loading && loadError && visibleItems.length > 0 && <LoadErrorBanner message={`${loadError} What is shown may be out of date.`} onRetry={() => refreshAll()} />}
+    {loading ? <div className={styles.state}><span className={styles.loader} /><h2>Opening the library</h2><p>Gathering the latest club resources…</p></div> : loadError && visibleItems.length === 0 ? <div className={styles.state}><div className={styles.stateIcon}><Icon name="refresh" size={22} /></div><h2>Something interrupted the shelf</h2><p>{loadError}</p><button type="button" className={styles.secondaryButton} onClick={() => refreshAll()}>Try again</button></div> : visibleItems.length === 0 ? <div className={styles.state}><div className={styles.stateIcon}><Icon name={search ? "search" : "folder"} size={23} /></div><h2>{showArchived ? "Nothing is archived here" : search ? "No matching resources" : folderId ? "This folder is ready for something" : "Your resource shelf is empty"}</h2><p>{search ? "Try a shorter search or clear the search field." : canAdd ? "Create a folder, add a useful link, or upload a set of files to get started." : "Resources shared with your membership will appear here."}</p>{search ? <button type="button" className={styles.secondaryButton} onClick={() => { setQuery(""); setSearch(""); }}>Clear search</button> : canAdd ? <button type="button" className={styles.secondaryButton} onClick={() => openComposer("menu")}><Icon name="plus" size={15} /> Add the first resource</button> : null}</div> : <div className={display === "grid" || tab === "photos" ? styles.resourceGrid : styles.resourceList}>{visibleItems.map((item) => <button key={item.id} type="button" className={styles.resourceRow} onClick={() => openItem(item)}>
       {/* Signed Supabase URLs are short-lived and dynamic, so a native img is intentional here instead of next/image. */}{item.node_kind === "file" && isImage(item) && item.signedUrl ? <img src={item.signedUrl} alt="" className={styles.thumbnail} loading="lazy" decoding="async" /> : <div className={`${styles.typeIcon} ${item.node_kind === "folder" ? styles.folderIcon : ""}`}><Icon name={itemIcon(item)} size={20} /></div>}
       <div className={styles.resourceCopy}><div className={styles.resourceTitle}>{item.title}{item.is_pinned ? <span className={styles.pinned}>Pinned</span> : null}{item.status === "failed" ? <span className={styles.failedBadge}>Upload failed</span> : null}</div><p>{item.description || (item.node_kind === "folder" ? "Folder" : item.node_kind === "link" ? item.external_url : item.original_filename) || "No description"}</p></div>
       <div className={styles.resourceMeta}><span>{item.node_kind === "folder" ? "Folder" : item.node_kind === "link" ? "Link" : formatBytes(item.byte_size)}</span><span>{formatDate(item.updated_at)}</span></div><Icon name="arrow" size={17} /></button>)}</div>}

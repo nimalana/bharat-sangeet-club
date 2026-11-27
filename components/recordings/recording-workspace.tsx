@@ -6,9 +6,11 @@ import { useDropzone, type DropzoneOptions } from "react-dropzone";
 import WaveSurfer from "wavesurfer.js";
 import * as Tone from "tone";
 import { readCache, writeCache } from "../../lib/cache";
+import { createRequestGate } from "../../lib/request-gate";
 import { supabase } from "../../lib/supabase";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { LoadErrorBanner } from "../ui/load-error";
 import { NoteActions, RecordingManageBar, recordingBucket } from "./recording-manage";
 
 type Group = { id: number; name: string; description: string };
@@ -81,9 +83,13 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
     return () => window.clearTimeout(timer);
   }, [query]);
   const cacheKey = `recordings:${view}:${scope}:${search}`;
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Search, view, scope and "show more" each start a load; only the newest may change the list.
+  const [loadGate] = useState(createRequestGate);
 
   const load = useCallback(async () => {
     if (!supabase) return;
+    const isCurrent = loadGate.begin();
     const cachedPage = readCache<{ rows: Recording[]; total: number }>(user.id, cacheKey);
     if (cachedPage && pages === 1) { setRecordings(cachedPage.rows); setTotal(cachedPage.total); setLoading(false); }
     else if (pages === 1) setLoading(true);
@@ -96,13 +102,16 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
     const term = search.replace(/[,()%*\\]/g, " ").trim();
     if (term) request = request.or(["title", "description", "raga", "tala", "recording_kind"].map((column) => `${column}.ilike.%${term}%`).join(","));
     const { data, error, count } = await request.order("created_at", { ascending: false }).order("id", { ascending: false }).range(0, PAGE_SIZE * pages - 1);
-    if (error) notify("The recordings workspace could not be loaded");
+    if (!isCurrent()) return;
+    // A failed load keeps the list already shown (and its count) instead of emptying it.
+    if (error) { setLoadFailed(true); setLoading(false); notify("The recordings workspace could not be loaded"); return; }
+    setLoadFailed(false);
     const rows = (data || []) as Recording[];
     setRecordings(rows);
     setTotal(count ?? rows.length);
-    if (!error && pages === 1) writeCache(user.id, cacheKey, { rows, total: count ?? rows.length });
+    if (pages === 1) writeCache(user.id, cacheKey, { rows, total: count ?? rows.length });
     setLoading(false);
-  }, [cacheKey, canManage, notify, pages, scope, search, user.id, view]);
+  }, [cacheKey, canManage, loadGate, notify, pages, scope, search, user.id, view]);
 
   // The loader synchronizes remote Supabase state into this client component.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -153,6 +162,7 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
         <label className="scope-picker recording-scope-picker"><span>Group</span><select value={scope === "all" ? "all" : String(scope)} onChange={(event) => { setScope(event.target.value === "all" ? "all" : Number(event.target.value)); setPages(1); }}><option value="all">All my groups</option>{activeGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
       </div>
 
+      {!loading && loadFailed && <LoadErrorBanner message={recordings.length ? "The list could not be refreshed, so it may be out of date." : "The recordings could not be loaded."} onRetry={() => void load()} />}
       {loading ? <div className="recording-loading"><span className="recording-loading-line" /><span className="recording-loading-line" /><span className="recording-loading-line" /></div> : visible.length ? <div className="recording-list recording-list-new">{visible.map((recording, index) => {
         const group = groups.find((item) => item.id === recording.subgroup_id);
         return <button className="recording-card" key={recording.id} type="button" onClick={() => openRecording(recording)}>
@@ -163,7 +173,7 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
           <span className="recording-card-date">{formatDate(recording.published_at || recording.created_at)}</span>
           <span className="recording-card-arrow" aria-hidden="true">→</span>
         </button>;
-      })}{total > recordings.length && <button type="button" className="recording-load-more" onClick={() => setPages((current) => current + 1)}>Show more ({total - recordings.length} more)</button>}</div> : <div className="recording-empty-state compact"><span className="recording-empty-mark">{view === "drafts" ? "✎" : "♪"}</span><div><h2>{view === "drafts" ? "No drafts yet" : view === "archived" ? "Nothing archived in this view" : "No published recordings in this view"}</h2><p>{view === "drafts" ? "Start a rehearsal capture or upload a take. You can return to it before publishing." : view === "archived" ? "Archived recordings stay here until they are restored or deleted." : "Be the first person in your subgroup to publish a rehearsal or performance take."}</p><Button variant="secondary" onClick={beginNewRecording}>Create the first recording</Button></div></div>}
+      })}{total > recordings.length && <button type="button" className="recording-load-more" onClick={() => setPages((current) => current + 1)}>Show more ({total - recordings.length} more)</button>}</div> : loadFailed ? null : <div className="recording-empty-state compact"><span className="recording-empty-mark">{view === "drafts" ? "✎" : "♪"}</span><div><h2>{view === "drafts" ? "No drafts yet" : view === "archived" ? "Nothing archived in this view" : "No published recordings in this view"}</h2><p>{view === "drafts" ? "Start a rehearsal capture or upload a take. You can return to it before publishing." : view === "archived" ? "Archived recordings stay here until they are restored or deleted." : "Be the first person in your subgroup to publish a rehearsal or performance take."}</p><Button variant="secondary" onClick={beginNewRecording}>Create the first recording</Button></div></div>}
     </>}
 
     {studioOpen && <RecordingStudioDialog user={user} groups={activeGroups} draft={editingDraft} notify={notify} onClose={() => { setStudioOpen(false); setEditingDraft(null); }} onSaved={async () => { setStudioOpen(false); setEditingDraft(null); await refresh(); }} />}

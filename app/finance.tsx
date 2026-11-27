@@ -6,6 +6,9 @@ import { clubToday, formatDay } from "../lib/dates";
 import { supabase } from "../lib/supabase";
 import { readCache, writeCache } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
+import { anyFailed } from "../lib/refresh";
+import { createRequestGate } from "../lib/request-gate";
+import { LoadErrorBanner } from "../components/ui/load-error";
 import { FormDialog, type FormField } from "../components/ui/form-dialog";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -79,6 +82,10 @@ export function FinancePage({ user, role, groups, events, notify }: {
   const [claimDocuments, setClaimDocuments] = useState<ClaimDocument[]>(cached?.claimDocuments || []);
   const [profiles, setProfiles] = useState<Profile[]>(cached?.profiles || []);
   const [loading, setLoading] = useState(!cached);
+  // A failed refresh keeps what is on screen; `loaded` says whether anything real is.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loaded, setLoaded] = useState(Boolean(cached));
+  const [loadGate] = useState(createRequestGate);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [flowFilter, setFlowFilter] = useState("all");
@@ -93,6 +100,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
     const client = supabase;
     if (!client) return;
     if (!readCache(user.id, "finance")) setLoading(true);
+    const isCurrent = loadGate.begin();
     const none = Promise.resolve({ data: [] as unknown[], error: null });
     // Everything in one wave (it used to be three, one after another). The
     // lists show the latest LIST_LIMIT rows; totals come from the database.
@@ -109,6 +117,14 @@ export function FinancePage({ user, role, groups, events, notify }: {
       canManage ? client.from("finance_claim_documents").select("claim_id,document_id").limit(LIST_LIMIT * 4) : none,
       canManage ? client.from("profiles").select("id,full_name,email").order("full_name").limit(2000) : none,
     ]);
+    if (!isCurrent()) return;
+    // One failed query must not blank the lists (the balance would read $0.00): keep what is shown.
+    if (anyFailed([expenseResult, reimbursementResult, paymentResult, documentResult, expenseDocumentResult, reimbursementDocumentResult, claimResult, claimExpenseResult, claimDocumentResult, profileResult])) {
+      setLoadFailed(true); setLoading(false);
+      notify("Some finance records could not be loaded");
+      return;
+    }
+    setLoadFailed(false); setLoaded(true);
     const snapshot: FinanceSnapshot = {
       expenses: (expenseResult.data || []) as Expense[],
       reimbursements: (reimbursementResult.data || []) as Reimbursement[],
@@ -126,10 +142,9 @@ export function FinancePage({ user, role, groups, events, notify }: {
     setDocuments(snapshot.documents); setExpenseDocuments(snapshot.expenseDocuments); setReimbursementDocuments(snapshot.reimbursementDocuments);
     setClaims(snapshot.claims); setClaimExpenses(snapshot.claimExpenses); setClaimDocuments(snapshot.claimDocuments);
     setProfiles(snapshot.profiles); setSummary(snapshot.summary);
-    const failed = [expenseResult, reimbursementResult, paymentResult, documentResult, expenseDocumentResult, reimbursementDocumentResult, claimResult, claimExpenseResult, claimDocumentResult, profileResult].some((result) => result.error);
-    if (failed) notify("Some finance records could not be loaded"); else writeCache(user.id, "finance", snapshot);
+    writeCache(user.id, "finance", snapshot);
     setLoading(false);
-  }, [canManage, notify, user.id]);
+  }, [canManage, loadGate, notify, user.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { loadFinance(); }, 0);
@@ -476,6 +491,8 @@ export function FinancePage({ user, role, groups, events, notify }: {
 
   return <section className="section-shell page-section finance-page">
     <div className="finance-title-row"><div className="page-title"><p className="eyebrow">{canManage ? "FINANCE WORKSPACE" : "MEMBER FINANCES"}</p><h1>{canManage ? "Club finances" : "My reimbursements"}</h1><p>{canManage ? "Purchases, payments, member reimbursements, and funding claims—connected without double-counting." : "Submit purchases you made for the club and follow each request through review and payment."}</p></div><div className="finance-actions">{canManage && <><Button variant="secondary" onClick={() => setModal("income")}>＋ Record income</Button><Button variant="secondary" onClick={() => setModal("expense")}>＋ Club expense</Button></>}<Button onClick={() => setModal("reimbursement")}>＋ Request reimbursement</Button></div></div>
+    {loadFailed && <LoadErrorBanner message={loaded ? "Some finance records could not be refreshed, so the figures below may be out of date." : "The finance records could not be loaded."} onRetry={() => void loadFinance()} />}
+    {(loaded || !loadFailed) && <>
 
     {canManage ? <div className="finance-summary finance-summary-v2"><SummaryCard label="Available cash" value={money(summary?.available_cash ?? balance)} detail="Posted and cleared payments" /><SummaryCard label="Recorded income" value={money(summary?.income ?? income)} detail="All incoming payments" tone="positive" /><SummaryCard label="Club spending" value={money(summary?.spending ?? spending)} detail="Approved and settled purchases" /><SummaryCard label="Pending reimbursements" value={money(summary?.pending_reimbursement_total ?? pendingTotal)} detail={`${summary?.pending_reimbursement_count ?? pendingReimbursements.length} awaiting action`} tone={pendingReimbursements.length ? "warning" : undefined} /><SummaryCard label="Expected funding" value={money(summary?.expected_funding ?? expectedFunding)} detail="Approved, not yet received" tone="positive" /></div> : <div className="finance-summary finance-summary-v2 member"><SummaryCard label="Requested" value={money(reimbursements.reduce((sum, item) => sum + Number(item.requested_amount), 0))} detail="All my requests" /><SummaryCard label="Awaiting review" value={String(reimbursements.filter((item) => item.status === "submitted").length)} detail="Submitted requests" tone="warning" /><SummaryCard label="Paid" value={money(reimbursements.filter((item) => item.status === "paid").reduce((sum, item) => sum + Number(item.approved_amount || 0), 0))} detail="Completed reimbursements" tone="positive" /></div>}
 
@@ -489,6 +506,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
       {view === "reimbursements" && <section className="finance-panel"><PanelHeading title={canManage ? "Member reimbursements" : "My requests"} meta={`${reimbursements.length} requests`} />{reimbursements.length ? <div className="reimbursement-list">{reimbursements.map((request) => { const expense = expenseById.get(request.expense_id); const receiptIds = reimbursementDocuments.filter((item) => item.reimbursement_id === request.id).map((item) => item.document_id); return <article className="reimbursement-card" key={request.id}><div className="reimbursement-main"><div><p className="eyebrow">{canManage ? profileById.get(request.member_id)?.full_name || profileById.get(request.member_id)?.email || "CLUB MEMBER" : "MY REQUEST"}</p><h3>{expense?.description || "Club purchase"}</h3><p>{expense?.vendor || expense?.category} · Purchased {expense ? formatDay(expense.purchase_date) : "recently"}</p></div><div className="reimbursement-amount"><strong>{money(Number(request.approved_amount || request.requested_amount))}</strong><StatusBadge status={request.status} /></div></div>{request.member_note && <p className="reimbursement-note">“{request.member_note}”</p>}{request.review_note && <p className="reimbursement-note"><b>{request.status === "changes_requested" ? "Changes requested: " : "Reviewer: "}</b>{request.review_note}</p>}{request.status === "voided" && request.void_reason && <p className="reimbursement-note"><b>Voided: </b>{request.void_reason}</p>}<div className="reimbursement-footer"><div>{receiptIds.map((documentId) => { const document = documentById.get(documentId); const removable = document && ["submitted", "changes_requested"].includes(request.status) && (canManage || document.uploaded_by === user.id); return <span key={documentId} className="document-chip-group"><button className="document-chip" onClick={() => openDocument(documentId)}>▤ {document?.title || "Document"}</button>{removable && <button type="button" className="finance-row-action" onClick={() => askRemoveDocument(document)} aria-label={`Remove ${document.title}`}>×</button>}</span>; })}{request.member_id === user.id && ["submitted", "changes_requested"].includes(request.status) && <button type="button" className="document-chip" onClick={() => setReceiptRequestId(request.id)}>＋ Add receipt</button>}</div><div className="reimbursement-actions">{request.member_id === user.id && expense && ["submitted", "changes_requested"].includes(request.status) && <><button className="secondary" onClick={() => askEditRequest(request, expense)}>{request.status === "changes_requested" ? "Edit and resubmit" : "Edit"}</button><button className="secondary" onClick={() => askWithdrawRequest(request)}>Withdraw</button></>}{canManage && request.member_id === user.id && request.status === "submitted" && <small>Another executive must review your own request.</small>}{canManage && request.member_id !== user.id && request.status === "submitted" && <><button className="secondary" onClick={() => askDecline(request)}>Decline</button><button className="secondary" onClick={() => askRequestChanges(request)}>Request changes</button><button className="primary" onClick={() => askApprove(request)}>Approve</button></>}{canManage && request.status === "approved" && <button className="primary" onClick={() => markReimbursementPaid(request.id)}>Mark paid</button>}{canManage && request.status === "paid" && (() => { const payment = activePayments.find((item) => item.reimbursement_id === request.id); return payment ? <button className="secondary" onClick={() => askVoidPayment(payment)}>Void payment</button> : null; })()}{canManage && expense && request.member_id !== user.id && ["submitted", "changes_requested", "approved", "rejected"].includes(request.status) && <button className="secondary" onClick={() => askVoidExpense(expense)}>Void</button>}</div></div></article>; })}</div> : <FinanceEmpty title="No reimbursement requests" text={canManage ? "Member requests will appear here for review." : "Use Request reimbursement when you buy something for the club."} />}</section>}
 
       {canManage && view === "claims" && <section className="finance-panel"><div className="panel-heading"><div><h2>Senate & external funding</h2><span>Build submission-ready reimbursement packets</span></div><Button onClick={() => setModal("claim")}>＋ New funding claim</Button></div>{claims.length ? <div className="claim-grid">{claims.map((claim) => { const checklist = claimChecklist(claim); return <article className="claim-card" key={claim.id}><div className="claim-card-head"><div><p className="eyebrow">{claim.funder_name}</p><h3>{claim.title}</h3><small>{money(Number(claim.requested_amount))} requested{claim.submission_deadline ? ` · Due ${formatDay(claim.submission_deadline)}` : ""}</small></div><StatusBadge status={claim.status} /></div><div className="claim-progress"><div><span style={{ width: `${(checklist.checks.filter((check) => check.done).length / checklist.checks.length) * 100}%` }} /></div><b>{checklist.checks.filter((check) => check.done).length} of {checklist.checks.length} ready</b></div><ul className="claim-checklist">{checklist.checks.map((check) => <li className={check.done ? "done" : ""} key={check.label}><span>{check.done ? "✓" : "○"}</span>{check.label}</li>)}</ul><div className="claim-expenses">{checklist.linkedExpenses.map((expense) => <span key={expense.id}>{expense.description} · {money(Number(expense.amount))}{claimEditable(claim) && checklist.linkedExpenses.length > 1 && <button type="button" className="finance-row-action" onClick={() => askRemoveClaimExpense(claim, expense)} aria-label={`Remove ${expense.description} from this claim`}>×</button>}</span>)}{claimEditable(claim) && <button type="button" className="finance-row-action" onClick={() => askAddClaimExpense(claim)}>＋ Add expense</button>}</div>{claim.status === "approved" || claim.status === "partially_paid" || claim.status === "paid" ? <small>{money(Number(claim.received_amount))} received of {money(Number(claim.approved_amount || 0))} approved</small> : null}<div className="claim-actions">{claim.status !== "voided" && <Button variant="secondary" size="sm" onClick={() => setClaimUploadId(claim.id)}>＋ Document</Button>}{["draft", "incomplete", "changes_requested"].includes(claim.status) && <Button variant="secondary" size="sm" disabled={!checklist.complete} onClick={() => updateClaimStatus(claim, "ready")}>Mark ready</Button>}{claim.status === "ready" && <Button size="sm" onClick={() => updateClaimStatus(claim, "submitted")}>Mark submitted</Button>}{claim.status === "ready" && <Button variant="secondary" size="sm" onClick={() => updateClaimStatus(claim, "incomplete")}>Back to editing</Button>}{claim.status === "submitted" && <><Button variant="secondary" size="sm" onClick={() => askClaimDecision(claim, "changes_requested")}>Changes requested</Button><Button variant="secondary" size="sm" onClick={() => askClaimDecision(claim, "denied")}>Denied</Button><Button size="sm" onClick={() => askClaimDecision(claim, "approved")}>Mark approved</Button></>}{["approved", "partially_paid"].includes(claim.status) && <Button size="sm" onClick={() => setClaimPaymentId(claim.id)}>Record payment</Button>}{claim.status !== "voided" && <Button variant="ghost" size="sm" onClick={() => askVoidClaim(claim)}>Void claim</Button>}</div></article>; })}</div> : <FinanceEmpty title="No funding claims yet" text="Group eligible expenses into a Senate or external reimbursement packet." />}</section>}
+    </>}
     </>}
 
     {modal === "reimbursement" && <ModalShell title="Request reimbursement" eyebrow="MEMBER PURCHASE" onClose={() => { setModal(null); setEventRelated(false); }}><PurchaseForm mode="member" groups={groups} events={events} eventRelated={eventRelated} setEventRelated={setEventRelated} saving={saving} onSubmit={submitReimbursement} /></ModalShell>}

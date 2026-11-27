@@ -8,11 +8,14 @@ import { readCache, setCacheOwner, writeCache } from "../lib/cache";
 import { runBootstrap, type ShellState } from "../lib/bootstrap";
 import { friendlyError } from "../lib/errors";
 import type { PublicConcert } from "../lib/public-concerts";
+import { anyFailed, countOrKeep, listOrKeep } from "../lib/refresh";
+import { createRequestGate } from "../lib/request-gate";
 import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type ClubRole, type Section } from "../lib/sections";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
+import { LoadErrorBanner } from "../components/ui/load-error";
 import { SectionBoundary } from "../components/ui/section-boundary";
 import { Input } from "../components/ui/input";
 import { AnnouncementActions, AnnouncementEditor } from "../components/announcements/announcement-actions";
@@ -109,6 +112,9 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const [attendanceInitialScope, setAttendanceInitialScope] = useState<ScopeFilter>("all");
   const [resourceInitialScope, setResourceInitialScope] = useState<ScopeFilter>("all");
   const [resourceCount, setResourceCount] = useState(0);
+  // Overlapping loads: only the newest may change the screen, and none may once the account has changed.
+  const [dataGate] = useState(createRequestGate);
+  const [workspaceGate] = useState(createRequestGate);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -156,6 +162,8 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const loadData = useCallback(async () => {
     const client = supabase;
     if (!client) return;
+    const owner = activeUserId.current;
+    const isCurrent = dataGate.begin();
     setDataLoading(true);
     try {
       const [archiveResult, eventsResult, announcementResult, resourceCountResult] = await Promise.all([
@@ -164,21 +172,22 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
         client.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(12),
         client.from("resources").select("id", { count: "exact", head: true }).neq("status", "archived"),
       ]);
+      if (!isCurrent() || activeUserId.current !== owner) return;
       if (archiveResult.error) notify("The club archive could not be loaded");
       if (eventsResult.error) notify("The calendar could not be loaded");
       if (announcementResult.error) notify("Announcements could not be loaded");
       if (resourceCountResult.error) notify("The resource count could not be loaded");
-      const items = (archiveResult.data || []) as ArchiveItem[];
-      setArchive(items);
-      setEvents((eventsResult.data || []) as ClubEvent[]);
-      setAnnouncements((announcementResult.data || []) as Announcement[]);
-      setResourceCount(resourceCountResult.count || 0);
+      // A list that failed to load keeps what is shown; it is not replaced by an empty one.
+      setArchive((current) => listOrKeep(current, archiveResult as { data: ArchiveItem[] | null; error?: unknown }));
+      setEvents((current) => listOrKeep(current, eventsResult as { data: ClubEvent[] | null; error?: unknown }));
+      setAnnouncements((current) => listOrKeep(current, announcementResult as { data: Announcement[] | null; error?: unknown }));
+      setResourceCount((current) => countOrKeep(current, resourceCountResult));
     } catch {
-      notify("The club data could not be loaded. Check your connection and try again.");
+      if (isCurrent()) notify("The club data could not be loaded. Check your connection and try again.");
     } finally {
-      setDataLoading(false);
+      if (isCurrent()) setDataLoading(false);
     }
-  }, [notify]);
+  }, [dataGate, notify]);
 
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
@@ -213,17 +222,18 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
 
   const resetShell = useCallback(() => {
     setRole("member"); setName(""); setShellState("loading"); setGroups([]); setMemberships([]);
-    setAnnouncements([]); setEvents([]); setArchive([]); setResourceCount(0);
+    setAnnouncements([]); setEvents([]); setArchive([]); setResourceCount(0); setDataLoading(false);
   }, []);
 
   // Runs once per signed-in account, not on every token refresh.
   useEffect(() => {
     activeUserId.current = user?.id ?? null;
+    dataGate.cancel(); workspaceGate.cancel();
     setCacheOwner(user?.id ?? null);
     // This effect synchronizes the shell with the signed-in account.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user) void bootstrap(user); else resetShell();
-  }, [user, bootstrap, resetShell]);
+  }, [user, bootstrap, resetShell, dataGate, workspaceGate]);
 
   useEffect(() => {
     const restoreLocation = () => {
@@ -239,14 +249,16 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
 
   const loadWorkspaces = useCallback(async () => {
     if (!supabase || !user || shellState !== "ready") return;
+    const isCurrent = workspaceGate.begin();
     const [groupResult, membershipResult] = await Promise.all([
       supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").is("archived_at", null).order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
     ]);
+    if (!isCurrent() || activeUserId.current !== user.id) return;
     if (groupResult.error || membershipResult.error) { notify("Your groups could not be loaded"); return; }
     setGroups((groupResult.data || []) as Subgroup[]);
     setMemberships((membershipResult.data || []) as SubgroupMembership[]);
-  }, [notify, user, shellState]);
+  }, [notify, user, shellState, workspaceGate]);
 
   const canManage = role !== "member";
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
@@ -356,10 +368,11 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
     ]);
     if (membersResult.error || membershipResult.error || announcementsResult.error || auditResult.error) notify("Some admin data could not be loaded");
-    setMembers((membersResult.data || []) as MemberProfile[]);
-    setMemberships((membershipResult.data || []) as SubgroupMembership[]);
-    setAnnouncements((announcementsResult.data || []) as Announcement[]);
-    setAudit(auditResult.data || []);
+    // A list that failed keeps what is shown (an empty roster would read as "no members").
+    setMembers((current) => listOrKeep(current, membersResult as { data: MemberProfile[] | null; error?: unknown }));
+    setMemberships((current) => listOrKeep(current, membershipResult as { data: SubgroupMembership[] | null; error?: unknown }));
+    setAnnouncements((current) => listOrKeep(current, announcementsResult as { data: Announcement[] | null; error?: unknown }));
+    setAudit((current) => listOrKeep(current, auditResult));
     setLoading(false);
   }, [notify]);
   useEffect(() => { load(); }, [load]);
@@ -528,13 +541,16 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
       supabase.from("subgroup_memberships").select("subgroup_id").in("status", ["pending", "waitlisted"]).neq("member_id", user.id),
     ]);
     if (groupResult.error || membershipResult.error || archiveResult.error || announcementResult.error) notify("Some group information could not be loaded");
-    const counts: Record<number, number> = {};
-    for (const row of (requestResult.data || []) as Array<{ subgroup_id: number }>) counts[row.subgroup_id] = (counts[row.subgroup_id] || 0) + 1;
-    setRequestCounts(counts);
-    setGroups((groupResult.data || []) as Subgroup[]);
-    setMemberships((membershipResult.data || []) as SubgroupMembership[]);
-    setItems((archiveResult.data || []) as ArchiveItem[]);
-    setAnnouncements((announcementResult.data || []) as Announcement[]);
+    // A list that failed keeps what is shown instead of becoming empty.
+    if (!requestResult.error) {
+      const counts: Record<number, number> = {};
+      for (const row of (requestResult.data || []) as Array<{ subgroup_id: number }>) counts[row.subgroup_id] = (counts[row.subgroup_id] || 0) + 1;
+      setRequestCounts(counts);
+    }
+    setGroups((current) => listOrKeep(current, groupResult as { data: Subgroup[] | null; error?: unknown }));
+    setMemberships((current) => listOrKeep(current, membershipResult as { data: SubgroupMembership[] | null; error?: unknown }));
+    setItems((current) => listOrKeep(current, archiveResult as { data: ArchiveItem[] | null; error?: unknown }));
+    setAnnouncements((current) => listOrKeep(current, announcementResult as { data: Announcement[] | null; error?: unknown }));
     setLoading(false);
   }, [notify, user.id]);
 
@@ -669,19 +685,25 @@ function MembersPage({ user, notify }: { user: User; notify: (message: string) =
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!cached);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadGate] = useState(createRequestGate);
   const loadMembers = useCallback(async () => {
     if (!supabase) return;
+    const isCurrent = loadGate.begin();
     const [memberResult, groupResult, membershipResult] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name").limit(2000),
       supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
     ]);
-    if (memberResult.error || groupResult.error || membershipResult.error) notify("The member directory could not be loaded");
+    if (!isCurrent()) return;
+    // A failed refresh keeps the directory already shown instead of emptying it.
+    if (anyFailed([memberResult, groupResult, membershipResult])) { setLoadFailed(true); setLoading(false); notify("The member directory could not be loaded"); return; }
+    setLoadFailed(false);
     const next = { members: (memberResult.data || []) as MemberProfile[], groups: (groupResult.data || []) as Subgroup[], memberships: (membershipResult.data || []) as SubgroupMembership[] };
     setMembers(next.members); setGroups(next.groups); setMemberships(next.memberships);
-    if (!memberResult.error && !groupResult.error && !membershipResult.error) writeCache(user.id, "members", next);
+    writeCache(user.id, "members", next);
     setLoading(false);
-  }, [notify, user.id]);
+  }, [loadGate, notify, user.id]);
   useEffect(() => { loadMembers(); }, [loadMembers]);
   const ownProfile = members.find((member) => member.id === user.id);
   const filtered = members.filter((member) => {
@@ -696,7 +718,7 @@ function MembersPage({ user, notify }: { user: User; notify: (message: string) =
     setSaving(false); if (error) notify(error.message); else { notify("Your contact information was updated"); setEditing(false); loadMembers(); }
   }
   if (loading) return <section className="section-shell page-section"><InlineLoading /></section>;
-  return <section className="section-shell page-section"><PageTitle eyebrow="CLUB ROSTER" title="Member roster" text="Find the people who make music with Bharat Sangeet at UNC Chapel Hill, organized by the subgroups they are part of." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, year, or musical interest" /></label><label className="scope-picker roster-filter"><span>Group</span><select aria-label="Filter roster by subgroup" value={subgroupFilter === "all" ? "all" : String(subgroupFilter)} onChange={(event) => setSubgroupFilter(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">Everyone</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><Button onClick={() => setEditing(true)}>Edit my contact info</Button></div><p className="directory-note">This directory is visible only to signed-in club members. Subgroup tags show active memberships.</p>{filtered.length ? <div className="member-grid">{filtered.map((member) => { const memberGroups = memberships.filter((item) => item.member_id === member.id && item.status === "active"); return <article className="member-card" key={member.id}><div className="member-initials">{initials(member.full_name || member.email)}</div><div className="member-card-heading"><h3>{member.full_name || member.email.split("@")[0]}</h3><span className={`member-role ${member.role}`}>{member.role}</span></div><p>{member.specialty || "Musical interests not added yet"}</p><div className="member-tags">{memberGroups.length ? memberGroups.map((item) => <Badge key={item.subgroup_id}>{groups.find((group) => group.id === item.subgroup_id)?.name || "Subgroup"}</Badge>) : <Badge variant="muted">No subgroup yet</Badge>}</div><dl><div><dt>Email</dt><dd><a href={`mailto:${member.email}`}>{member.email}</a></dd></div>{member.phone && <div><dt>Phone</dt><dd><a href={`tel:${member.phone}`}>{member.phone}</a></dd></div>}{member.class_year && <div><dt>Class year</dt><dd>{member.class_year}</dd></div>}</dl></article>; })}</div> : <EmptyState title="No members found" text={subgroupFilter === "all" ? "Try another search." : "No members are active in this subgroup."} />}{editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><form className="modal" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setEditing(false)}>×</button><p className="eyebrow">MY MEMBER PROFILE</p><h2>Contact information</h2><label>Preferred name<input name="full_name" required defaultValue={ownProfile?.full_name || ""} /></label><label>Email<input value={ownProfile?.email || user.email || ""} disabled /></label><label>Phone number<input name="phone" type="tel" defaultValue={ownProfile?.phone || ""} placeholder="Optional" /></label><div className="form-pair"><label>Class year<input name="class_year" defaultValue={ownProfile?.class_year || ""} placeholder="2028" /></label><label>Voice / instrument<input name="specialty" defaultValue={ownProfile?.specialty || ""} placeholder="Vocal, violin, mridangam…" /></label></div><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form></div>}</section>;
+  return <section className="section-shell page-section"><PageTitle eyebrow="CLUB ROSTER" title="Member roster" text="Find the people who make music with Bharat Sangeet at UNC Chapel Hill, organized by the subgroups they are part of." /><div className="toolbar"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, year, or musical interest" /></label><label className="scope-picker roster-filter"><span>Group</span><select aria-label="Filter roster by subgroup" value={subgroupFilter === "all" ? "all" : String(subgroupFilter)} onChange={(event) => setSubgroupFilter(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">Everyone</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><Button onClick={() => setEditing(true)}>Edit my contact info</Button></div><p className="directory-note">This directory is visible only to signed-in club members. Subgroup tags show active memberships.</p>{loadFailed && <LoadErrorBanner message={members.length ? "The directory could not be refreshed, so it may be out of date." : "The member directory could not be loaded."} onRetry={() => void loadMembers()} />}{filtered.length ? <div className="member-grid">{filtered.map((member) => { const memberGroups = memberships.filter((item) => item.member_id === member.id && item.status === "active"); return <article className="member-card" key={member.id}><div className="member-initials">{initials(member.full_name || member.email)}</div><div className="member-card-heading"><h3>{member.full_name || member.email.split("@")[0]}</h3><span className={`member-role ${member.role}`}>{member.role}</span></div><p>{member.specialty || "Musical interests not added yet"}</p><div className="member-tags">{memberGroups.length ? memberGroups.map((item) => <Badge key={item.subgroup_id}>{groups.find((group) => group.id === item.subgroup_id)?.name || "Subgroup"}</Badge>) : <Badge variant="muted">No subgroup yet</Badge>}</div><dl><div><dt>Email</dt><dd><a href={`mailto:${member.email}`}>{member.email}</a></dd></div>{member.phone && <div><dt>Phone</dt><dd><a href={`tel:${member.phone}`}>{member.phone}</a></dd></div>}{member.class_year && <div><dt>Class year</dt><dd>{member.class_year}</dd></div>}</dl></article>; })}</div> : loadFailed && !members.length ? null : <EmptyState title="No members found" text={subgroupFilter === "all" ? "Try another search." : "No members are active in this subgroup."} />}{editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><form className="modal" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setEditing(false)}>×</button><p className="eyebrow">MY MEMBER PROFILE</p><h2>Contact information</h2><label>Preferred name<input name="full_name" required defaultValue={ownProfile?.full_name || ""} /></label><label>Email<input value={ownProfile?.email || user.email || ""} disabled /></label><label>Phone number<input name="phone" type="tel" defaultValue={ownProfile?.phone || ""} placeholder="Optional" /></label><div className="form-pair"><label>Class year<input name="class_year" defaultValue={ownProfile?.class_year || ""} placeholder="2028" /></label><label>Voice / instrument<input name="specialty" defaultValue={ownProfile?.specialty || ""} placeholder="Vocal, violin, mridangam…" /></label></div><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form></div>}</section>;
 }
 
 function PublicSite({ onSignIn, initialRecordings }: { onSignIn: () => void; initialRecordings: PublicConcert[] | null }) {
@@ -786,7 +808,6 @@ function PageTitle({ eyebrow, title, text, scope }: { eyebrow: string; title: st
 function EmptyState({ title, text }: { title: string; text: string }) { return <div className="empty-state"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="" /><h3>{title}</h3><p>{text}</p></div>; }
 function BootstrapFailedScreen({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {
   return <main className="loading-screen" role="alert">
-    <img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" />
     <h2>We could not load your club profile</h2>
     <p>Check your connection and try again. Nothing has been changed.</p>
     <div className="flex flex-wrap justify-center gap-2"><Button onClick={onRetry}>Try again</Button><Button variant="secondary" onClick={onSignOut}>Sign out</Button></div>
