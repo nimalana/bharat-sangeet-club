@@ -393,12 +393,12 @@ public.resource_tags  [Members view resource tags]  SELECT  to authenticated
 public.resources  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
+public.resources  [Delete resources: executives, or unfinished uploads]  DELETE  to authenticated
+    using: (( SELECT private.is_executive() AS is_executive) OR ((status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND private.can_manage_resource(subgroup_id, visibility)))
+    check: -
 public.resources  [Managers create resources]  INSERT  to authenticated
     using: -
     check: (private.can_manage_resource(subgroup_id, visibility) AND (created_by = ( SELECT auth.uid() AS uid)))
-public.resources  [Managers delete resources]  DELETE  to authenticated
-    using: private.can_manage_resource(subgroup_id, visibility)
-    check: -
 public.resources  [Managers update resources]  UPDATE  to authenticated
     using: private.can_manage_resource(subgroup_id, visibility)
     check: private.can_manage_resource(subgroup_id, visibility)
@@ -444,6 +444,9 @@ public.transactions  [Executives view finances]  SELECT  to authenticated
 storage.objects  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
+storage.objects  [Delete resource files: executives, or unfinished uploads]  DELETE  to authenticated
+    using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((resource.status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))))
+    check: -
 storage.objects  [Executives delete archive files]  DELETE  to authenticated
     using: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
     check: -
@@ -456,9 +459,6 @@ storage.objects  [Executives update archive files]  UPDATE  to authenticated
 storage.objects  [Executives upload archive files]  INSERT  to authenticated
     using: -
     check: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
-storage.objects  [Managers delete resource files]  DELETE  to authenticated
-    using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))
-    check: -
 storage.objects  [Managers update resource files]  UPDATE  to authenticated
     using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))
     check: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))
