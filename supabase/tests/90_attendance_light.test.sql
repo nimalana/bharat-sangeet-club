@@ -67,6 +67,13 @@ begin
   perform test.login(v_a);
   perform public.check_in_attendance(v_code);
   perform test.logout();
+  -- B and C have marks in the open meeting too (D has none). A poll that leaked
+  -- every mark's member, or counted wrongly, would now show it: the checks on
+  -- the poll below look for these two ids.
+  perform test.login(v_exec);
+  perform public.set_attendance_status(v_s4, v_b, 'present', '', 0);
+  perform public.set_attendance_status(v_s4, v_c, 'tardy', '', 15);
+  perform test.logout();
 
   v_term1 := private.attendance_term_key(now() - interval '40 days');
   v_term2 := private.attendance_term_key(now() - interval '400 days');
@@ -82,7 +89,7 @@ begin
   assert (select count(*) from jsonb_array_elements(ov -> 'sessions') s where s ->> 'id' = v_s5::text and s -> 'live' = 'null'::jsonb) = 1, 'only an open meeting carries live counts';
   select s -> 'live' into v_live from jsonb_array_elements(ov -> 'sessions') s where (s ->> 'id')::bigint = v_s4;
   assert (v_live ->> 'roster_count')::int = (select count(*) from public.attendance_session_participants where session_id = v_s4), 'live roster size';
-  assert (v_live ->> 'checked_in_count')::int = 1, 'live check-in count: one member checked in';
+  assert (v_live ->> 'checked_in_count')::int = 3, 'live check-in count: A checked in, B present, C tardy';
   assert (select s ->> 'subgroup_name' from jsonb_array_elements(ov -> 'sessions') s where (s ->> 'id')::bigint = v_s3) = 'Light Ensemble';
   assert (ov ->> 'excuses_pending')::int = 2 and (ov ->> 'excuses_total')::int = 3, 'form totals';
   assert (ov ->> 'remediations_pending')::int = (select count(*) from public.attendance_remediations where status = 'pending' and session_id in (v_s1, v_s2, v_s3, v_s4, v_s5)), 'open follow-up total';
@@ -172,20 +179,28 @@ begin
   pulse := public.get_attendance_pulse('all');
   perform test.logout();
   assert jsonb_array_length(pulse -> 'sessions') = 1 and (pulse -> 'sessions' -> 0 ->> 'id')::bigint = v_s4, 'only the open meeting is polled';
-  assert (pulse -> 'sessions' -> 0 -> 'live' ->> 'checked_in_count')::int = 1 and (pulse -> 'sessions' -> 0 -> 'live' ->> 'roster_count')::int = (v_live ->> 'roster_count')::int, 'executive counts';
+  assert (pulse -> 'sessions' -> 0 -> 'live' ->> 'checked_in_count')::int = 3 and (pulse -> 'sessions' -> 0 -> 'live' ->> 'roster_count')::int = (v_live ->> 'roster_count')::int, 'executive counts';
   assert (pulse -> 'sessions' -> 0 -> 'live' ->> 'version') = (v_live ->> 'version'), 'live version agrees with the overview';
   assert (pulse ->> 'pending_excuses')::int = 2, 'waiting forms';
   assert length(pulse::text) < 600, 'the poll is tiny: ' || length(pulse::text);
-  assert position(v_b::text in pulse::text) = 0 and position(v_c::text in pulse::text) = 0, 'nothing about other members in the executive poll';
+  assert position(v_a::text in pulse::text) = 0 and position(v_b::text in pulse::text) = 0 and position(v_c::text in pulse::text) = 0 and position(v_d::text in pulse::text) = 0,
+    'no member id at all in the executive poll, although A, B and C have marks in the open meeting';
 
   perform test.login(v_a);
   pulse := public.get_attendance_pulse('all');
   perform test.logout();
   assert (pulse -> 'sessions' -> 0 -> 'my_record' ->> 'status') = 'present' and (pulse -> 'sessions' -> 0 -> 'my_record' ->> 'member_id') = v_a::text, 'a member gets their own mark';
   assert (pulse -> 'sessions' -> 0 -> 'live') = 'null'::jsonb and (pulse ->> 'pending_excuses') is null, 'no counts for a member';
-  assert length(pulse::text) < 600, 'the member poll is tiny';
+  assert length(pulse::text) < 700, 'the member poll is tiny';
+  assert position(v_b::text in pulse::text) = 0 and position(v_c::text in pulse::text) = 0 and position(v_d::text in pulse::text) = 0,
+    'no other member in a member''s poll, although B and C have marks in the open meeting';
 
   perform test.login(v_c);
+  pulse := public.get_attendance_pulse('club');
+  perform test.logout();
+  assert (pulse -> 'sessions' -> 0 -> 'my_record' ->> 'status') = 'tardy' and (pulse -> 'sessions' -> 0 -> 'my_record' ->> 'member_id') = v_c::text, 'a member gets their own mark (tardy)';
+  assert position(v_a::text in pulse::text) = 0 and position(v_b::text in pulse::text) = 0, 'and nobody else''s';
+  perform test.login(v_d);
   pulse := public.get_attendance_pulse('club');
   perform test.logout();
   assert (pulse -> 'sessions' -> 0 -> 'my_record') = 'null'::jsonb, 'not checked in yet';
@@ -215,12 +230,12 @@ begin
   roster := public.get_attendance_roster(v_s4);
   pulse := public.get_attendance_pulse('all');
   assert roster ->> 'version' = pulse -> 'sessions' -> 0 -> 'live' ->> 'version', 'roster and poll agree on the version';
-  perform public.set_attendance_status(v_s4, v_b, 'present', '', 0);
+  perform public.set_attendance_status(v_s4, v_d, 'present', '', 0);
   roster2 := public.get_attendance_roster(v_s4);
   pulse := public.get_attendance_pulse('all');
   assert roster2 ->> 'version' <> roster ->> 'version', 'a new mark changes the version';
-  assert roster2 ->> 'version' = pulse -> 'sessions' -> 0 -> 'live' ->> 'version' and (pulse -> 'sessions' -> 0 -> 'live' ->> 'checked_in_count')::int = 2, 'poll counts follow';
-  perform public.clear_attendance_status(v_s4, v_b);
+  assert roster2 ->> 'version' = pulse -> 'sessions' -> 0 -> 'live' ->> 'version' and (pulse -> 'sessions' -> 0 -> 'live' ->> 'checked_in_count')::int = 4, 'poll counts follow';
+  perform public.clear_attendance_status(v_s4, v_d);
   roster := public.get_attendance_roster(v_s4);
   assert roster ->> 'version' <> roster2 ->> 'version', 'clearing a mark changes the version too';
   perform test.logout();
