@@ -129,4 +129,23 @@ export default async function groups(t, ctx) {
     succeeded(await c.execA.rpc("add_subgroup_member", { p_subgroup_id: s.C, p_member_id: id.nohist }), "executive adds the removed member back");
     succeeded(await c.manager.rpc("remove_subgroup_member", { p_subgroup_id: s.C, p_member_id: id.nohist }), "manager removes nohist again");
   });
+
+  await t.test("group rules: a stranger cannot probe who applied; a waiting request is declined, not removed; the old review function is closed; an archived group refuses its managers but not executives", async () => {
+    // hist is waitlisted in group A (see the waitlist test above).
+    refused(await c.member2.rpc("remove_subgroup_member", { p_subgroup_id: s.A, p_member_id: id.hist }), "a person with no standing in group A asking about a waitlisted request", /Only group managers and executives can remove members/i);
+    refused(await c.manager.rpc("remove_subgroup_member", { p_subgroup_id: s.A, p_member_id: id.hist }), "a manager removing a waitlisted request", /waiting for review/i);
+    refused(await c.execA.rpc("review_subgroup_enrollment", { target_subgroup_id: s.A, target_member_id: id.hist, next_status: "active" }), "the original review function (closed in 20261127040000)", /permission denied/i);
+    equal(succeeded(await c.manager.rpc("review_subgroup_request", { p_subgroup_id: s.A, p_member_id: id.hist, p_decision: "decline" }), "manager declines the waitlisted request").status, "inactive", "status after declining");
+
+    // An archived group refuses changes by its managers, and new attendance meetings; executives can still administer it.
+    succeeded(await c.execA.rpc("set_subgroup_archived", { p_subgroup_id: s.C, p_archived: true }), "archive group C");
+    try {
+      refused(await c.manager.rpc("update_subgroup", { p_subgroup_id: s.C, p_name: mark("Group C by manager"), p_description: "" }), "a manager editing an archived group", /archived/i);
+      refused(await c.manager.rpc("remove_subgroup_member", { p_subgroup_id: s.C, p_member_id: id.hist }), "a manager removing someone from an archived group", /archived/i);
+      refused(await c.execA.rpc("create_attendance_session", { p_scope: "subgroup", p_subgroup_id: s.C, p_title: mark("meeting in an archived group"), p_starts_at: new Date(Date.now() + 3 * 3600000).toISOString() }), "a meeting for an archived group", /archived/i);
+      succeeded(await c.execA.rpc("update_subgroup", { p_subgroup_id: s.C, p_name: mark("Group C"), p_description: "edited by an executive while archived" }), "an executive editing an archived group");
+    } finally {
+      succeeded(await c.execA.rpc("set_subgroup_archived", { p_subgroup_id: s.C, p_archived: false }), "restore group C");
+    }
+  });
 }

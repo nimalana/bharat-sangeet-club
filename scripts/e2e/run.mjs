@@ -26,6 +26,7 @@ const SECTIONS = [
   "./tests/60-finance.mjs",
   "./tests/70-deactivation.mjs",
   "./tests/80-anon-public.mjs",
+  "./tests/85-least-privilege.mjs",
   "./tests/90-admin-delete.mjs",
 ];
 

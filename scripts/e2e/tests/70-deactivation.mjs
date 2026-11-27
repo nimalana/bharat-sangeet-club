@@ -69,13 +69,21 @@ export default async function deactivation(t, ctx) {
     refused(await c.admin.rpc("admin_deactivate_member", { p_target_id: id.admin, p_reason: "self" }), "administrator deactivating themselves", /cannot deactivate themselves/i);
     refused(await c.admin.rpc("admin_deactivate_member", { p_target_id: "00000000-0000-0000-0000-000000000000", p_reason: "nobody" }), "unknown member", /not found/i);
     const result = succeeded(await c.admin.rpc("admin_deactivate_member", { p_target_id: id.victim, p_reason: mark("left the club") }), "deactivate victim");
-    equal([result.status, result.deactivated_by], ["deactivated", id.admin], "deactivated profile");
-    equal(result.deactivation_reason, mark("left the club"), "stored reason");
+    equal(result.status, "deactivated", "deactivated profile");
+    // 20261127041000 (core-2): who deactivated them, when and why moved off profiles, which every member can read, into a table only administrators read.
+    ok(!("deactivation_reason" in result) && !("deactivated_by" in result), `the profile still carries the deactivation record: ${JSON.stringify(Object.keys(result))}`);
+    equal(rowsOf(await c.admin.from("member_deactivations").select("reason,deactivated_by").eq("member_id", id.victim), "administrator reads the deactivation record"), [{ reason: mark("left the club"), deactivated_by: id.admin }], "stored deactivation record");
+    for (const key of ["execA", "member1"]) {
+      equal(rowsOf(await c[key].from("member_deactivations").select("member_id"), `${key} reads member_deactivations`).length, 0, `${key}: deactivation records visible to someone who is not an administrator`);
+    }
+    refused(await c.member1.from("profiles").select("id,deactivation_reason").eq("id", id.victim), "a member selecting the old reason column from profiles", /deactivation_reason/i);
     refused(await c.admin.rpc("admin_deactivate_member", { p_target_id: id.victim, p_reason: "again" }), "deactivating twice", /already deactivated/i);
-    const memberships = rowsOf(await c.execA.from("subgroup_memberships").select("status").eq("member_id", id.victim), "victim memberships as an executive");
-    ok(memberships.length > 0 && memberships.every((m) => m.status === "removed"), `all group memberships should be removed: ${JSON.stringify(memberships)}`);
-    const audit = rowsOf(await c.admin.from("admin_audit_log").select("action,target_id").eq("target_id", id.victim).eq("action", "member_deactivated"), "audit log");
+    // 20261127041100 (core-8): the memberships become 'inactive' (as if the person had left), not 'removed', and any leader or manager role is reset.
+    const memberships = rowsOf(await c.execA.from("subgroup_memberships").select("subgroup_id,status,membership_role").eq("member_id", id.victim), "victim memberships as an executive");
+    ok(memberships.length > 0 && memberships.every((m) => m.status === "inactive" && m.membership_role === "member"), `all group memberships should be inactive, with the role reset: ${JSON.stringify(memberships)}`);
+    const audit = rowsOf(await c.admin.from("admin_audit_log").select("action,target_id,details").eq("target_id", id.victim).eq("action", "member_deactivated"), "audit log");
     ok(audit.length >= 1, "no member_deactivated entry in the admin audit log");
+    ok(audit.some((a) => a.details?.reason === mark("left the club") && (a.details?.groups || []).some((x) => x.subgroup_id === g.A && x.status === "active")), `the audit entry should keep the reason and the groups the member had: ${JSON.stringify(audit.map((a) => a.details))}`);
   });
 
   await t.test("the deactivated member's session is still valid, but profiles/directory, recordings, resources, groups, events and announcements all read as empty", async () => {
@@ -142,7 +150,8 @@ export default async function deactivation(t, ctx) {
     refused(await c.execA.rpc("admin_reactivate_member", { p_target_id: id.victim }), "executive reactivating", /Only administrators/i);
     refused(await c.victim.rpc("admin_reactivate_member", { p_target_id: id.victim }), "the member reactivating themselves", /Only administrators/i);
     const result = succeeded(await c.admin.rpc("admin_reactivate_member", { p_target_id: id.victim }), "reactivate");
-    equal([result.status, result.deactivated_at, result.deactivation_reason], ["active", null, ""], "reactivated profile");
+    equal(result.status, "active", "reactivated profile");
+    equal(rowsOf(await c.admin.from("member_deactivations").select("member_id").eq("member_id", id.victim), "administrator reads the deactivation record").length, 0, "the deactivation record after reactivation");
     refused(await c.admin.rpc("admin_reactivate_member", { p_target_id: id.victim }), "reactivating twice", /already active/i);
 
     // Same client, same session: no sign-in again.
@@ -155,6 +164,9 @@ export default async function deactivation(t, ctx) {
     equal(boot.profile.status, "active", "status after");
     equal(boot.memberships.filter((m) => m.status === "active").length, 0, "group memberships are not restored by reactivation");
     equal(rowsOf(await c.victim.from("recordings").select("id").eq("id", s.take.id), "group take before re-adding").length, 0, "the group recording before the member is added back");
+    // 20261127041100 (core-8): the memberships are 'inactive', like after leaving, so the member can ask to join an open group again.
+    equal(succeeded(await c.victim.rpc("request_subgroup_enrollment", { target_subgroup_id: g.C }), "the reactivated member joins the open group C").status, "active", "membership in the open group after reactivation");
+    succeeded(await c.victim.rpc("leave_subgroup", { p_subgroup_id: g.C }), "the member leaves C again");
 
     succeeded(await c.execA.rpc("add_subgroup_member", { p_subgroup_id: g.A, p_member_id: id.victim }), "executive adds the member back to group A");
     equal(rowsOf(await c.victim.from("recordings").select("id").eq("id", s.take.id), "group take after re-adding").length, 1, "the group recording after the member is added back");
