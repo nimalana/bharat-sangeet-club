@@ -37,6 +37,12 @@ insert into perf.queries (label, actors, sql) values
 ('att: get_attendance_workspace(all)', 'member,leader,manager,executive,admin', $q$select public.get_attendance_workspace('all', null)$q$),
 ('att: get_attendance_workspace(club)', 'member,executive', $q$select public.get_attendance_workspace('club', null)$q$),
 ('att: get_attendance_workspace(my group)', 'member,manager,executive', $q$select public.get_attendance_workspace('subgroup', {gid})$q$),
+-- The three that replaced it (20261127060000): the full load, the 10 s poll and one roster.
+('att: get_attendance_overview(all)', 'member,leader,manager,executive,admin', $q$select public.get_attendance_overview('all', null)$q$),
+('att: get_attendance_overview(club)', 'member,executive', $q$select public.get_attendance_overview('club', null)$q$),
+('att: get_attendance_overview(my group)', 'member,manager,executive', $q$select public.get_attendance_overview('subgroup', {gid})$q$),
+('att: get_attendance_pulse (10 s poll)', 'member,manager,executive', $q$select public.get_attendance_pulse('all', null)$q$),
+('att: get_attendance_roster (open meeting)', 'member,executive', $q$select public.get_attendance_roster((select id from public.attendance_sessions where status = 'open' limit 1))$q$),
 ('att: sessions visible (RLS)', 'member,manager,executive', $q$select count(*) from public.attendance_sessions$q$),
 ('att: records visible (RLS)', 'member,manager,executive', $q$select count(*) from public.attendance_records$q$),
 ('att: participants visible (RLS)', 'member,executive', $q$select count(*) from public.attendance_session_participants$q$),

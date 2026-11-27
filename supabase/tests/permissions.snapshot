@@ -511,6 +511,9 @@ public.create_attendance_session(p_scope text, p_subgroup_id bigint, p_title tex
 public.create_funding_claim(p_title text, p_funder_name text, p_award_reference text, p_heellife_reference text, p_submission_deadline date, p_notes text, p_expense_ids bigint[])  definer
 public.create_subgroup(subgroup_name text, subgroup_description text, subgroup_mode subgroup_enrollment_mode)  definer
 public.delete_attendance_session(p_session_id bigint)  definer
+public.get_attendance_overview(p_scope text, p_subgroup_id bigint, p_term_key text, p_since timestamp with time zone, p_list_limit integer)  invoker
+public.get_attendance_pulse(p_scope text, p_subgroup_id bigint, p_term_key text, p_since timestamp with time zone)  invoker
+public.get_attendance_roster(p_session_id bigint)  invoker
 public.get_attendance_workspace(p_scope text, p_subgroup_id bigint, p_since timestamp with time zone)  invoker
 public.get_finance_summary()  invoker
 public.get_portal_bootstrap()  invoker
