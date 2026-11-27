@@ -19,6 +19,8 @@ accounts: an admin, a group manager who is not an executive, and a plain member.
 - [ ] Resources: as a group manager who is not an executive, a finished file has no Delete button. Discard a failed upload still works for the manager (migration `20261127043000`: only executives delete finished items).
 - [ ] Notation: delete a file note as its author.
 - [ ] Notation: member B attaches a notation file to member A's published recording (needs the API; the portal has no control for it). A, who is not an executive, deletes the recording: B's notation file, the take and the row are all gone (migration `20261127044000`).
+- [ ] Resources, with the API (the portal has no control for this), as a group manager who is not an executive: `update resources set status = 'failed'` on a ready file is refused ("Only executives can mark a finished resource as failed..."), as is changing its `storage_path`, and a Storage `move` of the file onto the path of one of your own pending uploads returns no row (migration `20261127070000`). Failing and then discarding your own pending upload still works.
+- [ ] Abandoned upload (migration `20261127070100`): as a member, upload a file to `recordings/<your user id>/...` through the Storage API without creating the recording row (or make the row insert fail), then `remove([path])`. The object is gone. The same for `recording-notations/<your user id>/...`. Another member, and an executive, cannot see or remove that object; neither can you remove one in someone else's folder. This depends on real Storage: the SQL tests run the same `delete from storage.objects where bucket_id = ... and name = any(...)` statement but cannot prove the Storage service issues exactly that.
 
 ## Deactivation
 
