@@ -101,6 +101,8 @@ const base = run(copyFrontend("baseline"));
 const control = `import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const warehouse = createClient("http://localhost:54321", "selftest-key");
 async function readOnly(client: SupabaseClient, table: string) { return client.from(table).select("${R.cols[0]}"); }
+type AnyTable = ${readable.map((t) => JSON.stringify(t.name)).join(" | ")};
+async function readAny(table: AnyTable) { return warehouse.from(table).select("${R.cols.find((c) => readable.some((t) => !t.cols.includes(c))) || R.cols[0]}"); } // narrowed by its call site, not by the wide type
 function buildQuery() { return warehouse.from("${R.name}").select("${R.cols.slice(0, 2).join(",")}"); }
 export async function control() {
   await warehouse.from("${R.name}").select("${R.cols.slice(0, 3).join(", ")}").order("${R.cols[0]}").limit(5);
@@ -108,6 +110,7 @@ export async function control() {
   await q;
   await buildQuery().order("${R.cols[0]}");
   await readOnly(warehouse, "${R.name}");
+  await readAny("${R.name}");
   await warehouse.from("${W.name}").insert([{ ${W.cols.find((c) => c !== "id")}: "x" }]);
   await warehouse.from("${W.name}").update({ ${W.cols.find((c) => c !== "id")}: "x" }).eq("id", 1);
   await warehouse.from("${W.name}").delete().eq("id", 1);

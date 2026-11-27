@@ -161,8 +161,24 @@ function callSites(fnNode) {
 function stringsOf(node, depth = 0) {
   if (!node) return { values: [], complete: false, why: "argument missing" };
   const typed = stringLiteralSet(checker.getTypeAtLocation(node));
-  if (typed.complete) return typed;
   const n = strip(node);
+  // A parameter typed with a wide union (`table: TableName`) is narrower at its call sites: prefer them when they are all literal.
+  if (ts.isIdentifier(n) && depth < 4) {
+    const decl = checker.getSymbolAtLocation(n)?.valueDeclaration;
+    if (decl && ts.isParameter(decl) && decl.parent && ts.isFunctionLike(decl.parent)) {
+      const fn = decl.parent, index = fn.parameters.indexOf(decl), sites = callSites(fn);
+      if (sites.length) {
+        let acc = { values: [], complete: true };
+        for (const site of sites) {
+          const argNode = site.arguments?.[index];
+          acc = merge(acc, argNode ? stringsOf(argNode, depth + 1) : decl.initializer ? stringsOf(decl.initializer, depth + 1) : { values: [], complete: false, why: "argument not passed" });
+        }
+        if (acc.complete) return acc;
+        if (!typed.complete) return { values: [...new Set([...acc.values, ...typed.values])], complete: false, why: acc.why || `a call site of ${n.text} passes a non-literal` };
+      } else if (!typed.complete) return { values: typed.values, complete: false, why: `parameter ${n.text} of a function with no call site in the scanned files` };
+    }
+  }
+  if (typed.complete) return typed;
   let result = { values: typed.values, complete: false, why: `not a literal: ${n.getText().slice(0, 70)}` };
   if (ts.isConditionalExpression(n)) return merge(stringsOf(n.whenTrue, depth), stringsOf(n.whenFalse, depth));
   if (ts.isBinaryExpression(n) && [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(n.operatorToken.kind)) return merge(stringsOf(n.left, depth), stringsOf(n.right, depth));
@@ -173,19 +189,6 @@ function stringsOf(node, depth = 0) {
       if (!ts.isBlock(decl.body)) exprs.push(decl.body);
       else { const walk = (m) => { if (ts.isFunctionLike(m) && m !== decl) return; if (ts.isReturnStatement(m) && m.expression) exprs.push(m.expression); ts.forEachChild(m, walk); }; walk(decl.body); }
       if (exprs.length) { const acc = exprs.map((e) => stringsOf(e, depth + 1)).reduce(merge); return { values: acc.values, complete: acc.complete, why: acc.complete ? undefined : `${n.expression.getText().slice(0, 40)}(...) returns a value that is not a literal: ${acc.why || ""}`.trim() }; }
-    }
-  }
-  if (ts.isIdentifier(n) && depth < 4) {
-    const decl = checker.getSymbolAtLocation(n)?.valueDeclaration;
-    if (decl && ts.isParameter(decl) && decl.parent && ts.isFunctionLike(decl.parent)) {
-      const fn = decl.parent, index = fn.parameters.indexOf(decl), sites = callSites(fn);
-      if (!sites.length) return { ...result, why: `parameter ${n.text} of a function with no call site in the scanned files` };
-      let acc = { values: [], complete: true };
-      for (const site of sites) {
-        const argNode = site.arguments?.[index];
-        acc = merge(acc, argNode ? stringsOf(argNode, depth + 1) : decl.initializer ? stringsOf(decl.initializer, depth + 1) : { values: [], complete: false, why: "argument not passed" });
-      }
-      return { ...acc, values: [...new Set([...acc.values, ...typed.values])], why: acc.complete ? undefined : acc.why || `a call site of ${n.text} passes a non-literal` };
     }
   }
   return result;
