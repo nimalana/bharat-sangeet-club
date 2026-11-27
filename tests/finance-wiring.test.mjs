@@ -116,15 +116,18 @@ test("finance: a file that cannot be deleted after its record is gone says so, n
 test("finance: after a change the dialogs wait for the refresh for a bounded time only (round 3)", async () => {
   const finance = await read("app/finance.tsx");
   assert.match(finance, /import \{ REFRESH_WAIT_MS, waitAtMost \} from "\.\.\/lib\/bounded-wait";/);
-  assert.match(finance, /const refreshAfterChange = useCallback\(async \(\) => \{\s*const result = await waitAtMost\(loadFinance\(\), REFRESH_WAIT_MS\);\s*if \(result === "timeout"\) notify\(REFRESH_SLOW_NOTICE, "success"\);/);
+  assert.match(finance, /const refreshAfterChange = useCallback\(async \(saved = true\) => \{\s*const result = await waitAtMost\(loadFinance\(\), REFRESH_WAIT_MS\);\s*if \(result === "timeout"\) \{ if \(saved\) notify\(REFRESH_SLOW_NOTICE, "success"\); else notify\(REFRESH_SLOW_NOTICE_UNSAVED, "error"\); \}/);
   // No handler waits on the raw read any more: the only awaits of it are through the bounded helper.
   assert.doesNotMatch(finance, /await loadFinance\(\)/);
   // Mark paid / claim status (the confirmation stays busy while runOnce runs) and the dialog action runner.
   const body = functionSource(finance, "FinancePage");
-  assert.match(body, /if \(error\) \{ notify\(friendlyError\(error, "The payment could not be recorded\."\), "error"\); await refreshAfterChange\(\); return; \}\s*notify\("Reimbursement marked paid"\); await refreshAfterChange\(\);/);
+  assert.match(body, /if \(error\) \{ notify\(friendlyError\(error, "The payment could not be recorded\."\), "error"\); await refreshAfterChange\(false\); return; \}\s*notify\("Reimbursement marked paid"\); await refreshAfterChange\(\);/);
   assert.match(body, /setAction\(null\); await refreshAfterChange\(\);\s*\} finally \{ setActionBusy\(false\); \}/);
   assert.match(body, /finally \{ setPendingKey\(null\); \}/);
   assert.match(body, /await markReimbursementPaid\(confirming\.request\.id\);[\s\S]*?setConfirming\(null\);/);
-  // The notice says the change was saved.
+  // The notice says the change was saved, but only where it was: the failed Mark paid and the failed claim
+  // status change refresh without claiming "Saved" (the checker saw a failure toast turn into a success tick).
   assert.match(finance, /const REFRESH_SLOW_NOTICE = "Saved\./);
+  assert.doesNotMatch(finance, /const REFRESH_SLOW_NOTICE_UNSAVED = "Saved/);
+  assert.match(body, /"The claim could not be updated"\), "error"\); await refreshAfterChange\(false\); return; \}/);
 });

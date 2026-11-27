@@ -60,6 +60,8 @@ type FinanceSnapshot = { expenses: Expense[]; reimbursements: Reimbursement[]; p
 const LIST_LIMIT = 500;
 // Shown when the lists have not come back REFRESH_WAIT_MS after a change that was saved.
 const REFRESH_SLOW_NOTICE = "Saved. The lists are slow to refresh and will update on their own.";
+// The same, for a refresh run after a change that was NOT saved: it must not say "Saved".
+const REFRESH_SLOW_NOTICE_UNSAVED = "The lists are slow to refresh and will update on their own.";
 // Said after a document's record is removed but its file could not be: a retry cannot help, the record is gone.
 const FILE_LEFT_IN_STORAGE = "The document was removed from the request, but its file is still in storage and could not be deleted. Ask an administrator to remove it.";
 type FinanceModal = "reimbursement" | "expense" | "income" | "claim" | null;
@@ -173,9 +175,9 @@ export function FinancePage({ user, role, groups, events, notify }: {
   // After a change the dialog stays busy until the lists have been read again, but not for ever: a read
   // that hangs must not leave a dialog stuck on a change that already went through. After REFRESH_WAIT_MS
   // the caller moves on (the dialog closes), the read carries on in the background and the person is told.
-  const refreshAfterChange = useCallback(async () => {
+  const refreshAfterChange = useCallback(async (saved = true) => {
     const result = await waitAtMost(loadFinance(), REFRESH_WAIT_MS);
-    if (result === "timeout") notify(REFRESH_SLOW_NOTICE, "success");
+    if (result === "timeout") { if (saved) notify(REFRESH_SLOW_NOTICE, "success"); else notify(REFRESH_SLOW_NOTICE_UNSAVED, "error"); }
   }, [loadFinance, notify]);
 
   const expenseById = useMemo(() => new Map(expenses.map((expense) => [expense.id, expense])), [expenses]);
@@ -384,7 +386,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
     await runOnce(`pay-${id}`, async () => {
       const { error } = await client.rpc("pay_personal_reimbursement", { p_reimbursement_id: id, p_payment_date: clubToday(), p_account_name: "Club bank account" });
       // Reload either way: a failure usually means another executive already paid it.
-      if (error) { notify(friendlyError(error, "The payment could not be recorded."), "error"); await refreshAfterChange(); return; }
+      if (error) { notify(friendlyError(error, "The payment could not be recorded."), "error"); await refreshAfterChange(false); return; }
       notify("Reimbursement marked paid"); await refreshAfterChange();
     });
   }
@@ -394,7 +396,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
     if (status === "ready" && !claimChecklist(claim).complete) { notify("Complete every required claim document first", "error"); return; }
     await runOnce(`claim-${claim.id}-${status}`, async () => {
       const { error } = await client.rpc("set_funding_claim_status", { p_claim_id: claim.id, p_status: status });
-      if (error) { notify(friendlyError(error, "The claim could not be updated"), "error"); await refreshAfterChange(); return; }
+      if (error) { notify(friendlyError(error, "The claim could not be updated"), "error"); await refreshAfterChange(false); return; }
       notify("Funding claim updated"); await refreshAfterChange();
     });
   }
