@@ -39,37 +39,37 @@ public.admin_audit_log  [Active members only]  ALL  RESTRICTIVE  to authenticate
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.admin_audit_log  [Admins view audit log]  SELECT  to authenticated
-    using: private.is_admin()
+    using: ( SELECT private.is_admin() AS is_admin)
     check: -
 public.announcements  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.announcements  [Executives delete announcements]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.announcements  [Executives insert announcements]  INSERT  to authenticated
     using: -
-    check: (private.is_executive() AND (created_by = ( SELECT auth.uid() AS uid)))
+    check: (( SELECT private.is_executive() AS is_executive) AND (created_by = ( SELECT auth.uid() AS uid)))
 public.announcements  [Executives update announcements]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.announcements  [Members view accessible announcements]  SELECT  to authenticated
-    using: (private.is_executive() OR (subgroup_id IS NULL) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = announcements.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status)))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (subgroup_id IS NULL) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = announcements.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status)))))
     check: -
 public.archive_items  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.archive_items  [Executives delete archive]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.archive_items  [Executives insert archive]  INSERT  to authenticated
     using: -
-    check: private.is_executive()
+    check: ( SELECT private.is_executive() AS is_executive)
 public.archive_items  [Executives update archive]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.archive_items  [Members view permitted archive]  SELECT  to authenticated
-    using: (private.is_executive() OR ((subgroup_id IS NULL) AND (visibility = 'members'::archive_visibility)) OR ((subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = archive_items.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR ((subgroup_id IS NULL) AND (visibility = 'members'::archive_visibility)) OR ((subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = archive_items.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
     check: -
 public.archive_items  [Visitors view public concert recordings]  SELECT  to anon
     using: (is_public AND (type = 'recording'::archive_type))
@@ -78,80 +78,80 @@ public.attendance_eligibility  [Active members only]  ALL  RESTRICTIVE  to authe
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_eligibility  [Executives delete attendance eligibility]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.attendance_eligibility  [Executives insert attendance eligibility]  INSERT  to authenticated
     using: -
-    check: private.is_executive()
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_eligibility  [Executives update attendance eligibility]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_eligibility  [Members view own attendance eligibility]  SELECT  to authenticated
-    using: (private.is_executive() OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.attendance_excuses  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_excuses  [Executives manage excuses]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_excuses  [Members view own excuses]  SELECT  to authenticated
-    using: (private.is_executive() OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.attendance_record_audit  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_record_audit  [Executives view attendance audit]  SELECT  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.attendance_records  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_records  [Executives manage attendance records]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_records  [Members view own attendance records]  SELECT  to authenticated
-    using: (private.is_executive() OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.attendance_remediations  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_remediations  [Executives delete attendance remediation]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.attendance_remediations  [Executives insert attendance remediation]  INSERT  to authenticated
     using: -
-    check: private.is_executive()
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_remediations  [Executives update attendance remediation]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_remediations  [Members view own attendance remediation]  SELECT  to authenticated
-    using: (private.is_executive() OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.attendance_session_participants  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_session_participants  [Executives manage attendance participation]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_session_participants  [Members view attendance participation]  SELECT  to authenticated
-    using: (private.is_executive() OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.attendance_sessions  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_sessions  [Executives manage attendance sessions]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_sessions  [Members view eligible attendance sessions]  SELECT  to authenticated
-    using: (private.is_executive() OR (EXISTS ( SELECT 1 FROM attendance_session_participants WHERE ((attendance_session_participants.session_id = attendance_sessions.id) AND (attendance_session_participants.member_id = ( SELECT auth.uid() AS uid))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM attendance_session_participants WHERE ((attendance_session_participants.session_id = attendance_sessions.id) AND (attendance_session_participants.member_id = ( SELECT auth.uid() AS uid))))))
     check: -
 public.attendance_settings  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.attendance_settings  [Executives manage attendance thresholds]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_settings  [Members view attendance thresholds]  SELECT  to authenticated
     using: true
     check: -
@@ -159,103 +159,103 @@ public.events  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.events  [Executives delete events]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.events  [Executives insert events]  INSERT  to authenticated
     using: -
-    check: private.is_executive()
+    check: ( SELECT private.is_executive() AS is_executive)
 public.events  [Executives update events]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.events  [Members view accessible events]  SELECT  to authenticated
-    using: (private.is_executive() OR (subgroup_id IS NULL) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = events.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status)))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (subgroup_id IS NULL) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = events.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status)))))
     check: -
 public.finance_audit_log  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_audit_log  [Executives view finance audit]  SELECT  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.finance_claim_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_claim_documents  [Executives manage claim document links]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.finance_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_documents  [Executives manage finance documents]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.finance_documents  [Members register own finance documents]  INSERT  to authenticated
     using: -
     check: (uploaded_by = ( SELECT auth.uid() AS uid))
 public.finance_documents  [Members view permitted finance documents]  SELECT  to authenticated
-    using: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
     check: -
 public.finance_expense_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_expense_documents  [Executives manage expense document links]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.finance_expense_documents  [Members attach own expense documents]  INSERT  to authenticated
     using: -
     check: ((EXISTS ( SELECT 1 FROM finance_expenses expense WHERE ((expense.id = finance_expense_documents.expense_id) AND ((expense.created_by = ( SELECT auth.uid() AS uid)) OR (expense.paid_by_member_id = ( SELECT auth.uid() AS uid)))))) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.id = finance_expense_documents.document_id) AND (document.uploaded_by = ( SELECT auth.uid() AS uid))))))
 public.finance_expense_documents  [Members view permitted expense document links]  SELECT  to authenticated
-    using: (private.is_executive() OR (EXISTS ( SELECT 1 FROM finance_expenses expense WHERE ((expense.id = finance_expense_documents.expense_id) AND ((expense.created_by = ( SELECT auth.uid() AS uid)) OR (expense.paid_by_member_id = ( SELECT auth.uid() AS uid)))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM finance_expenses expense WHERE ((expense.id = finance_expense_documents.expense_id) AND ((expense.created_by = ( SELECT auth.uid() AS uid)) OR (expense.paid_by_member_id = ( SELECT auth.uid() AS uid)))))))
     check: -
 public.finance_expenses  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_expenses  [Executives manage expenses]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.finance_expenses  [Members view permitted expenses]  SELECT  to authenticated
-    using: (private.is_executive() OR (created_by = ( SELECT auth.uid() AS uid)) OR (paid_by_member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (created_by = ( SELECT auth.uid() AS uid)) OR (paid_by_member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.finance_payments  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_payments  [Executives manage payments]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.finance_payments  [Members view permitted payments]  SELECT  to authenticated
-    using: (private.is_executive() OR (EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_payments.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_payments.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))))
     check: -
 public.finance_reimbursement_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.finance_reimbursement_documents  [Executives manage reimbursement document links]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.finance_reimbursement_documents  [Members attach own reimbursement documents]  INSERT  to authenticated
     using: -
     check: ((EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_reimbursement_documents.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.id = finance_reimbursement_documents.document_id) AND (document.uploaded_by = ( SELECT auth.uid() AS uid))))))
 public.finance_reimbursement_documents  [Members view own reimbursement document links]  SELECT  to authenticated
-    using: (private.is_executive() OR (EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_reimbursement_documents.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_reimbursement_documents.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))))
     check: -
 public.funding_claim_expenses  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.funding_claim_expenses  [Executives manage claim expenses]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.funding_claims  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.funding_claims  [Executives manage funding claims]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.personal_reimbursements  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.personal_reimbursements  [Executives manage reimbursements]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.personal_reimbursements  [Members view own reimbursements]  SELECT  to authenticated
-    using: (private.is_executive() OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
     check: -
 public.profiles  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ((id = ( SELECT auth.uid() AS uid)) OR ( SELECT private.is_active_member() AS is_active_member))
@@ -271,13 +271,13 @@ public.recording_notes  [Active members only]  ALL  RESTRICTIVE  to authenticate
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.recording_notes  [Members add notation to accessible recordings]  INSERT  to authenticated
     using: -
-    check: ((uploaded_by = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.id = recording_notes.recording_id) AND (private.is_executive() OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)) OR (recording.status = 'published'::recording_status))))))
+    check: ((uploaded_by = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.id = recording_notes.recording_id) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)) OR (recording.status = 'published'::recording_status))))))
 public.recording_notes  [Members delete their notation]  DELETE  to authenticated
-    using: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
     check: -
 public.recording_notes  [Members edit their notation]  UPDATE  to authenticated
-    using: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)))
-    check: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
+    check: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
 public.recording_notes  [Members view notation for accessible recordings]  SELECT  to authenticated
     using: (EXISTS ( SELECT 1 FROM recordings recording WHERE (recording.id = recording_notes.recording_id)))
     check: -
@@ -286,15 +286,15 @@ public.recordings  [Active members only]  ALL  RESTRICTIVE  to authenticated
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.recordings  [Members create subgroup recordings]  INSERT  to authenticated
     using: -
-    check: ((uploaded_by = ( SELECT auth.uid() AS uid)) AND (subgroup_id IS NOT NULL) AND (private.is_executive() OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = recordings.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
+    check: ((uploaded_by = ( SELECT auth.uid() AS uid)) AND (subgroup_id IS NOT NULL) AND (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = recordings.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
 public.recordings  [Members delete their recordings]  DELETE  to authenticated
-    using: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
     check: -
 public.recordings  [Members edit their recordings]  UPDATE  to authenticated
-    using: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)))
-    check: (private.is_executive() OR ((uploaded_by = ( SELECT auth.uid() AS uid)) AND (subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = recordings.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
+    check: (( SELECT private.is_executive() AS is_executive) OR ((uploaded_by = ( SELECT auth.uid() AS uid)) AND (subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = recordings.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
 public.recordings  [Members view accessible recordings]  SELECT  to authenticated
-    using: (private.is_executive() OR (uploaded_by = ( SELECT auth.uid() AS uid)) OR ((status = 'published'::recording_status) AND ((audience = 'club'::text) OR (audience = 'public'::text) OR ((audience = 'subgroup'::text) AND (subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = recordings.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)) OR ((status = 'published'::recording_status) AND ((audience = 'club'::text) OR (audience = 'public'::text) OR ((audience = 'subgroup'::text) AND (subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = recordings.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))))
     check: -
 public.resource_imports  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -345,14 +345,14 @@ public.resource_tags  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.resource_tags  [Executives delete resource tags]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.resource_tags  [Executives insert resource tags]  INSERT  to authenticated
     using: -
-    check: private.is_executive()
+    check: ( SELECT private.is_executive() AS is_executive)
 public.resource_tags  [Executives update resource tags]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.resource_tags  [Members view resource tags]  SELECT  to authenticated
     using: true
     check: -
@@ -375,20 +375,20 @@ public.subgroup_memberships  [Active members only]  ALL  RESTRICTIVE  to authent
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.subgroup_memberships  [Executives manage subgroup memberships]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.subgroup_memberships  [Managers view their subgroup roster]  SELECT  to authenticated
     using: private.is_subgroup_manager(subgroup_id)
     check: -
 public.subgroup_memberships  [Members view subgroup directory tags]  SELECT  to authenticated
-    using: ((member_id = ( SELECT auth.uid() AS uid)) OR (status = 'active'::subgroup_membership_status) OR private.is_executive())
+    using: ((member_id = ( SELECT auth.uid() AS uid)) OR (status = 'active'::subgroup_membership_status) OR ( SELECT private.is_executive() AS is_executive))
     check: -
 public.subgroups  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.subgroups  [Executives manage subgroups]  ALL  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.subgroups  [Signed-in members discover subgroups]  SELECT  to authenticated
     using: true
     check: -
@@ -396,32 +396,32 @@ public.transactions  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.transactions  [Executives delete finances]  DELETE  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.transactions  [Executives insert finances]  INSERT  to authenticated
     using: -
-    check: private.is_executive()
+    check: ( SELECT private.is_executive() AS is_executive)
 public.transactions  [Executives update finances]  UPDATE  to authenticated
-    using: private.is_executive()
-    check: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
+    check: ( SELECT private.is_executive() AS is_executive)
 public.transactions  [Executives view finances]  SELECT  to authenticated
-    using: private.is_executive()
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 storage.objects  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
 storage.objects  [Executives delete archive files]  DELETE  to authenticated
-    using: ((bucket_id = 'club-archive'::text) AND private.is_executive())
+    using: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
     check: -
 storage.objects  [Executives delete finance files]  DELETE  to authenticated
-    using: ((bucket_id = 'finance-private'::text) AND private.is_executive())
+    using: ((bucket_id = 'finance-private'::text) AND ( SELECT private.is_executive() AS is_executive))
     check: -
 storage.objects  [Executives update archive files]  UPDATE  to authenticated
-    using: ((bucket_id = 'club-archive'::text) AND private.is_executive())
-    check: ((bucket_id = 'club-archive'::text) AND private.is_executive())
+    using: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
+    check: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
 storage.objects  [Executives upload archive files]  INSERT  to authenticated
     using: -
-    check: ((bucket_id = 'club-archive'::text) AND private.is_executive())
+    check: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
 storage.objects  [Managers delete resource files]  DELETE  to authenticated
     using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))
     check: -
@@ -432,16 +432,16 @@ storage.objects  [Managers upload resource files]  INSERT  to authenticated
     using: -
     check: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND (resource.node_kind = 'file'::resource_node_kind) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))
 storage.objects  [Members delete own attendance excuse proof]  DELETE  to authenticated
-    using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR private.is_executive()))
+    using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR ( SELECT private.is_executive() AS is_executive)))
     check: -
 storage.objects  [Members delete own unregistered finance files]  DELETE  to authenticated
     using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM finance_documents document WHERE (document.storage_path = objects.name)))))
     check: -
 storage.objects  [Members delete their recording files]  DELETE  to authenticated
-    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (private.is_executive() OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
+    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
     check: -
 storage.objects  [Members delete their recording notation]  DELETE  to authenticated
-    using: ((bucket_id = 'recording-notations'::text) AND (EXISTS ( SELECT 1 FROM recording_notes note WHERE ((note.storage_path = objects.name) AND (private.is_executive() OR (note.uploaded_by = ( SELECT auth.uid() AS uid)))))))
+    using: ((bucket_id = 'recording-notations'::text) AND (EXISTS ( SELECT 1 FROM recording_notes note WHERE ((note.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (note.uploaded_by = ( SELECT auth.uid() AS uid)))))))
     check: -
 storage.objects  [Members read accessible recording notation]  SELECT  to authenticated
     using: ((bucket_id = 'recording-notations'::text) AND (EXISTS ( SELECT 1 FROM recording_notes note WHERE (note.storage_path = objects.name))))
@@ -450,13 +450,13 @@ storage.objects  [Members read accessible recordings]  SELECT  to authenticated
     using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE (recording.storage_path = objects.name))))
     check: -
 storage.objects  [Members read permitted archive files]  SELECT  to authenticated
-    using: ((bucket_id = 'club-archive'::text) AND ((EXISTS ( SELECT 1 FROM archive_items item WHERE ((item.storage_path = objects.name) AND (private.is_executive() OR ((item.subgroup_id IS NULL) AND (item.visibility = 'members'::archive_visibility)) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = item.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status) AND (item.visibility = 'members'::archive_visibility)))))))) OR (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_view_resource(resource.subgroup_id, resource.visibility, resource.status, resource.created_by))))))
+    using: ((bucket_id = 'club-archive'::text) AND ((EXISTS ( SELECT 1 FROM archive_items item WHERE ((item.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((item.subgroup_id IS NULL) AND (item.visibility = 'members'::archive_visibility)) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = item.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status) AND (item.visibility = 'members'::archive_visibility)))))))) OR (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_view_resource(resource.subgroup_id, resource.visibility, resource.status, resource.created_by))))))
     check: -
 storage.objects  [Members read permitted attendance excuse proof]  SELECT  to authenticated
-    using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR private.is_executive()))
+    using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR ( SELECT private.is_executive() AS is_executive)))
     check: -
 storage.objects  [Members read permitted finance files]  SELECT  to authenticated
-    using: ((bucket_id = 'finance-private'::text) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.storage_path = objects.name) AND ((document.uploaded_by = ( SELECT auth.uid() AS uid)) OR private.is_executive())))))
+    using: ((bucket_id = 'finance-private'::text) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.storage_path = objects.name) AND ((document.uploaded_by = ( SELECT auth.uid() AS uid)) OR ( SELECT private.is_executive() AS is_executive))))))
     check: -
 storage.objects  [Members read resource files]  SELECT  to authenticated
     using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_view_resource(resource.subgroup_id, resource.visibility, resource.status, resource.created_by)))))
@@ -465,7 +465,7 @@ storage.objects  [Members replace own attendance excuse proof]  UPDATE  to authe
     using: ((bucket_id = 'attendance-excuses'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
     check: ((bucket_id = 'attendance-excuses'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
 storage.objects  [Members update their recording files]  UPDATE  to authenticated
-    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (private.is_executive() OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
+    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
     check: (bucket_id = 'recordings'::text)
 storage.objects  [Members upload finance files to own folder]  INSERT  to authenticated
     using: -
@@ -509,7 +509,9 @@ public.create_attendance_session(p_scope text, p_subgroup_id bigint, p_title tex
 public.create_funding_claim(p_title text, p_funder_name text, p_award_reference text, p_heellife_reference text, p_submission_deadline date, p_notes text, p_expense_ids bigint[])  definer
 public.create_subgroup(subgroup_name text, subgroup_description text, subgroup_mode subgroup_enrollment_mode)  definer
 public.delete_attendance_session(p_session_id bigint)  definer
+public.get_attendance_workspace(p_scope text, p_subgroup_id bigint, p_since timestamp with time zone)  invoker
 public.get_finance_summary()  invoker
+public.get_portal_bootstrap()  invoker
 public.leave_subgroup(p_subgroup_id bigint)  definer
 public.list_subgroup_roster(p_subgroup_id bigint)  invoker
 public.open_attendance_session(p_session_id bigint, p_duration_minutes integer)  definer
