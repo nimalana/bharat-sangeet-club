@@ -86,12 +86,15 @@ update public.profiles p set
   phone = '555-01' || lpad(n.i::text, 2, '0'),
   class_year = (array['2026','2027','2028','2029','Graduate'])[1 + pg_temp.h('year' || n.i, 5)],
   specialty = (array['Vocal','Veena','Violin','Mridangam','Flute','Kanjira','Sitar','Tabla','Dance',''])[1 + pg_temp.h('spec' || n.i, 10)],
-  status = case when n.i > 15 and n.i % 20 = 0 then 'deactivated' else 'active' end,
-  deactivated_at = case when n.i > 15 and n.i % 20 = 0 then pg_temp.anchor() - (n.i % 90) * interval '1 day' end,
-  deactivated_by = case when n.i > 15 and n.i % 20 = 0 then pg_temp.member(1) end,
-  deactivation_reason = case when n.i > 15 and n.i % 20 = 0 then 'Left the club' else '' end
+  status = case when n.i > 15 and n.i % 20 = 0 then 'deactivated' else 'active' end
 from (select i, pg_temp.member(i) as id from generate_series(1, 500) i) n
 where p.id = n.id;
+
+-- Who deactivated them, when and why lives in an administrators-only table.
+insert into public.member_deactivations (member_id, deactivated_at, deactivated_by, reason)
+select pg_temp.member(i), pg_temp.anchor() - (i % 90) * interval '1 day', pg_temp.member(1), 'Left the club'
+from generate_series(16, 500) i
+where i % 20 = 0;
 
 -- ---------------------------------------------------------------------------
 -- Subgroups and memberships

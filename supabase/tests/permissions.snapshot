@@ -41,6 +41,7 @@ funding_claim_expenses  anon  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,U
 funding_claim_expenses  authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
 funding_claims  anon  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
 funding_claims  authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+member_deactivations  authenticated  SELECT
 personal_reimbursements  anon  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
 personal_reimbursements  authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
 profiles  anon  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
@@ -275,6 +276,12 @@ public.funding_claims  [Active members only]  ALL  RESTRICTIVE  to authenticated
 public.funding_claims  [Executives manage funding claims]  ALL  to authenticated
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
+public.member_deactivations  [Active members only]  ALL  RESTRICTIVE  to authenticated
+    using: ( SELECT private.is_active_member() AS is_active_member)
+    check: ( SELECT private.is_active_member() AS is_active_member)
+public.member_deactivations  [Admins read deactivation records]  SELECT  to authenticated
+    using: ( SELECT private.is_admin() AS is_admin)
+    check: -
 public.personal_reimbursements  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
