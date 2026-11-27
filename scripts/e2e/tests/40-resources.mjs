@@ -136,7 +136,7 @@ export default async function resources(t, ctx) {
     ok(!(await listed(c.execA, "club-resources", rowPath)), "an object appeared for the declared path");
   });
 
-  await t.test("a group manager (not an executive) uploads, renames and deletes a file in group A; group members see it, members of other groups do not; a plain member cannot upload", async () => {
+  await t.test("a group manager (not an executive) uploads and renames a file in group A, and cannot delete it or turn it back into an unfinished upload; group members see it, members of other groups do not; a plain member cannot upload; an executive deletes it", async () => {
     const bytes = pdf("group-resource");
     const path = `${id.manager}/${uid()}/group.pdf`;
     const row = succeeded(await c.manager.from("resources").insert({ node_kind: "file", media_kind: "document", title: mark("Group file"), description: "", parent_id: null, subgroup_id: g.A, visibility: "members", storage_bucket: "club-resources", storage_path: path, original_filename: "group.pdf", mime_type: "application/pdf", byte_size: bytes.length, status: "pending_upload", is_pinned: false, created_by: id.manager }).select(FIELDS).single(), "manager inserts group resource");
@@ -151,9 +151,35 @@ export default async function resources(t, ctx) {
     equal(succeeded(await c.manager.from("resources").update({ title: mark("Group file (renamed)") }).eq("id", row.id).select("id"), "manager renames").length, 1, "rows renamed");
     refused(await c.member1.from("resources").insert({ node_kind: "folder", media_kind: null, title: mark("member folder"), parent_id: null, subgroup_id: g.A, visibility: "members", status: "ready", created_by: id.member1 }).select("id"), "plain member creating a folder");
     refused(await c.manager.from("resources").insert({ node_kind: "folder", media_kind: null, title: mark("club folder by manager"), parent_id: null, subgroup_id: null, visibility: "members", status: "ready", created_by: id.manager }).select("id"), "group manager creating a club-wide folder");
-    const del = await deleteLikeTheApp(c.manager, row);
-    ok(del.ok, `manager deleting their group file: ${del.why}`);
+    // Permanent delete of a finished file is for executives (20261127043000), and a manager cannot get round that (20261127070000):
+    // not the file, not the row, not by marking the finished row failed or pointing it at another path.
+    const byManager = await c.manager.storage.from("club-resources").remove([path]);
+    equal((byManager.data || []).length, 0, "a group manager deleting a finished file through Storage");
+    nothingHappened(await c.manager.from("resources").delete().eq("id", row.id).select("id"), "a group manager deleting a finished resource row");
+    refused(await c.manager.from("resources").update({ status: "failed" }).eq("id", row.id).select("id"), "a group manager marking a finished file failed", /Only executives/i);
+    refused(await c.manager.from("resources").update({ storage_path: `${id.manager}/${uid()}/elsewhere.pdf` }).eq("id", row.id).select("id"), "a group manager pointing a finished file at another path", /Only executives/i);
+    refused(await c.manager.from("resources").update({ storage_bucket: "recordings" }).eq("id", row.id).select("id"), "a group manager changing the bucket of a finished file", /Only executives/i);
+    equal(rowsOf(await c.manager.from("resources").select("status,storage_path").eq("id", row.id), "manager re-reads the row")[0].status, "ready", "status of the finished file after the manager's attempts");
+    equal((await download((await sign(c.member1, "club-resources", path)).data.signedUrl)).sha, sha256(bytes), "the file survived the manager's attempts");
+    const del = await deleteLikeTheApp(c.execA, row);
+    ok(del.ok, `an executive deleting the group file: ${del.why}`);
     await proveGone({ manager: c.manager, member1: c.member1, execA: c.execA }, "club-resources", path, { fresh, fetched: url });
+  });
+
+  await t.test("a group manager can still discard an unfinished upload in their group (pending, then failed), row and file; a plain member of the group cannot", async () => {
+    const bytes = pdf("unfinished-group-resource");
+    const path = `${id.manager}/${uid()}/unfinished.pdf`;
+    const row = succeeded(await c.manager.from("resources").insert({ node_kind: "file", media_kind: "document", title: mark("Unfinished group file"), description: "", parent_id: null, subgroup_id: g.A, visibility: "members", storage_bucket: "club-resources", storage_path: path, original_filename: "unfinished.pdf", mime_type: "application/pdf", byte_size: bytes.length, status: "pending_upload", is_pinned: false, created_by: id.manager }).select(FIELDS).single(), "manager inserts a pending group resource");
+    succeeded(await put(c.manager, "club-resources", path, bytes, "application/pdf"), "manager uploads the file of the pending row");
+    const fresh = await freshUrl(c.manager, "club-resources", path);
+    equal(rowsOf(await c.member1.from("resources").select("id").eq("id", row.id), "member1 reads the pending row").length, 0, "a plain member sees an unfinished upload");
+    equal(((await c.member1.storage.from("club-resources").remove([path])).data || []).length, 0, "a plain member removing someone else's unfinished file");
+    nothingHappened(await c.member1.from("resources").delete().eq("id", row.id).select("id"), "a plain member deleting an unfinished row");
+    succeeded(await c.manager.from("resources").update({ status: "failed" }).eq("id", row.id).select("id"), "manager marks their unfinished upload failed");
+    const discarded = await deleteLikeTheApp(c.manager, { ...row, status: "failed" });
+    ok(discarded.ok, `the manager discarding their group's unfinished upload: ${discarded.why}`);
+    equal(rowsOf(await c.execA.from("resources").select("id").eq("id", row.id), "executive re-reads the row").length, 0, "the discarded row");
+    await proveGone({ manager: c.manager, execA: c.execA, member1: c.member1 }, "club-resources", path, { fresh });
   });
 
   await t.test("links: executive adds a link, edits it, and a member opens it; deleting removes it", async () => {

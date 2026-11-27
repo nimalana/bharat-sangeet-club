@@ -88,21 +88,32 @@ export default async function recordings(t, ctx) {
     equal(still.sha, sha256(s.take1.bytes), "the take survived");
   });
 
-  await t.test("a group member adds a notation file as its author; only the author, the uploader-as-executive or an executive can delete it", async () => {
+  await t.test("a group member adds a notation file; the author, the recording's uploader or an executive can delete it, any other member cannot", async () => {
     s.note2 = { path: `${id.leader}/${uid()}-leader-notes.pdf`, bytes: pdf("leader-notation") };
     s.note2.url = await putAndVerify(c.leader, "recording-notations", s.note2.path, s.note2.bytes, "application/pdf", "leader notation");
     s.note2.fresh = await freshUrl(c.leader, "recording-notations", s.note2.path);
     s.note2.id = succeeded(await c.leader.from("recording_notes").insert({ recording_id: s.take1.id, title: "leader-notes.pdf", note_type: "file", body: "", storage_path: s.note2.path, mime_type: "application/pdf", uploaded_by: id.leader }).select("id").single(), "leader adds a note").id;
-    // The uploader of the recording is not the author of this note.
-    const removed = await c.member1.storage.from("recording-notations").remove([s.note2.path]);
-    ok(!removed.data?.length, "the recording's uploader removed another member's notation file");
-    nothingHappened(await c.member1.from("recording_notes").delete().eq("id", s.note2.id).select("id"), "recording uploader deleting another member's note");
+    // The group manager can see the recording but wrote neither the recording nor this note, and is not an executive.
+    const removed = await c.manager.storage.from("recording-notations").remove([s.note2.path]);
+    ok(!removed.data?.length, "a group manager who is neither the author nor the uploader removed another member's notation file");
+    nothingHappened(await c.manager.from("recording_notes").delete().eq("id", s.note2.id).select("id"), "a group manager deleting another member's note");
     // Author deletes: file first, then the row (NoteActions.remove).
     const gone = await c.leader.storage.from("recording-notations").remove([s.note2.path]);
     equal(gone.data?.length, 1, "author removing own notation file");
     const row = succeeded(await c.leader.from("recording_notes").delete().eq("id", s.note2.id).select("id"), "author deleting own note row");
     equal(row.length, 1, "note rows deleted");
     await proveGone({ leader: c.leader, execA: c.execA }, "recording-notations", s.note2.path, { fresh: s.note2.fresh, fetched: s.note2.url });
+
+    // frontend-3 (20261127044000): the recording's uploader may also remove a notation someone else attached, file first, then the row.
+    // Before, the uploader was refused on the first file that was not theirs, so they could not delete their own recording.
+    const third = { path: `${id.leader}/${uid()}-leader-notes-2.pdf`, bytes: pdf("leader-notation-2") };
+    third.url = await putAndVerify(c.leader, "recording-notations", third.path, third.bytes, "application/pdf", "second leader notation");
+    third.fresh = await freshUrl(c.leader, "recording-notations", third.path);
+    third.id = succeeded(await c.leader.from("recording_notes").insert({ recording_id: s.take1.id, title: "leader-notes-2.pdf", note_type: "file", body: "", storage_path: third.path, mime_type: "application/pdf", uploaded_by: id.leader }).select("id").single(), "leader adds a second note").id;
+    const byUploader = await c.member1.storage.from("recording-notations").remove([third.path]);
+    equal(byUploader.data?.length, 1, "the recording's uploader removing another member's notation file");
+    equal(succeeded(await c.member1.from("recording_notes").delete().eq("id", third.id).select("id"), "the uploader deleting another member's note row").length, 1, "note rows deleted by the recording's uploader");
+    await proveGone({ leader: c.leader, execA: c.execA, member1: c.member1 }, "recording-notations", third.path, { fresh: third.fresh, fetched: third.url });
   });
 
   await t.test("uploader edits the text note; uploader archives and restores the recording (hidden from the published list while archived)", async () => {
@@ -132,6 +143,33 @@ export default async function recordings(t, ctx) {
     }
   });
 
+  await t.test("the uploader deletes a published recording that another member attached a notation file to: the take, both notation files and the rows go (the case that failed before frontend-3)", async () => {
+    const path = `${id.member1}/subgroups/${g.A}/${uid()}-take3.wav`;
+    const bytes = wav(0.2);
+    const url = await putAndVerify(c.member1, "recordings", path, bytes, "audio/wav", "take 3");
+    const fresh = await freshUrl(c.member1, "recordings", path);
+    const row = succeeded(await c.member1.from("recordings").insert(payload({ title: mark("Take 3"), subgroup_id: g.A, storage_path: path, uploaded_by: id.member1, status: "published", published_at: new Date().toISOString() })).select("*").single(), "insert published recording");
+    const attach = async (key, label) => {
+      const note = { path: `${id[key]}/${uid()}-${label}.pdf`, bytes: pdf(label) };
+      note.url = await putAndVerify(c[key], "recording-notations", note.path, note.bytes, "application/pdf", label);
+      note.fresh = await freshUrl(c[key], "recording-notations", note.path);
+      succeeded(await c[key].from("recording_notes").insert({ recording_id: row.id, title: `${label}.pdf`, note_type: "file", body: "", storage_path: note.path, mime_type: "application/pdf", uploaded_by: id[key] }).select("id").single(), `${key} attaches ${label}`);
+      return note;
+    };
+    const own = await attach("member1", "own-notes");
+    const theirs = await attach("leader", "their-notes");
+    const notes = rowsOf(await c.member1.from("recording_notes").select("*").eq("recording_id", row.id), "uploader reads the notes");
+    equal(notes.length, 2, "notes on the recording");
+    await deleteLikeTheApp(c.member1, row, notes);
+    await proveGone({ member1: c.member1, execA: c.execA, leader: c.leader }, "recordings", path, { fresh, fetched: url });
+    await proveGone({ member1: c.member1, execA: c.execA, leader: c.leader }, "recording-notations", own.path, { fresh: own.fresh, fetched: own.url });
+    await proveGone({ member1: c.member1, execA: c.execA, leader: c.leader }, "recording-notations", theirs.path, { fresh: theirs.fresh, fetched: theirs.url });
+    for (const key of ["member1", "execA", "leader"]) {
+      equal(rowsOf(await c[key].from("recordings").select("id").eq("id", row.id), `${key} re-reads row`).length, 0, `${key}: recording row after delete`);
+      equal(rowsOf(await c[key].from("recording_notes").select("id").eq("recording_id", row.id), `${key} re-reads notes`).length, 0, `${key}: note rows after delete`);
+    }
+  });
+
   await t.test("an executive deletes another member's published recording the same way", async () => {
     const path = `${id.member1}/subgroups/${g.A}/${uid()}-take2.wav`;
     const bytes = wav(0.2);
@@ -154,16 +192,25 @@ export default async function recordings(t, ctx) {
     s.orphanPath = path;
   });
 
-  await t.observe("a take uploaded but never saved as a row (failed publish) cannot be removed by the app's cleanup call", async () => {
-    const path = s.orphanPath;
-    const removed = await c.member2.storage.from("recordings").remove([path]);
-    const stillListed = await listed(c.member2, "recordings", path);
-    const detail = `remove([path]) returned ${JSON.stringify(removed.data)}${removed.error ? ` error ${describeError(removed.error)}` : ""}; still listed for its owner: ${stillListed}`;
-    // Tidy up: give the file a row, remove it through the API, drop the row.
-    const row = succeeded(await c.member2.from("recordings").insert(payload({ title: mark("orphan cleanup"), subgroup_id: g.B, storage_path: path, uploaded_by: id.member2 })).select("id").single(), "temporary row for cleanup");
-    const second = await c.member2.storage.from("recordings").remove([path]);
-    succeeded(await c.member2.from("recordings").delete().eq("id", row.id).select("id"), "drop temporary row");
-    return `${detail}. After a temporary row was added, remove() returned ${JSON.stringify(second.data)} and the file is ${(await listed(c.member2, "recordings", path)) ? "still there" : "gone"}.`;
+  await t.test("a take or a notation file that was uploaded but never saved as a row (failed publish) can be removed by its uploader, and by nobody else", async () => {
+    // 20261127070100: an object nobody has registered is visible to its uploader only (own user-id folder), and only the uploader may delete it.
+    const abandoned = [{ bucket: "recordings", path: s.orphanPath }];
+    const notation = `${id.member2}/${uid()}-abandoned-notes.pdf`;
+    succeeded(await put(c.member2, "recording-notations", notation, pdf("abandoned"), "application/pdf"), "member2 uploads a notation file that is never registered");
+    abandoned.push({ bucket: "recording-notations", path: notation });
+    for (const { bucket, path } of abandoned) {
+      const fresh = await freshUrl(c.member2, bucket, path);
+      ok(await listed(c.member2, bucket, path), `${bucket}: the uploader cannot see their own abandoned file`);
+      for (const key of ["member1", "leader", "manager", "execA", "execB", "admin"]) {
+        ok(!(await listed(c[key], bucket, path)), `${bucket}: ${key} can list another member's abandoned file`);
+        ok(!(await sign(c[key], bucket, path, 60)).data?.signedUrl, `${bucket}: ${key} could sign another member's abandoned file`);
+        const removedByOther = await c[key].storage.from(bucket).remove([path]);
+        ok(!removedByOther.data?.length, `${bucket}: ${key} removed another member's abandoned file: ${JSON.stringify(removedByOther.data)}`);
+      }
+      const removed = await c.member2.storage.from(bucket).remove([path]);
+      equal(removed.data?.length, 1, `${bucket}: the uploader removing their own abandoned file`);
+      await proveGone({ member2: c.member2, execA: c.execA }, bucket, path, { fresh });
+    }
   });
 
   // ---------------------------------------------------------------- legacy copies in club-archive
