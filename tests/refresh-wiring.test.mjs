@@ -11,7 +11,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("finance keeps its lists when any query fails, and only the newest load may write", async () => {
   const finance = await read("app/finance.tsx");
-  const guard = finance.indexOf("anyFailed([expenseResult");
+  const guard = finance.indexOf("financeRefreshFailed({ expenses: expenseResult");
   const firstSet = finance.indexOf("setExpenses(snapshot.expenses)");
   assert.ok(guard > 0 && firstSet > guard, "the failure check comes before any list is replaced");
   assert.match(finance.slice(guard, firstSet), /setLoadFailed\(true\)[\s\S]*return;/);
