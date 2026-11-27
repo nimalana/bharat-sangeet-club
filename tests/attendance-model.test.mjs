@@ -160,6 +160,22 @@ test("the poll asks for a full reload only when something it cannot patch change
   assert.equal(pulseNeedsReload([], { sessions: [], pending_excuses: 0 }, 0, true), false);
 });
 
+test("a member's poll reloads the overview when their own forms or follow-up items change", () => {
+  const known = [open(5)];
+  const same = { sessions: [pulseSession(5)], pending_excuses: null, items_version: "m:aaa" };
+  assert.equal(pulseNeedsReload(known, same, 0, false, "m:aaa"), false, "nothing changed");
+  assert.equal(pulseNeedsReload(known, { ...same, items_version: "m:bbb" }, 0, false, "m:aaa"), true, "a decision on their form, or a new or completed item");
+  assert.equal(pulseNeedsReload(known, same, 0, false, null), true, "a page that never had a version reads once to get it");
+  assert.equal(pulseNeedsReload(known, { sessions: [pulseSession(5)], pending_excuses: null }, 0, false, "m:aaa"), false, "a server that sends no version never triggers it");
+  assert.equal(pulseNeedsReload(known, { sessions: [pulseSession(5)], pending_excuses: null, items_version: null }, 0, false, null), false);
+  // An executive's text is the waiting forms and open items: a new open item is enough.
+  assert.equal(pulseNeedsReload(known, { sessions: [pulseSession(5)], pending_excuses: 2, items_version: "x:2:8" }, 2, true, "x:2:7"), true, "a new follow-up item for an executive");
+  assert.equal(pulseNeedsReload(known, { sessions: [pulseSession(5)], pending_excuses: 2, items_version: "x:2:7" }, 2, true, "x:2:7"), false);
+  // The overview the page then holds carries the same text, so the next poll is quiet.
+  assert.equal(normalizeOverview({ items_version: "m:bbb" }).items_version, "m:bbb");
+  assert.equal(normalizeOverview({}).items_version, null);
+});
+
 test("the poll patches the open meeting and the caller's own mark in place", () => {
   const sessions = [{ id: 5, status: "open", title: "Meeting", closes_at: "a", code_expires_at: "a", live: { roster_count: 10, checked_in_count: 1, version: "1:1" } }, { id: 4, status: "closed", title: "Old", closes_at: null, code_expires_at: null }];
   const records = [{ session_id: 4, member_id: "me", status: "present" }, { session_id: 5, member_id: "me", status: "absent" }];
@@ -286,4 +302,8 @@ test("attendance.tsx reads the roster again after check-in opens or closes", () 
   assert.match(between(source, "async function runDialog", "function submitDialog"), /refresh\(\);/, "a confirmed dialog (close, cancel, a mark) refreshes");
   // The effect that reads the roster listens to the counter.
   assert.match(between(source, "const [rosterTick", "const hasOpenSession"), /\[canManage, tab, selectedSessionId, loadRoster, rosterTick\]/);
+});
+
+test("attendance.tsx compares the overview's items version in the poll", () => {
+  assert.match(pageSource(), /pulseNeedsReload\(state\.data\.sessions, reply, state\.data\.excuses_pending, canManage, state\.data\.items_version\)/);
 });

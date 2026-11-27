@@ -203,7 +203,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       failures.succeeded();
       const reply = result as Pulse;
       const watchingRoster = canManage && state.tab === "meetings" && state.selectedSessionId !== null;
-      if (pulseNeedsReload(state.data.sessions, reply, state.data.excuses_pending, canManage)) {
+      if (pulseNeedsReload(state.data.sessions, reply, state.data.excuses_pending, canManage, state.data.items_version)) {
         load(true);
         if (watchingRoster && state.selectedSessionId !== null) loadRoster(state.selectedSessionId, true);
         return;

@@ -100,6 +100,11 @@ export type AttendanceOverview = {
   absent_total: number;
   profiles: Profile[];
   settings: { warning_absences: number; critical_absences: number } | null;
+  // Changes when the caller's own absence forms or follow-up items change (an
+  // executive: when the number of waiting forms or open items does). The poll
+  // carries the same text. Null from a server that does not send it.
+  items_version: string | null;
+  // The cap the server applied to each review queue an executive sees.
   list_limit: number;
 };
 
@@ -121,11 +126,11 @@ export type PulseSession = {
   live: SessionLive | null;
   my_record: AttendanceRecord | null;
 };
-export type Pulse = { sessions: PulseSession[]; pending_excuses: number | null };
+export type Pulse = { sessions: PulseSession[]; pending_excuses: number | null; items_version?: string | null };
 
 export const EMPTY_OVERVIEW: AttendanceOverview = {
   terms: [], term: null, view_term: "", summary_term: "", sessions: [], records: [], excuses: [], excuses_pending: 0, excuses_total: 0,
-  remediations: [], remediations_pending: 0, eligibility: [], flagged: [], attended_total: 0, absent_total: 0, profiles: [], settings: null, list_limit: 100,
+  remediations: [], remediations_pending: 0, eligibility: [], flagged: [], attended_total: 0, absent_total: 0, profiles: [], settings: null, items_version: null, list_limit: 100,
 };
 
 // A response from the server with any missing list read as empty, so a screen
@@ -201,12 +206,15 @@ export function openSessionIds(sessions: Array<{ id: number; status: SessionStat
 }
 
 // Does the poll show something the page cannot patch in place? A meeting that
-// opened, closed or was canceled, or (for executives) a changed number of
-// waiting absence forms, means the full overview is read again.
-export function pulseNeedsReload(known: Array<{ id: number; status: SessionStatus }>, pulse: Pulse, excusesPending: number, canManage: boolean) {
+// opened, closed or was canceled, a changed number of waiting absence forms
+// (executives), or a change in the caller's own forms and follow-up items (a
+// decision on a member's form, a new or completed item) means the full overview
+// is read again. `itemsVersion` is the overview's own `items_version`.
+export function pulseNeedsReload(known: Array<{ id: number; status: SessionStatus }>, pulse: Pulse, excusesPending: number, canManage: boolean, itemsVersion: string | null = null) {
   const before = openSessionIds(known);
   const after = pulse.sessions.map((session) => session.id).sort((a, b) => a - b);
   if (before.length !== after.length || before.some((id, index) => id !== after[index])) return true;
+  if (pulse.items_version != null && pulse.items_version !== itemsVersion) return true;
   return canManage && pulse.pending_excuses !== null && pulse.pending_excuses !== undefined && pulse.pending_excuses !== excusesPending;
 }
 
