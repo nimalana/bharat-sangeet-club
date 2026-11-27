@@ -62,7 +62,7 @@ test("finance: Mark paid asks first, runs once, and shows it is working", async 
   assert.doesNotMatch(finance, /onClick=\{\(\) => markReimbursementPaid\(/);
   // The payment itself goes through the single-flight guard, and the list reloads before the button is free again.
   assert.match(finance, /async function runOnce\(key: string, work: \(\) => Promise<void>\) \{\s*await flight\.run\(/);
-  assert.match(finance, /await runOnce\(`pay-\$\{id\}`, async \(\) => \{[\s\S]*?pay_personal_reimbursement[\s\S]*?await loadFinance\(\);/);
+  assert.match(finance, /await runOnce\(`pay-\$\{id\}`, async \(\) => \{[\s\S]*?pay_personal_reimbursement[\s\S]*?await refreshAfterChange\(\);/);
   assert.match(finance, /<ConfirmDialog open=\{confirming\?\.kind === "pay"\}/);
 });
 
@@ -113,3 +113,18 @@ test("finance: a file that cannot be deleted after its record is gone says so, n
   assert.match(ask, /if \(removed\.error \|\| typeof removed\.data !== "string"\) return \{ error: removed\.error \};/);
 });
 
+test("finance: after a change the dialogs wait for the refresh for a bounded time only (round 3)", async () => {
+  const finance = await read("app/finance.tsx");
+  assert.match(finance, /import \{ REFRESH_WAIT_MS, waitAtMost \} from "\.\.\/lib\/bounded-wait";/);
+  assert.match(finance, /const refreshAfterChange = useCallback\(async \(\) => \{\s*const result = await waitAtMost\(loadFinance\(\), REFRESH_WAIT_MS\);\s*if \(result === "timeout"\) notify\(REFRESH_SLOW_NOTICE, "success"\);/);
+  // No handler waits on the raw read any more: the only awaits of it are through the bounded helper.
+  assert.doesNotMatch(finance, /await loadFinance\(\)/);
+  // Mark paid / claim status (the confirmation stays busy while runOnce runs) and the dialog action runner.
+  const body = functionSource(finance, "FinancePage");
+  assert.match(body, /if \(error\) \{ notify\(friendlyError\(error, "The payment could not be recorded\."\), "error"\); await refreshAfterChange\(\); return; \}\s*notify\("Reimbursement marked paid"\); await refreshAfterChange\(\);/);
+  assert.match(body, /setAction\(null\); await refreshAfterChange\(\);\s*\} finally \{ setActionBusy\(false\); \}/);
+  assert.match(body, /finally \{ setPendingKey\(null\); \}/);
+  assert.match(body, /await markReimbursementPaid\(confirming\.request\.id\);[\s\S]*?setConfirming\(null\);/);
+  // The notice says the change was saved.
+  assert.match(finance, /const REFRESH_SLOW_NOTICE = "Saved\./);
+});
