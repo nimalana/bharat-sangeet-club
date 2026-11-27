@@ -90,11 +90,29 @@ update public.profiles p set
 from (select i, pg_temp.member(i) as id from generate_series(1, 500) i) n
 where p.id = n.id;
 
--- Who deactivated them, when and why lives in an administrators-only table.
-insert into public.member_deactivations (member_id, deactivated_at, deactivated_by, reason)
-select pg_temp.member(i), pg_temp.anchor() - (i % 90) * interval '1 day', pg_temp.member(1), 'Left the club'
-from generate_series(16, 500) i
-where i % 20 = 0;
+-- Who deactivated them, when and why lives in an administrators-only table from
+-- 20261127041000 on. Before that migration (UNTIL=20261127005000 scripts/db-perf.sh,
+-- the pre-Phase-2 schema used for before/after runs) the three columns are on profiles.
+do $$
+begin
+  if to_regclass('public.member_deactivations') is not null then
+    execute $sql$
+      insert into public.member_deactivations (member_id, deactivated_at, deactivated_by, reason)
+      select pg_temp.member(i), pg_temp.anchor() - (i % 90) * interval '1 day', pg_temp.member(1), 'Left the club'
+      from generate_series(16, 500) i
+      where i % 20 = 0
+    $sql$;
+  else
+    execute $sql$
+      update public.profiles p set
+        deactivated_at = pg_temp.anchor() - (n.i % 90) * interval '1 day',
+        deactivated_by = pg_temp.member(1),
+        deactivation_reason = 'Left the club'
+      from (select i, pg_temp.member(i) as id from generate_series(16, 500) i where i % 20 = 0) n
+      where p.id = n.id
+    $sql$;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Subgroups and memberships
