@@ -51,19 +51,12 @@ export default async function finance(t, ctx) {
     return { id: documentId, path, buffer };
   }
 
-  // What the owner should be able to do once remove_finance_document has dropped the record: delete the file through
-  // the Storage API. If the API removes nothing, an executive registers the path again (so the object is visible to the
-  // storage policies), deletes it, and drops the temporary record, so the test project is left clean either way.
+  // Once remove_finance_document has dropped the record, the file is an unregistered file in the owner's folder: the owner (and an
+  // executive) can delete it through the Storage API (20261127050200). Returns how many objects the API removed.
   async function deleteFinanceFile(client, path) {
     const direct = await client.storage.from(BUCKET).remove([path]);
     if (direct.error) throw new Error(`remove ${path} failed: ${describeError(direct.error)}`);
-    if ((direct.data || []).length === 1) return { viaApi: true };
-    const temp = await c.execA.from("finance_documents").insert({ document_type: "other", title: mark("temporary record to delete a file"), storage_path: path, mime_type: "image/png", file_size_bytes: 1, uploaded_by: id.execA }).select("id").single();
-    if (temp.error) throw new Error(`the Storage API removed nothing and the executive fallback failed: ${describeError(temp.error)}`);
-    const removed = await c.execA.storage.from(BUCKET).remove([path]);
-    await c.execA.from("finance_documents").delete().eq("id", temp.data.id);
-    if ((removed.data || []).length !== 1) throw new Error(`neither the owner nor an executive could delete ${path} through the Storage API`);
-    return { viaApi: false };
+    return (direct.data || []).length;
   }
 
   async function memberRequest(key, label, amount, { receipt = true } = {}) {
@@ -167,8 +160,11 @@ export default async function finance(t, ctx) {
     const member = await c.member1.rpc("remove_finance_document", { p_document_id: s.r2.doc.id });
     const exec = await c.execA.rpc("remove_finance_document", { p_document_id: s.r2.doc.id });
     const stillThere = !(await sign(c.member1, BUCKET, s.r2.doc.path, 60)).error;
+    const direct = await c.execA.storage.from(BUCKET).remove([s.r2.doc.path]);
+    const table = await c.execA.from("finance_documents").delete().eq("id", s.r2.doc.id).select("id");
     return `member: ${member.error ? describeError(member.error) : "removed"}; executive: ${exec.error ? describeError(exec.error) : "removed"}; the file is still signable by its owner: ${stillThere}. `
-      + "The file of a withdrawn request therefore stays in finance-private (an executive can still delete it through the Storage API and the table).";
+      + `A decided request keeps its documents (20261127050200, deliberate). While the record exists the Storage API refuses too (executive remove() returned ${JSON.stringify(direct.data)}), and authenticated has no DELETE on finance_documents (${table.error ? describeError(table.error) : `it deleted ${JSON.stringify(table.data)}`}). `
+      + "So the file of a withdrawn request stays in finance-private until the rows are cleaned up outside the app (cleanup.sql, then cleanup.mjs removes the then-unregistered file).";
   });
 
   await t.test("an executive asks for changes: the note reaches the member, short notes and members are refused, and the request stays in the pending total", async () => {
@@ -199,11 +195,11 @@ export default async function finance(t, ctx) {
     // The record is gone, so the file is an unregistered file in the owner's folder: only the owner (or an executive) may delete it.
     const other = await c.member2.storage.from(BUCKET).remove([old.path]);
     equal((other.data || []).length, 0, "another member deleting the unregistered file");
-    const deleted = await deleteFinanceFile(c.member1, old.path);
+    // An executive can delete it too, once the record is gone; so can the owner. Another member could not (above).
+    const execView = await c.execA.storage.from(BUCKET).list(id.member1, { limit: 100, search: old.path.split("/").pop() });
+    ok(!execView.error && (execView.data || []).some((entry) => entry.name === old.path.split("/").pop()), `an executive should see the unregistered file of a removed document: ${execView.error ? describeError(execView.error) : "not listed"}`);
+    equal(await deleteFinanceFile(c.member1, old.path), 1, `the owner deleting the file of a removed finance document through the Storage API (DELETE /storage/v1/object/${BUCKET}); before 20261127050200 this returned [] because the read policy needed the record that had just been removed`);
     await proveGone({ member1: c.member1, execA: c.execA, execB: c.execB }, BUCKET, old.path, { fresh });
-    ok(deleted.viaApi, `the file of a removed finance document was NOT deleted by the Storage API: after remove_finance_document the owner's DELETE /storage/v1/object/${BUCKET} returned [] (nothing removed), and so does an executive's. `
-      + "The record is gone, so the read policy (which needs a finance_documents row) hides the object, and a DELETE needs the row to be visible; the 'Members delete own unregistered finance files' policy can never match. "
-      + "The file stayed in the bucket until an executive registered the path again, deleted it, and dropped the temporary record (done here so the project is left clean; bytes are then gone: an unfetched signed URL no longer downloads).");
   });
 
   await t.test("the member resubmits after the changes: the request goes back to submitted for the reviewers", async () => {
@@ -315,7 +311,7 @@ export default async function finance(t, ctx) {
     // tidy: the unlinked record of member2's own file
     const gone = succeeded(await c.member2.rpc("remove_finance_document", { p_document_id: own.id }), "member2 removes an unlinked document");
     equal(gone, own.path, "path returned");
-    await deleteFinanceFile(c.member2, gone); // same root cause as the replace-a-receipt test: the owner's own delete removes nothing
+    equal(await deleteFinanceFile(c.member2, gone), 1, "member2 deleting the file of the document they just removed"); // same rule as the replace-a-receipt test
   });
 
   // ---- club expenses and income -------------------------------------------------------------------------
@@ -406,7 +402,7 @@ export default async function finance(t, ctx) {
     const stray = `${id.execA}/${uid()}-statement.png`;
     succeeded(await put(c.execA, BUCKET, stray, png(), "image/png"), "upload of the stray image");
     refused(await c.execA.from("finance_documents").insert({ document_type: "bank_statement", title: mark("statement as image"), storage_path: stray, mime_type: "image/png", file_size_bytes: 10, uploaded_by: id.execA }), "a bank statement that is an image");
-    await deleteFinanceFile(c.execA, stray); // an unregistered file is invisible even to the executive
+    equal(await deleteFinanceFile(c.execA, stray), 1, "the executive deleting the stray, unregistered file"); // an unregistered file is visible to its uploader and to executives (20261127050200)
     await uploadDoc(c.execA, id.execA, { type: "card_statement", title: mark("Card statement"), buffer: pdf("card"), mime: "application/pdf", name: "card.pdf", links: { claimId: s.claim1.id } });
     const text4 = message(refused(await claimStatus(s.claim1.id, "ready"), "ready with the event expense still incomplete", /still needs/i));
     ok(text4.includes("event flyer") && !text4.includes("bank or card statement"), `only the event details remain: ${text4}`);
@@ -518,7 +514,8 @@ export default async function finance(t, ctx) {
     await moved({}, "after the claim outcomes");
   });
 
-  await t.observe("two executives call create_funding_claim on the same expenses at the same moment (suspected: no row lock, so both succeed)", async () => {
+  await t.test("two executives call create_funding_claim on the same expenses at the same moment: exactly one wins every round, and the other is told the expenses are already claimed", async () => {
+    // 20261127050000 locks the expenses (in one order) before the claim is built; before it, a race could give a raw check-constraint error.
     const SIZE = 30;
     const ids = [];
     for (let start = 0; start < SIZE; start += 6) {
@@ -537,23 +534,21 @@ export default async function finance(t, ctx) {
         for (const link of links) per.set(link.expense_id, (per.get(link.expense_id) || 0) + Number(link.claimed_amount));
         over = [...per.entries()].filter(([, total]) => total > 10 + 0.001).map(([expense, total]) => ({ expense, claimed: total, amount: 10 }));
       }
-      const windowHit = [a, b].some((x) => x.error && /23514|claimed_amount_check/.test(describeError(x.error)));
-      rounds.push({ round, expenses: subset.length, execA: a.error ? describeError(a.error) : `claim ${firstRow(a.data).id}`, execB: b.error ? describeError(b.error) : `claim ${firstRow(b.data).id}`, bothSucceeded: made.length === 2, overClaimedExpenses: over.length, windowHit });
+      rounds.push({ round, expenses: subset.length, execA: a.error ? describeError(a.error) : `claim ${firstRow(a.data).id}`, execB: b.error ? describeError(b.error) : `claim ${firstRow(b.data).id}`, winners: made.length, overClaimedExpenses: over.length });
       for (const claim of made) succeeded(await c.execA.rpc("void_funding_claim", { p_claim_id: claim.id, p_reason: "Race test, voided" }), "void a race claim");
     }
     for (let start = 0; start < ids.length; start += 6) {
       await Promise.all(ids.slice(start, start + 6).map(async (expenseId) => succeeded(await c.execA.rpc("void_finance_expense", { p_expense_id: expenseId, p_reason: "Race test, voided" }), "void a race expense")));
     }
     await moved({}, "after the race test is tidied up");
-    const both = rounds.filter((r) => r.bothSucceeded).length;
-    const over = rounds.filter((r) => r.overClaimedExpenses > 0).length;
-    const hit = rounds.filter((r) => r.windowHit).length;
-    return {
-      verdict: both === 0
-        ? `no round let both executives claim the same expense (0 of ${rounds.length}), so no double claim was reproduced. In ${hit} rounds the second executive hit the unguarded window and got a raw check-constraint error (funding_claim_expenses_claimed_amount_check, 23514) instead of "already fully claimed": the function does not lock the expense, but the final INSERT recomputes the unclaimed amount, which catches most overlaps`
-        : `RACE REPRODUCED: both executives created a claim in ${both} of ${rounds.length} rounds, and an expense was claimed above its amount in ${over} rounds (the amount check reads only committed rows and create_funding_claim takes no lock on the expense)`,
-      rounds,
-    };
+    const problems = [];
+    for (const r of rounds) {
+      if (r.winners !== 1) problems.push(`round ${r.round}: ${r.winners} executives created a claim (A: ${r.execA}; B: ${r.execB}); exactly one should`);
+      if (r.overClaimedExpenses) problems.push(`round ${r.round}: ${r.overClaimedExpenses} expense(s) claimed above their amount`);
+      const loser = r.winners === 1 ? (r.execA.startsWith("claim") ? r.execB : r.execA) : null;
+      if (loser && !/already fully claimed \[22023\]/.test(loser)) problems.push(`round ${r.round}: the other executive got "${loser}" instead of the readable "already fully claimed" refusal`);
+    }
+    if (problems.length) throw new Error(`${problems.length} problem(s) in ${rounds.length} rounds:\n${problems.slice(0, 8).join("\n")}`);
   });
 
   // ---- ledger ---------------------------------------------------------------------------------------------
@@ -600,6 +595,7 @@ export default async function finance(t, ctx) {
     const payment = await paymentRow(s.payment1b);
     const memberSummary = await summary("member1");
     return `Expense ${s.r1.expenseId}: purchase ${expense.amount}, approved and paid ${payment.amount}. get_finance_summary.spending adds ${expense.amount} (sum of finance_expenses.amount for approved and settled), while the cash outflow for it is ${payment.amount}, so Spending runs ${money(expense.amount - payment.amount)} above what left the account. `
-      + `For a member, get_finance_summary covers only the rows they can see: member1 gets ${JSON.stringify(memberSummary)}.`;
+      + `For a member, get_finance_summary covers only the rows they can see: member1 gets ${JSON.stringify(memberSummary)}. `
+      + "Deliberate since 20261127050400: the meaning is written in the function's comment and pinned by supabase/tests/80_finance_summary.test.sql.";
   });
 }

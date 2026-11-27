@@ -48,6 +48,7 @@ node scripts/e2e/run.mjs [--only groups,finance] [--json out.json]
 | 60 finance | reimbursement lifecycle with receipts in `finance-private`, club expense, income, funding claims, the five summary cards against a hand-computed ledger, the `create_funding_claim` race |
 | 70 deactivation | a deactivated member with a valid session is refused everywhere; reactivation |
 | 80 anonymous | public concert archive works for a visitor; every table, RPC and bucket in `inventory.json` refuses a visitor |
+| 85 least privilege | an executive, the administrator and a member cannot write the money, attendance, audit and group tables directly (permission denied); the documented gap (finance documents and link tables still insertable) is recorded as a NOTE |
 | 90 admin delete | `admin_delete_member` message for an account with history; clean delete without |
 
 Storage deletes are proven gone three ways: the object is no longer listed, no new signed URL can be made, and a signed URL made
@@ -59,10 +60,12 @@ CDN cache; the suite does not treat that as proof either way, and lists such cas
 Money is never hard-deleted by the app, so a run leaves finance rows behind. In this order:
 
 1. `node scripts/e2e/cleanup.mjs` removes leftover storage objects through the Storage API (a SQL delete would leave the file
-   in object storage). Run it **before** the SQL: some bucket policies only allow a delete while the row still exists. Files that no
-   row refers to any more (the finance-private file-delete defect leaves such files) cannot be listed; pass them with `--paths orphans.json`, produced by
-   `select bucket_id as bucket, name as path from storage.objects where owner_id in (select id::text from auth.users where email like 'e2e-%@example.com')`.
-2. `cleanup.sql` deletes every `[e2e]` row, in foreign-key order, in one transaction. It keeps the accounts.
+   in object storage). Run it **before** the SQL: the recordings, notations and resources policies only allow a delete while the row
+   still exists. The exception is `finance-private`: a file that still has a `finance_documents` record can only be removed through
+   `remove_finance_document`, which keeps the receipts of decided requests, so the script leaves those and says so (see step 2b).
+2. `cleanup.sql` deletes every `[e2e]` row, in foreign-key order, in one transaction. It keeps the accounts (and the roles the suite gave them:
+   section 00 demotes the two executives before it promotes them again, so a second run still observes a real promotion).
+   2b. Run `node scripts/e2e/cleanup.mjs` again: the `finance-private` files are now unregistered, and an executive can see and delete them.
 3. `cleanup-check.sql` lists what is left (all zero apart from the accounts).
 4. `cleanup-accounts.sql` removes the accounts themselves when you retire the fixtures.
 
@@ -70,8 +73,8 @@ Money is never hard-deleted by the app, so a run leaves finance rows behind. In 
 
 * `latency.mjs`: 10 timed runs per screen call, as a member and as an executive, each paired with `GET auth/v1/health` as the network
   floor; also records the gateway's `x-envoy-upstream-service-time` (server-side share). `node scripts/e2e/latency.mjs --json out.json`.
-* `inventory.sql` / `inventory.json`: the table, function and bucket list the anonymous sweep covers. Regenerate after a migration
-  adds a table or function.
+* `inventory.sql` / `inventory.json`: the table, function and bucket list the anonymous sweep (and section 85) covers. Regenerate after a
+  migration adds a table or function, or changes who holds a grant.
 * `lib/`: config, a request log attached to failures (no auth headers), assertions, fixtures, storage helpers.
 * The harness imports `lib/resources-query.ts` and `lib/public-concerts.ts` from the app, so the list and public-archive requests are
   the app's own (Node strips the types).

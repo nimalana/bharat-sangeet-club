@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 // Deletes the storage objects the e2e suite left behind, through the Storage API (the only supported way: a
-// delete in SQL removes the metadata but not the file). Run it BEFORE cleanup.sql, because some bucket
-// policies only allow a delete while the row that refers to the file still exists.
+// delete in SQL removes the metadata but not the file). Run it BEFORE cleanup.sql, because the recordings, notations and
+// resources bucket policies only allow a delete while the row that refers to the file still exists.
 //
 //   SUPABASE_URL=https://<ref>.supabase.co SUPABASE_KEY=sb_publishable_... \
 //   NODE_USE_ENV_PROXY=1 node scripts/e2e/cleanup.mjs [--paths orphans.json]
 //
+// finance-private is the other way round (20261127050200): a file that still has a finance_documents record can only be
+// removed through remove_finance_document, which refuses decided requests, so the receipts of the suite's reimbursements
+// stay until cleanup.sql has removed their records. Then run this script a SECOND time: the file is unregistered, an
+// executive sees it and may delete it. The script says so when it meets such files.
+//
 // It signs in as the e2e accounts, walks each account's folder in every bucket as an executive, and removes what
 // it finds (as the executive, or as the owner when the executive is refused).
-// --paths takes a JSON array of {"bucket": "finance-private", "path": "<uid>/<file>"}: files that no row refers
-// to any more are invisible to every policy, so they cannot be listed. For those it registers the path again
-// as a temporary finance_documents record, deletes the file as an executive, and drops the record. Get the list with
+// --paths takes a JSON array of {"bucket": "<bucket>", "path": "<uid>/<file>"}: files to try by name, for a file the
+// walk could not list. Get the list with
 //   select bucket_id as bucket, name as path from storage.objects
 //   where owner_id in (select id::text from auth.users where email like 'e2e-%@example.com');
 import { readFileSync } from "node:fs";
@@ -73,15 +77,20 @@ for (const bucket of BUCKETS) {
 if (pathsFile) {
   const list = JSON.parse(readFileSync(pathsFile, "utf8"));
   for (const { bucket, path } of list) {
-    if (bucket !== "finance-private") { stuck.push({ bucket, path }); continue; }
-    const temp = await clients.execA.from("finance_documents").insert({ document_type: "other", title: "[e2e] temporary record to delete a file", storage_path: path, mime_type: "image/png", file_size_bytes: 1, uploaded_by: ids.execA }).select("id").single();
-    if (temp.error) { stuck.push({ bucket, path, why: describeError(temp.error) }); continue; }
-    const res = await clients.execA.storage.from(bucket).remove([path]);
-    await clients.execA.from("finance_documents").delete().eq("id", temp.data.id);
-    if (!res.error && (res.data || []).length) removed[bucket] = (removed[bucket] || 0) + 1; else stuck.push({ bucket, path, why: res.error ? describeError(res.error) : "nothing removed" });
+    const owner = Object.entries(ids).find(([, uid]) => path.startsWith(`${uid}/`))?.[0];
+    let done = false;
+    for (const key of ["execA", owner].filter(Boolean)) {
+      const res = await clients[key].storage.from(bucket).remove([path]);
+      if (!res.error && (res.data || []).length) { done = true; break; }
+    }
+    if (done) removed[bucket] = (removed[bucket] || 0) + 1; else stuck.push({ bucket, path, why: "not removed (still registered by a row, or not visible to the executive or the owner)" });
   }
 }
 
+const financeLeft = stuck.filter((x) => x.bucket === "finance-private");
+if (financeLeft.length) console.log(`${financeLeft.length} file(s) in finance-private still have a finance_documents record: run cleanup.sql, then run this script again.`);
 console.log("removed through the Storage API:", JSON.stringify(removed));
-if (stuck.length) { console.log("could not be removed:", JSON.stringify(stuck, null, 1)); process.exitCode = 1; }
+const other = stuck.filter((x) => x.bucket !== "finance-private" || !financeLeft.includes(x));
+if (other.length) { console.log("could not be removed:", JSON.stringify(other, null, 1)); process.exitCode = 1; }
+else if (financeLeft.length) process.exitCode = 1;
 console.log("Now run cleanup.sql on the test project, then cleanup-check.sql to confirm nothing is left.");
