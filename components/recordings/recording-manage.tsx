@@ -3,7 +3,9 @@
 import { useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
 import { friendlyError } from "../../lib/errors";
+import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog } from "../ui/dialog";
@@ -23,20 +25,14 @@ export type ManagedNote = {
 export const recordingBucket = (recording: { storage_bucket?: string }) => recording.storage_bucket || "recordings";
 
 // Storage only lets a file be deleted while its database row still exists, so
-// files always go first. remove() reports nothing when it is refused, so a
-// file that can still be signed afterwards means the delete did not happen.
-async function removeStoredFile(bucket: string, path: string): Promise<string | null> {
-  if (!supabase) return "The portal is not connected.";
-  const { data, error } = await supabase.storage.from(bucket).remove([path]);
-  if (error) return friendlyError(error, "The file could not be deleted.");
-  if (data && data.length > 0) return null;
-  const check = await supabase.storage.from(bucket).createSignedUrl(path, 60);
-  return check.data?.signedUrl ? "The file could not be deleted, so nothing was removed." : null;
-}
+// files always go first. remove() answers a refused delete with an empty list
+// and no error, so an empty answer counts as a failure unless the file can no
+// longer be signed (it is gone: a retry after a partly finished delete).
+const removeFile = (bucket: string, path: string) => removeStoredFile(bucket, path, { confirmGone: true });
 
 export function RecordingManageBar({ recording, user, canManage, notes, notify, onChanged, onRemoved }: {
   recording: ManagedRecording; user: User; canManage: boolean; notes: ManagedNote[];
-  notify: (message: string) => void; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
+  notify: Notify; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
 }) {
   const [dialog, setDialog] = useState<"edit" | "archive" | "restore" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +51,7 @@ export function RecordingManageBar({ recording, user, canManage, notes, notify, 
       raga: text("raga") || null, tala: text("tala") || null, sruthi: text("sruthi") || null, tempo: text("tempo") || null,
     }).eq("id", recording.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
     setDialog(null); notify("Recording details saved"); await onChanged();
   }
 
@@ -64,7 +60,7 @@ export function RecordingManageBar({ recording, user, canManage, notes, notify, 
     setBusy(true);
     const { data, error } = await supabase.from("recordings").update({ status }).eq("id", recording.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to change this recording.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to change this recording."), "error"); return; }
     setDialog(null); notify(status === "archived" ? "Recording archived" : "Recording restored"); await onRemoved();
   }
 
@@ -74,14 +70,14 @@ export function RecordingManageBar({ recording, user, canManage, notes, notify, 
     // 1. notation files, 2. the take itself, 3. the row (notes go with it).
     for (const note of notes) {
       if (!note.storage_path) continue;
-      const problem = await removeStoredFile("recording-notations", note.storage_path);
-      if (problem) { setBusy(false); notify(problem); return; }
+      const problem = await removeFile("recording-notations", note.storage_path);
+      if (problem) { setBusy(false); notify(problem, "error"); return; }
     }
-    const problem = await removeStoredFile("recordings", recording.storage_path);
-    if (problem) { setBusy(false); notify(problem); return; }
+    const problem = await removeFile("recordings", recording.storage_path);
+    if (problem) { setBusy(false); notify(problem, "error"); return; }
     const { data, error } = await supabase.from("recordings").delete().eq("id", recording.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
     setDialog(null); notify("Recording deleted"); await onRemoved();
   }
 
@@ -125,7 +121,7 @@ export function RecordingManageBar({ recording, user, canManage, notes, notify, 
 }
 
 export function NoteActions({ note, user, canManage, notify, onChanged }: {
-  note: ManagedNote; user: User; canManage: boolean; notify: (message: string) => void; onChanged: () => void | Promise<void>;
+  note: ManagedNote; user: User; canManage: boolean; notify: Notify; onChanged: () => void | Promise<void>;
 }) {
   const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -140,7 +136,7 @@ export function NoteActions({ note, user, canManage, notify, onChanged }: {
     setBusy(true);
     const { data, error } = await supabase.from("recording_notes").update(changes).eq("id", note.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this note.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this note."), "error"); return; }
     setDialog(null); notify("Notation saved"); await onChanged();
   }
 
@@ -148,12 +144,12 @@ export function NoteActions({ note, user, canManage, notify, onChanged }: {
     if (!supabase) return;
     setBusy(true);
     if (note.storage_path) {
-      const problem = await removeStoredFile("recording-notations", note.storage_path);
-      if (problem) { setBusy(false); notify(problem); return; }
+      const problem = await removeFile("recording-notations", note.storage_path);
+      if (problem) { setBusy(false); notify(problem, "error"); return; }
     }
     const { data, error } = await supabase.from("recording_notes").delete().eq("id", note.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "The notation could not be deleted.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "The notation could not be deleted."), "error"); return; }
     setDialog(null); notify("Notation deleted"); await onChanged();
   }
 

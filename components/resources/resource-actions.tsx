@@ -2,7 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { friendlyError } from "../../lib/errors";
+import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog } from "../ui/dialog";
@@ -23,7 +25,7 @@ type Pending = "edit" | "visibility" | "archive" | "restore" | "delete" | null;
 // group's member-visible items); the database enforces it either way.
 export function ResourceActions({ item, canManage, isExecutive, childCount, notify, onChanged, onRemoved }: {
   item: ManagedResource; canManage: boolean; isExecutive: boolean; childCount: number;
-  notify: (message: string) => void; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
+  notify: Notify; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
 }) {
   const [pending, setPending] = useState<Pending>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +48,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
     setBusy(true);
     const { data, error } = await supabase.from("resources").update(changes).eq("id", item.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this resource.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this resource."), "error"); return; }
     setPending(null); notify("Resource updated"); await onChanged();
   }
 
@@ -55,7 +57,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
     setBusy(true);
     const { data, error } = await supabase.from("resources").update({ is_pinned: !item.is_pinned }).eq("id", item.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to pin this resource.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to pin this resource."), "error"); return; }
     notify(item.is_pinned ? "Unpinned" : "Pinned to the top"); await onChanged();
   }
 
@@ -64,7 +66,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
     setBusy(true);
     const { error } = await supabase.rpc("set_resource_visibility", { p_resource_id: item.id, p_visibility: nextVisibility });
     setBusy(false);
-    if (error) { notify(friendlyError(error, "Visibility could not be changed.")); return; }
+    if (error) { notify(friendlyError(error, "Visibility could not be changed."), "error"); return; }
     setPending(null); notify(nextVisibility === "executives" ? "Now visible to executives only" : "Now visible to members"); await onChanged();
   }
 
@@ -73,7 +75,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
     setBusy(true);
     const { error } = await supabase.rpc("set_resource_archived", { p_resource_id: item.id, p_archived: archived });
     setBusy(false);
-    if (error) { notify(friendlyError(error, "That change could not be saved.")); return; }
+    if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
     setPending(null); notify(archived ? `The ${noun} was archived` : `The ${noun} was restored`); await onRemoved();
   }
 
@@ -83,16 +85,13 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
     if (item.node_kind === "file" && item.storage_path) {
       // File first: storage only allows the delete while the row exists.
       const bucket = item.storage_bucket || "club-resources";
-      const removed = await supabase.storage.from(bucket).remove([item.storage_path]);
-      if (removed.error) { setBusy(false); notify(friendlyError(removed.error, "The file could not be deleted.")); return; }
-      if (!removed.data?.length) {
-        const still = await supabase.storage.from(bucket).createSignedUrl(item.storage_path, 60);
-        if (still.data?.signedUrl) { setBusy(false); notify("The file could not be deleted, so nothing was removed."); return; }
-      }
+      // An empty answer from storage is a refused delete, not a success (see lib/storage-remove.ts).
+      const problem = await removeStoredFile(bucket, item.storage_path, { confirmGone: true });
+      if (problem) { setBusy(false); notify(problem, "error"); return; }
     }
     const { data, error } = await supabase.from("resources").delete().eq("id", item.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, `The ${noun} could not be deleted.`)); return; }
+    if (error || !data?.length) { notify(friendlyError(error, `The ${noun} could not be deleted.`), "error"); return; }
     setPending(null); notify(unfinished ? "Upload discarded" : `The ${noun} was deleted`); await onRemoved();
   }
 

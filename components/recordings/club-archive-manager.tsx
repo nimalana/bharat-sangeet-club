@@ -3,7 +3,9 @@
 import { useState, type FormEvent } from "react";
 import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../lib/archive-sharing";
 import { friendlyError } from "../../lib/errors";
+import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
@@ -30,7 +32,7 @@ async function isInRecordingRoom(storagePath: string): Promise<{ shared: boolean
 // Executives manage them here: add, edit, change who can see them, delete.
 export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: {
   items: ClubArchiveItem[]; groups: Array<{ id: number; name: string }>;
-  onAdd: () => void; onChanged: () => void | Promise<void>; notify: (message: string) => void;
+  onAdd: () => void; onChanged: () => void | Promise<void>; notify: Notify;
 }) {
   const [editing, setEditing] = useState<ClubArchiveItem | null>(null);
   const [deleting, setDeleting] = useState<ClubArchiveItem | null>(null);
@@ -41,7 +43,7 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: 
   async function play(item: ClubArchiveItem) {
     if (!supabase) return;
     const { data, error } = await supabase.storage.from("club-archive").createSignedUrl(item.storage_path, 300);
-    if (error || !data) { notify("This file could not be opened"); return; }
+    if (error || !data) { notify("This file could not be opened", "error"); return; }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
@@ -65,7 +67,7 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: 
       event_date: text("event_date") || null, ...accessColumns(access),
     }).eq("id", editing.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
     setEditing(null); notify("Recording updated"); await onChanged();
   }
 
@@ -74,18 +76,15 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: 
     setBusy(true);
     // A group recording copied into the recording room shares this file.
     const room = await isInRecordingRoom(deleting.storage_path);
-    if (room.error) { setBusy(false); notify(friendlyError(room.error, "The recording could not be checked.")); return; }
+    if (room.error) { setBusy(false); notify(friendlyError(room.error, "The recording could not be checked."), "error"); return; }
     if (room.shared) { setBusy(false); setDeleting(null); setSharedDelete(true); return; }
-    // File first: storage only allows the delete while the row exists.
-    const removed = await supabase.storage.from("club-archive").remove([deleting.storage_path]);
-    if (removed.error) { setBusy(false); notify(friendlyError(removed.error, "The file could not be deleted.")); return; }
-    if (!removed.data?.length) {
-      const still = await supabase.storage.from("club-archive").createSignedUrl(deleting.storage_path, 60);
-      if (still.data?.signedUrl) { setBusy(false); notify("The file could not be deleted, so nothing was removed."); return; }
-    }
+    // File first: storage only allows the delete while the row exists. An empty answer from
+    // storage is a refused delete, not a success (see lib/storage-remove.ts).
+    const problem = await removeStoredFile("club-archive", deleting.storage_path, { confirmGone: true });
+    if (problem) { setBusy(false); notify(problem, "error"); return; }
     const { data, error } = await supabase.from("archive_items").delete().eq("id", deleting.id).select("id");
     setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted.")); return; }
+    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
     setDeleting(null); notify("Recording deleted"); await onChanged();
   }
 

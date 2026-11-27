@@ -3,7 +3,10 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { friendlyError } from "../../lib/errors";
+import { createRequestGate } from "../../lib/request-gate";
+import { createSingleFlight } from "../../lib/single-flight";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog } from "../ui/dialog";
@@ -19,6 +22,7 @@ type RosterRow = { member_id: string; full_name: string; email: string; status: 
 type Candidate = { id: string; full_name: string; email: string };
 type Pending =
   | { kind: "remove"; row: RosterRow }
+  | { kind: "decline"; row: RosterRow }
   | { kind: "leave" }
   | { kind: "archive" }
   | null;
@@ -45,13 +49,17 @@ export function groupCapabilities(clubRole: ClubRole, myRole: GroupRole | null) 
 
 export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft, notify }: {
   user: User; role: ClubRole; group: ManagedGroup; myRole: GroupRole | null; isMember: boolean;
-  onGroupChanged: () => void | Promise<void>; onLeft: () => void; notify: (message: string) => void;
+  onGroupChanged: () => void | Promise<void>; onLeft: () => void; notify: Notify;
 }) {
   const can = groupCapabilities(role, myRole);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [busyKey, setBusyKey] = useState("");
+  // `busyKey` shows which change is running; `flight` stops a second click before the next render.
+  const [flight] = useState(createSingleFlight);
+  // Reloads follow every change and can overlap; only the newest answer may replace the roster.
+  const [loadGate] = useState(createRequestGate);
   const [pending, setPending] = useState<Pending>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -60,11 +68,13 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
 
   const loadRoster = useCallback(async () => {
     if (!supabase) return;
+    const isCurrent = loadGate.begin();
     const { data, error } = await supabase.rpc("list_subgroup_roster", { p_subgroup_id: group.id });
+    if (!isCurrent()) return;
     if (error) setLoadError(friendlyError(error, "The roster could not be loaded."));
     else { setLoadError(""); setRoster((data || []) as RosterRow[]); }
     setLoading(false);
-  }, [group.id]);
+  }, [group.id, loadGate]);
 
   // The loader synchronizes remote Supabase state into this client component.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -74,13 +84,19 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
   const members = roster.filter((row) => row.status === "active");
 
   async function run(key: string, action: () => PromiseLike<{ error: { message?: string; code?: string } | null }>, success: string) {
-    if (busyKey) return false;
-    setBusyKey(key);
-    const { error } = await action();
-    setBusyKey("");
-    if (error) { notify(friendlyError(error)); return false; }
-    notify(success);
-    return true;
+    const outcome = await flight.run(async () => {
+      setBusyKey(key);
+      try {
+        const { error } = await action();
+        if (error) { notify(friendlyError(error), "error"); return false; }
+        notify(success);
+        return true;
+      } catch {
+        notify("The change could not be saved. Check your connection and try again.", "error");
+        return false;
+      } finally { setBusyKey(""); }
+    });
+    return outcome.ran && outcome.value;
   }
 
   async function review(row: RosterRow, decision: "approve" | "waitlist" | "decline") {
@@ -100,7 +116,11 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
 
   async function confirmPending() {
     const client = supabase; if (!client || !pending) return;
-    if (pending.kind === "remove") {
+    if (pending.kind === "decline") {
+      const row = pending.row;
+      await review(row, "decline");
+      setPending(null);
+    } else if (pending.kind === "remove") {
       const row = pending.row;
       await run("confirm", () => client.rpc("remove_subgroup_member", { p_subgroup_id: group.id, p_member_id: row.member_id }), `${row.full_name || row.email} was removed from ${group.name}`);
       setPending(null); await loadRoster();
@@ -120,7 +140,7 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
     setShowAdd(true); setCandidateQuery("");
     if (!supabase) return;
     const { data, error } = await supabase.from("profiles").select("id,full_name,email").eq("status", "active").order("full_name").limit(1000);
-    if (error) notify(friendlyError(error, "Members could not be loaded.")); else setCandidates((data || []) as Candidate[]);
+    if (error) notify(friendlyError(error, "Members could not be loaded."), "error"); else setCandidates((data || []) as Candidate[]);
   }
 
   async function addMember(candidate: Candidate) {
@@ -136,15 +156,18 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
     const nextName = String(form.get("name") || "");
     const nextDescription = String(form.get("description") || "");
     const nextMode = String(form.get("enrollment_mode") || group.enrollment_mode) as EnrollmentMode;
-    if (busyKey) return;
-    setBusyKey("settings");
-    const updated = await client.rpc("update_subgroup", { p_subgroup_id: group.id, p_name: nextName, p_description: nextDescription });
-    const modeResult = !updated.error && can.canChangeEnrollment && nextMode !== group.enrollment_mode
-      ? await client.rpc("set_subgroup_enrollment_mode", { p_subgroup_id: group.id, p_mode: nextMode })
-      : { error: null };
-    setBusyKey("");
-    const error = updated.error || modeResult.error;
-    if (error) { notify(friendlyError(error)); return; }
+    const outcome = await flight.run(async () => {
+      setBusyKey("settings");
+      try {
+        const updated = await client.rpc("update_subgroup", { p_subgroup_id: group.id, p_name: nextName, p_description: nextDescription });
+        const modeResult = !updated.error && can.canChangeEnrollment && nextMode !== group.enrollment_mode
+          ? await client.rpc("set_subgroup_enrollment_mode", { p_subgroup_id: group.id, p_mode: nextMode })
+          : { error: null };
+        return updated.error || modeResult.error;
+      } finally { setBusyKey(""); }
+    });
+    if (!outcome.ran) return;
+    if (outcome.value) { notify(friendlyError(outcome.value), "error"); return; }
     setShowSettings(false); notify("Group settings saved"); await onGroupChanged();
   }
 
@@ -175,8 +198,8 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
           <div className="min-w-0"><b className="block truncate text-sm">{row.full_name || row.email}</b><small className="block truncate text-xs text-[#4c5f6b]">{row.email}{row.status === "waitlisted" ? " · Waitlisted" : ""}</small></div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={Boolean(busyKey)} onClick={() => review(row, "approve")}>{busyKey === `approve-${row.member_id}` ? "Approving…" : "Approve"}</Button>
-            {row.status === "pending" && <Button size="sm" variant="secondary" disabled={Boolean(busyKey)} onClick={() => review(row, "waitlist")}>Waitlist</Button>}
-            <Button size="sm" variant="danger" disabled={Boolean(busyKey)} onClick={() => review(row, "decline")}>Decline</Button>
+            {row.status === "pending" && <Button size="sm" variant="secondary" disabled={Boolean(busyKey)} onClick={() => review(row, "waitlist")}>{busyKey === `waitlist-${row.member_id}` ? "Waitlisting…" : "Waitlist"}</Button>}
+            <Button size="sm" variant="danger" disabled={Boolean(busyKey)} onClick={() => setPending({ kind: "decline", row })}>{busyKey === `decline-${row.member_id}` ? "Declining…" : "Decline"}</Button>
           </div>
         </li>)}
       </ul>
@@ -192,6 +215,9 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
       </li>)}
     </ul> : !loadError && <p className="workspace-empty mt-4">No one is in this group yet.</p>}
 
+    <ConfirmDialog open={pending?.kind === "decline"} title="Decline this request?" confirmLabel="Decline request" danger busy={busyKey.startsWith("decline-")} onConfirm={confirmPending} onCancel={() => setPending(null)}>
+      {pending?.kind === "decline" && <p className="m-0">{pending.row.full_name || pending.row.email} will not be added to {group.name}. They can ask to join again later.</p>}
+    </ConfirmDialog>
     <ConfirmDialog open={pending?.kind === "remove"} title="Remove from group?" confirmLabel="Remove member" danger busy={busyKey === "confirm"} onConfirm={confirmPending} onCancel={() => setPending(null)}>
       {pending?.kind === "remove" && <p className="m-0">{pending.row.full_name || pending.row.email} will lose access to {group.name}. Their past attendance is kept. They cannot rejoin on their own; an executive can add them back.</p>}
     </ConfirmDialog>

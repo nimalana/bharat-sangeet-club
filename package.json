@@ -13,7 +13,7 @@
     "test:db": "scripts/db-replay.sh",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "test:unit": "node --test tests/dates.test.mjs tests/admin-permission-parity.test.mjs tests/resource-links.test.mjs tests/unified-resources-schema.test.mjs tests/resources-query.test.mjs tests/public-concerts.test.mjs tests/sections.test.mjs tests/bootstrap.test.mjs tests/load-state.test.mjs tests/shell-resilience.test.mjs tests/archive-sharing.test.mjs tests/refresh-wiring.test.mjs tests/finance-summary.test.mjs tests/single-flight.test.mjs tests/toast.test.mjs tests/storage-remove.test.mjs tests/finance-wiring.test.mjs tests/shell-wiring.test.mjs"
+    "test:unit": "node --test tests/dates.test.mjs tests/admin-permission-parity.test.mjs tests/resource-links.test.mjs tests/unified-resources-schema.test.mjs tests/resources-query.test.mjs tests/public-concerts.test.mjs tests/sections.test.mjs tests/bootstrap.test.mjs tests/load-state.test.mjs tests/shell-resilience.test.mjs tests/archive-sharing.test.mjs tests/refresh-wiring.test.mjs tests/finance-summary.test.mjs tests/single-flight.test.mjs tests/toast.test.mjs tests/storage-remove.test.mjs tests/finance-wiring.test.mjs tests/shell-wiring.test.mjs tests/people-recordings-wiring.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.6",

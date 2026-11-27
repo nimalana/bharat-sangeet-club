@@ -6,8 +6,11 @@ import { useDropzone, type DropzoneOptions } from "react-dropzone";
 import WaveSurfer from "wavesurfer.js";
 import * as Tone from "tone";
 import { readCache, writeCache } from "../../lib/cache";
+import { friendlyError } from "../../lib/errors";
 import { createRequestGate } from "../../lib/request-gate";
+import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { LoadErrorBanner } from "../ui/load-error";
@@ -41,7 +44,7 @@ type Recording = {
   published_at: string | null;
 };
 type RecordingNote = { id: number; recording_id: number; title: string; note_type: "text" | "file"; body: string; storage_path: string | null; mime_type: string | null; uploaded_by?: string };
-type WorkspaceProps = { user: User; groups: Group[]; memberships: Membership[]; canManage: boolean; initialScope?: Scope; notify: (message: string) => void; onDataChanged?: () => void };
+type WorkspaceProps = { user: User; groups: Group[]; memberships: Membership[]; canManage: boolean; initialScope?: Scope; notify: Notify; onDataChanged?: () => void };
 type Scope = "all" | number;
 
 const TONICS = [
@@ -215,7 +218,7 @@ function WaveformPlayer({ url, compact = false }: { url: string; compact?: boole
   return <div className={`waveform-player ${compact ? "compact" : ""}`}><div className="waveform-canvas" ref={container} /><div className="waveform-controls"><button type="button" className="waveform-play" onClick={() => wave.current?.playPause()} disabled={!ready} aria-label={playing ? "Pause" : "Play"}>{playing ? "Ⅱ" : "▶"}</button><button type="button" onClick={() => seekBy(-10)} disabled={!ready}>−10</button><span className="waveform-time">{formatDuration(time)} / {formatDuration(duration)}</span><button type="button" onClick={() => seekBy(10)} disabled={!ready}>＋10</button><label><span>Speed</span><select value={speed} onChange={changeSpeed} disabled={!ready}><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div></div>;
 }
 
-function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }: { user: User; groups: Group[]; draft: Recording | null; notify: (message: string) => void; onClose: () => void; onSaved: () => Promise<void> }) {
+function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }: { user: User; groups: Group[]; draft: Recording | null; notify: Notify; onClose: () => void; onSaved: () => Promise<void> }) {
   const [mode, setMode] = useState<"upload" | "record-audio" | "record-video">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
@@ -298,37 +301,57 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
 
   async function save(status: "draft" | "published") {
     if (!supabase) return;
-    if (!title.trim()) { notify("Give this recording a title first"); return; }
-    if (!groupId) { notify("Choose a subgroup for this recording"); return; }
-    if (!file && !draft) { notify("Upload a file or record something before saving"); return; }
+    if (!title.trim()) { notify("Give this recording a title first", "error"); return; }
+    if (!groupId) { notify("Choose a subgroup for this recording", "error"); return; }
+    if (!file && !draft) { notify("Upload a file or record something before saving", "error"); return; }
     setSaving(true);
     let storagePath = draft?.storage_path || "";
+    // What this save has put in storage and what the database now points at. A failure cleans up
+    // only files that no row refers to; removing the take of a recording that was saved would
+    // leave a recording that cannot play.
+    let uploadedTake = false;
+    let recordSaved = false;
+    let notationPath: string | null = null;
+    let notationUploaded = false;
+    let noteSaved = false;
     try {
       if (file) {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
         storagePath = `${user.id}/subgroups/${groupId}/${crypto.randomUUID()}-${safeName}`;
         const upload = await supabase.storage.from("recordings").upload(storagePath, file, { contentType: file.type, upsert: false });
         if (upload.error) throw upload.error;
+        uploadedTake = true;
       }
       const payload = { title: title.trim(), description: description.trim(), subgroup_id: groupId, storage_path: storagePath, mime_type: file?.type || draft?.mime_type || (mediaKind === "video" ? "video/webm" : "audio/webm"), media_kind: mediaKind, status, audience: "subgroup", recording_kind: recordingKind, raga: raga.trim() || null, tala: tala.trim() || null, sruthi: sruthi.trim() || null, tempo: tempo.trim() || null, duration_seconds: recordingSeconds || draft?.duration_seconds || null, published_at: status === "published" ? new Date().toISOString() : null, updated_at: new Date().toISOString() };
       const result = draft ? await supabase.from("recordings").update(payload).eq("id", draft.id) : await supabase.from("recordings").insert({ ...payload, uploaded_by: user.id }).select("id").single();
       if (result.error) throw result.error;
+      recordSaved = true;
       const recordingId = draft?.id || (result.data as { id: number } | null)?.id;
       if (recordingId && (notationText.trim() || notationFile)) {
-        let notationPath: string | null = null;
         if (notationFile) {
           const safeName = notationFile.name.replace(/[^a-zA-Z0-9._-]/g, "-");
           notationPath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
           const notationUpload = await supabase.storage.from("recording-notations").upload(notationPath, notationFile, { contentType: notationFile.type, upsert: false });
           if (notationUpload.error) throw notationUpload.error;
+          notationUploaded = true;
         }
         const noteResult = await supabase.from("recording_notes").insert({ recording_id: recordingId, title: notationFile?.name || "Notation", note_type: notationFile ? "file" : "text", body: notationText.trim(), storage_path: notationPath, mime_type: notationFile?.type || null, uploaded_by: user.id });
         if (noteResult.error) throw noteResult.error;
+        noteSaved = true;
       }
       notify(status === "published" ? "Published to your subgroup" : "Draft saved"); await onSaved();
     } catch (error) {
-      if (storagePath && file) await supabase.storage.from("recordings").remove([storagePath]);
-      notify(error instanceof Error ? error.message : "This recording could not be saved");
+      const reason = friendlyError(error as { message?: string; code?: string }, "This recording could not be saved");
+      // Files that no row refers to are removed. Storage answers a refused delete with an empty list, so say when one stays.
+      const leftovers: string[] = [];
+      if (uploadedTake && !recordSaved) { const problem = await removeStoredFile("recordings", storagePath); if (problem) leftovers.push("The uploaded take could not be removed from storage."); }
+      if (notationUploaded && !noteSaved && notationPath) { const problem = await removeStoredFile("recording-notations", notationPath); if (problem) leftovers.push("The uploaded notation file could not be removed from storage."); }
+      const afterwards = leftovers.length ? ` ${leftovers.join(" ")} An administrator may need to clean up.` : "";
+      if (recordSaved) {
+        // The recording exists; closing the studio stops a second save from creating a duplicate.
+        notify(`The recording was saved, but its notation could not be added: ${reason}${afterwards}`, "error");
+        await onSaved();
+      } else notify(`${reason}${afterwards}`, "error");
     } finally { setSaving(false); }
   }
 
@@ -343,22 +366,28 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
     </div><form className="studio-form" onSubmit={(event) => { event.preventDefault(); void save("published"); }}><label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Wednesday rehearsal, varnam take 2" required /></label><label>Subgroup<select value={groupId} onChange={(event) => setGroupId(Number(event.target.value))}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="form-pair"><label>Recording type<select value={recordingKind} onChange={(event) => setRecordingKind(event.target.value)}><option value="practice">Practice</option><option value="rehearsal">Rehearsal</option><option value="lesson">Lesson</option><option value="performance">Performance</option><option value="workshop">Workshop</option></select></label><label>Tempo / laya<input value={tempo} onChange={(event) => setTempo(event.target.value)} placeholder="Madhyama, 96 bpm" /></label></div><div className="form-pair"><label>Raga / raag<input value={raga} onChange={(event) => setRaga(event.target.value)} placeholder="Bhairavi / Bhairav" /></label><label>Tala / taal<input value={tala} onChange={(event) => setTala(event.target.value)} placeholder="Adi / Teentaal" /></label></div><div className="form-pair"><label>Sruthi / tonic<input value={sruthi} onChange={(event) => setSruthi(event.target.value)} placeholder="C, D, or 1 kattai" /></label><label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What should the group listen for?" /></label></div><label>Notation text<textarea value={notationText} onChange={(event) => setNotationText(event.target.value)} rows={5} placeholder="Add lyrics, sahitya, swara, sargam, bols, or rehearsal notes" /></label><label className="notation-file-input">Notation file<input type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(event) => setNotationFile(event.target.files?.[0] || null)} /><small>{notationFile ? notationFile.name : "Optional PDF, DOC, DOCX, image, or text file"}</small></label><div className="studio-publish-note"><span className="scope-dot" /> Publishing shares this recording with <strong>{groups.find((group) => group.id === groupId)?.name || "your subgroup"}</strong> only.</div><div className="studio-actions"><Button variant="secondary" type="button" onClick={() => void save("draft")} disabled={saving || (!file && !draft)}>{saving ? "Saving…" : "Save draft"}</Button><Button type="submit" disabled={saving || (!file && !draft)}>{saving ? "Publishing…" : "Publish to subgroup"}</Button></div></form></div></Dialog>;
 }
 
-function RecordingDetailDialog({ recording, user, canManage, groups, notify, onChanged, onRemoved, onClose }: { recording: Recording; user: User; canManage: boolean; groups: Group[]; notify: (message: string) => void; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>; onClose: () => void }) {
+function RecordingDetailDialog({ recording, user, canManage, groups, notify, onChanged, onRemoved, onClose }: { recording: Recording; user: User; canManage: boolean; groups: Group[]; notify: Notify; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState<RecordingNote[]>([]);
+  // Every note change reloads the list; only the newest answer may replace it.
+  const [notesGate] = useState(createRequestGate);
   const group = groups.find((item) => item.id === recording.subgroup_id);
   const recordingId = recording.id;
   const storagePath = recording.storage_path;
   const bucket = recordingBucket(recording);
   const loadNotes = useCallback(async () => {
     if (!supabase) return;
+    const isCurrent = notesGate.begin();
     const { data, error } = await supabase.from("recording_notes").select("*").eq("recording_id", recordingId).order("created_at");
-    if (!error) setNotes((data || []) as RecordingNote[]);
-  }, [recordingId]);
+    if (!isCurrent()) return;
+    // A failed reload keeps the notation already shown.
+    if (error) { notify("The notation could not be refreshed, so the list may be out of date.", "error"); return; }
+    setNotes((data || []) as RecordingNote[]);
+  }, [notesGate, notify, recordingId]);
   useEffect(() => {
     let cancelled = false;
     if (!supabase) return;
-    void supabase.storage.from(bucket).createSignedUrl(storagePath, 1800).then((fileResult) => { if (cancelled) return; if (fileResult.error || !fileResult.data) notify("This recording could not be opened"); else setUrl(fileResult.data.signedUrl); });
+    void supabase.storage.from(bucket).createSignedUrl(storagePath, 1800).then((fileResult) => { if (cancelled) return; if (fileResult.error || !fileResult.data) notify("This recording could not be opened", "error"); else setUrl(fileResult.data.signedUrl); });
     return () => { cancelled = true; };
   }, [notify, bucket, storagePath]);
   // The loader synchronizes remote Supabase state into this client component.
@@ -367,7 +396,7 @@ function RecordingDetailDialog({ recording, user, canManage, groups, notify, onC
   async function openNote(note: RecordingNote) {
     if (!note.storage_path || !supabase) return;
     const { data, error } = await supabase.storage.from("recording-notations").createSignedUrl(note.storage_path, 900);
-    if (error || !data) notify("This notation file could not be opened"); else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    if (error || !data) notify("This notation file could not be opened", "error"); else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
   return <Dialog open onClose={onClose} className="recording-detail-dialog"><div className="studio-heading"><div><p className="eyebrow">{group?.name || "SUBGROUP"} · {recording.recording_kind}</p><h2>{recording.title}</h2><p>{[recording.raga, recording.tala, recording.sruthi, recording.tempo].filter(Boolean).join(" · ") || recording.description || "No musical details added yet."}</p></div><Button variant="ghost" size="sm" onClick={onClose} aria-label="Close recording">×</Button></div>{url ? recording.media_kind === "video" ? <video className="recording-detail-video" src={url} controls playsInline><track kind="captions" srcLang="en" label="Recording captions" /></video> : <WaveformPlayer url={url} /> : <div className="recording-preview-loading">Loading the recording…</div>}<div className="recording-detail-meta"><span>{recording.description || "Shared with this subgroup"}</span><time>{formatDate(recording.published_at || recording.created_at)}</time></div><section className="notation-panel"><div className="notation-panel-heading"><div><p className="eyebrow">FOLLOW ALONG</p><h3>Notation and notes</h3></div><span>{notes.length}</span></div>{notes.length ? notes.map((note) => <article className="notation-item" key={note.id}>{note.note_type === "file" ? <button type="button" onClick={() => void openNote(note)}><span>▤</span>{note.title}<i>Open file →</i></button> : <><h4>{note.title}</h4><p>{note.body}</p></>}<NoteActions note={note} user={user} canManage={canManage} notify={notify} onChanged={loadNotes} /></article>) : <p className="notation-empty">No notation attached yet.</p>}</section><RecordingManageBar recording={recording} user={user} canManage={canManage} notes={notes} notify={notify} onChanged={onChanged} onRemoved={onRemoved} /></Dialog>;
 }
