@@ -50,7 +50,7 @@ begin
   message := test.error_as(v_admin, format('select public.admin_deactivate_member(%L, ''Graduated'')', v_member));
   assert message is null, 'admin deactivates: ' || coalesce(message, '');
   assert (select status from public.profiles where id = v_member) = 'deactivated';
-  assert (select m.status from public.subgroup_memberships m where m.member_id = v_member and m.subgroup_id = v_group) = 'removed', 'memberships are marked removed';
+  assert (select m.status from public.subgroup_memberships m where m.member_id = v_member and m.subgroup_id = v_group) = 'inactive', 'memberships are marked inactive, not removed';
   assert (select m.membership_role from public.subgroup_memberships m where m.member_id = v_member and m.subgroup_id = v_group) = 'member', 'manager role is dropped';
   assert (select count(*) from public.admin_audit_log where target_id = v_member and action = 'member_deactivated' and details ->> 'reason' = 'Graduated') = 1, 'deactivation is audited';
   assert (select count(*) from public.personal_reimbursements r where r.member_id = v_member) = 1, 'finance history is kept';
@@ -99,7 +99,8 @@ begin
   assert n = 0, 'deactivated members are left off the roster';
   assert exists (select 1 from public.attendance_session_participants p where p.session_id = v_session and p.member_id = v_other), 'active members are on the roster';
 
-  -- Reactivate: access returns, group memberships do not.
+  -- Reactivate: access returns; group memberships are not restored (the
+  -- person asks to join again, 70_deactivation_memberships.test.sql).
   message := test.error_as(v_exec, format('select public.admin_reactivate_member(%L)', v_member));
   assert message like 'Only administrators%';
   perform test.login(v_admin);
