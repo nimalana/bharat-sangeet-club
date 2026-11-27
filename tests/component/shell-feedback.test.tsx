@@ -13,7 +13,7 @@
 //     hooks without it. The loading fallback of each code-split screen is in shell-code-split.test.tsx.)
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import RootError from "../../app/error";
 import { SectionBoundary } from "../../components/ui/section-boundary";
 import { advance } from "../support/helpers";
@@ -120,7 +120,7 @@ describe("failures stay longer than confirmations, and a newer toast takes over 
 });
 
 describe("a screen that fails to render does not take the portal with it", () => {
-  let errors: ReturnType<typeof vi.spyOn>;
+  let errors: MockInstance<typeof console.error>;
   beforeEach(() => { errors = vi.spyOn(console, "error").mockImplementation(() => {}); });
   afterEach(() => errors.mockRestore());
 
@@ -169,7 +169,7 @@ describe("a screen that fails to render does not take the portal with it", () =>
 });
 
 describe("the error page (anything left over)", () => {
-  let errors: ReturnType<typeof vi.spyOn>;
+  let errors: MockInstance<typeof console.error>;
   beforeEach(() => { errors = vi.spyOn(console, "error").mockImplementation(() => {}); });
   afterEach(() => errors.mockRestore());
 
