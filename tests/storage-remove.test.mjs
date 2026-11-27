@@ -82,3 +82,33 @@ test("a storage error is described, and a thrown network error does not escape",
   const thrown = fakeClient({ removeThrows: true });
   assert.equal(await removeAndVerify(thrown.client, "b", "p", { describeError }), "ERR:Failed to fetch");
 });
+
+// A finance document's record is deleted before its file. When the file then cannot be
+// deleted, "try again" is wrong (the record is gone): the person must be told the file is
+// still stored, whether storage refused (empty list), answered with an error, or the call threw.
+const LEFT_BEHIND = "The document was removed, but its file is still stored.";
+
+test("failedMessage replaces the retry hint when storage answers with an error", async () => {
+  const { client } = fakeClient({ removeAnswer: { data: null, error: { message: "Bucket not found" } } });
+  assert.equal(await removeAndVerify(client, "finance-private", "u/p.pdf", { describeError, failedMessage: LEFT_BEHIND }), LEFT_BEHIND);
+});
+
+test("failedMessage replaces the retry hint when the call throws (no network)", async () => {
+  const { client } = fakeClient({ removeThrows: true });
+  assert.equal(await removeAndVerify(client, "finance-private", "u/p.pdf", { describeError, failedMessage: LEFT_BEHIND }), LEFT_BEHIND);
+});
+
+test("a refused delete, an error and a throw can all say the same thing", async () => {
+  const options = { describeError, refusedMessage: LEFT_BEHIND, failedMessage: LEFT_BEHIND };
+  for (const fake of [
+    fakeClient({ removeAnswer: { data: [], error: null } }),
+    fakeClient({ removeAnswer: { data: null, error: { message: "boom" } } }),
+    fakeClient({ removeAnswer: { data: undefined, error: { message: "boom" } } }),
+    fakeClient({ removeThrows: true }),
+  ]) assert.equal(await removeAndVerify(fake.client, "finance-private", "u/p.pdf", options), LEFT_BEHIND);
+});
+
+test("failedMessage says nothing when the file was deleted", async () => {
+  const { client } = fakeClient({ removeAnswer: { data: [{ name: "u/p.pdf" }], error: null } });
+  assert.equal(await removeAndVerify(client, "finance-private", "u/p.pdf", { describeError, refusedMessage: LEFT_BEHIND, failedMessage: LEFT_BEHIND }), null, "no warning for a deleted file");
+});

@@ -99,3 +99,17 @@ test("finance: removing a document reports a refused file delete instead of sayi
   assert.doesNotMatch(finance, /storage\.from\("finance-private"\)\.remove/);
 });
 
+test("finance: a file that cannot be deleted after its record is gone says so, never 'try again' (round 3)", async () => {
+  const finance = await read("app/finance.tsx");
+  const ask = functionSource(finance, "FinancePage").match(/function askRemoveDocument[\s\S]*?\n {2}\}\n/)[0];
+  // Refused (empty answer), a storage error and a network failure all get the same sentence.
+  assert.match(ask, /removeStoredFile\("finance-private", removed\.data, \{ refusedMessage: FILE_LEFT_IN_STORAGE, failedMessage: FILE_LEFT_IN_STORAGE \}\)/);
+  const sentence = finance.match(/const FILE_LEFT_IN_STORAGE = "([^"]+)"/)[1];
+  assert.match(sentence, /removed from the request/);
+  assert.match(sentence, /still in storage/);
+  assert.doesNotMatch(sentence, /try again|retry/i);
+  // The record is deleted first; only a delete that really happened leaves no warning.
+  assert.ok(ask.indexOf('rpc("remove_finance_document"') < ask.indexOf("removeStoredFile("), "record first, file after");
+  assert.match(ask, /if \(removed\.error \|\| typeof removed\.data !== "string"\) return \{ error: removed\.error \};/);
+});
+

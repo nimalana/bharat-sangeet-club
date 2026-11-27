@@ -57,6 +57,8 @@ type FinanceSummary = { available_cash: number; income: number; spending: number
 const reasonField = (label = "Reason"): FormField => ({ name: "reason", label, type: "textarea", required: true, minLength: 3, maxLength: 500, placeholder: "Kept in the audit trail" });
 type FinanceSnapshot = { expenses: Expense[]; reimbursements: Reimbursement[]; payments: Payment[]; documents: FinanceDocument[]; expenseDocuments: ExpenseDocument[]; reimbursementDocuments: ReimbursementDocument[]; claims: FundingClaim[]; claimExpenses: ClaimExpense[]; claimDocuments: ClaimDocument[]; profiles: Profile[]; summary: FinanceSummary | null };
 const LIST_LIMIT = 500;
+// Said after a document's record is removed but its file could not be: a retry cannot help, the record is gone.
+const FILE_LEFT_IN_STORAGE = "The document was removed from the request, but its file is still in storage and could not be deleted. Ask an administrator to remove it.";
 type FinanceModal = "reimbursement" | "expense" | "income" | "claim" | null;
 // One-click changes that need a yes first: paying out money, and sending a claim to the funder (it cannot go back to editing).
 type FinanceConfirm = { kind: "pay"; request: Reimbursement } | { kind: "submit"; claim: FundingClaim } | null;
@@ -480,8 +482,11 @@ export function FinancePage({ user, role, groups, events, notify }: {
         if (removed.error || typeof removed.data !== "string") return { error: removed.error };
         // The record goes first; the file is cleaned up after. Storage answers a refused delete with an
         // empty list and no error, so an empty answer is a failure to report, not a success. The record
-        // is already gone by now, so the dialog still closes; the warning says the file is still stored.
-        const leftover = await removeStoredFile("finance-private", removed.data, { refusedMessage: "The document was removed from the request, but its file is still in storage and could not be deleted. Ask an administrator to remove it." });
+        // is already gone by now, so the dialog still closes. Whatever went wrong with the file (refused,
+        // a storage error, no network), the warning says the record is removed and the file is still
+        // stored; the person is never told to retry. A deleted file (the usual case: the uploader and
+        // the executives can delete an unregistered object) gives no warning.
+        const leftover = await removeStoredFile("finance-private", removed.data, { refusedMessage: FILE_LEFT_IN_STORAGE, failedMessage: FILE_LEFT_IN_STORAGE });
         return { error: null, warning: leftover ?? undefined };
       } });
   }
