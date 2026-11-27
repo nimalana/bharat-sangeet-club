@@ -4,19 +4,25 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../components/admin/member-access";
+import { setCacheOwner } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
-import { AttendancePage } from "./attendance";
-import { FinancePage } from "./finance";
-import { RecordingWorkspace } from "../components/recordings/recording-workspace";
 import { AnnouncementActions, AnnouncementEditor } from "../components/announcements/announcement-actions";
-import { ClubArchiveManager } from "../components/recordings/club-archive-manager";
+import dynamic from "next/dynamic";
 import { GroupPeople } from "../components/subgroups/group-people";
-import { ResourceLibrary } from "./resources";
+
+// Each heavy screen is its own bundle, loaded when it is first opened, so the
+// audio libraries and finance code are not downloaded to read the calendar.
+const SectionLoading = () => <div className="inline-loading">Loading…</div>;
+const AttendancePage = dynamic(() => import("./attendance").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
+const FinancePage = dynamic(() => import("./finance").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
+const ResourceLibrary = dynamic(() => import("./resources").then((module) => module.ResourceLibrary), { ssr: false, loading: SectionLoading });
+const RecordingWorkspace = dynamic(() => import("../components/recordings/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
+const ClubArchiveManager = dynamic(() => import("../components/recordings/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false });
 
 type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "admin";
 type ClubRole = "member" | "executive" | "admin";
@@ -35,6 +41,7 @@ type EnrollmentMode = "open" | "approval" | "invite";
 type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive" | "removed";
 type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode; archived_at: string | null };
 type SubgroupMembership = { subgroup_id: number; member_id: string; status: MembershipStatus; membership_role: "member" | "leader" | "manager" };
+type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: "active" | "deactivated" } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
 type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; status?: "active" | "deactivated"; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
 type ScopeFilter = "all" | "club" | number;
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
@@ -98,13 +105,31 @@ export default function Home() {
     window.setTimeout(() => setToast(""), 2800);
   }, []);
 
-  const loadProfile = useCallback(async (currentUser: User) => {
+  // Supabase hands back a new user object on every token refresh. Keeping the
+  // old one while the id is unchanged stops every screen from reloading.
+  const adoptUser = useCallback((next: User | null) => { setUser((current) => (current?.id === next?.id ? current : next)); }, []);
+
+  // One request loads everything the shell needs. A response that arrives
+  // after the signed-in account has changed is thrown away (P1-07).
+  const activeUserId = useRef<string | null>(null);
+  const bootstrap = useCallback(async (currentUser: User) => {
     if (!supabase) return;
-    const { data, error } = await supabase.from("profiles").select("full_name, role, status").eq("id", currentUser.id).single();
-    if (error) { notify("We could not load your club profile"); return; }
-    setDeactivated(data.status === "deactivated");
-    if (data.status === "deactivated") return;
-    let profileName = data.full_name;
+    setDataLoading(true);
+    const { data, error } = await supabase.rpc("get_portal_bootstrap");
+    if (activeUserId.current !== currentUser.id) return;
+    setDataLoading(false);
+    const boot = data as PortalBootstrap | null;
+    if (error || !boot?.profile) { notify("We could not load your club profile"); return; }
+    setDeactivated(boot.profile.status === "deactivated");
+    if (boot.profile.status === "deactivated") return;
+    setRole(boot.profile.role);
+    setGroups(boot.groups);
+    setMemberships(boot.memberships);
+    setAnnouncements(boot.announcements);
+    setEvents(boot.events);
+    setArchive(boot.archive);
+    setResourceCount(Number(boot.resource_count) || 0);
+    let profileName = boot.profile.full_name;
     const pendingSignupName = window.sessionStorage.getItem(pendingSignupNameKey)?.trim();
     if (pendingSignupName) {
       const { error: updateError } = await supabase.from("profiles").update({ full_name: pendingSignupName }).eq("id", currentUser.id);
@@ -114,7 +139,6 @@ export default function Home() {
         window.sessionStorage.removeItem(pendingSignupNameKey);
       }
     }
-    setRole(data.role as ClubRole);
     setName(profileName || currentUser.email?.split("@")[0] || "Club member");
   }, [notify]);
 
@@ -125,7 +149,7 @@ export default function Home() {
     try {
       const [archiveResult, eventsResult, announcementResult, resourceCountResult] = await Promise.all([
         client.from("archive_items").select("*").eq("type", "recording").order("created_at", { ascending: false }),
-        client.from("events").select("*").order("starts_at", { ascending: true }),
+        client.from("events").select("*").gte("starts_at", new Date(Date.now() - 365 * 86400000).toISOString()).order("starts_at", { ascending: true }),
         client.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(12),
         client.from("resources").select("id", { count: "exact", head: true }).neq("status", "archived"),
       ]);
@@ -157,11 +181,9 @@ export default function Home() {
         const { data, error } = await client.auth.getSession();
         if (error) throw error;
         if (cancelled) return;
-        const currentUser = data.session?.user ?? null;
-        setUser(currentUser);
-        if (currentUser) void loadProfile(currentUser);
+        adoptUser(data.session?.user ?? null);
       } catch {
-        if (!cancelled) setUser(null);
+        if (!cancelled) adoptUser(null);
       } finally {
         window.clearTimeout(loadingTimeout);
         loadingTimeouts.delete(loadingTimeout);
@@ -171,13 +193,26 @@ export default function Home() {
     void hydrateAuth();
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
-      setUser(session?.user ?? null);
-      if (session?.user) window.setTimeout(() => void loadProfile(session.user), 0);
+      adoptUser(session?.user ?? null);
     });
     const restore = (event: PageTransitionEvent) => { if (event.persisted) { setAuthLoading(true); void hydrateAuth(); } };
     window.addEventListener("pageshow", restore);
     return () => { cancelled = true; loadingTimeouts.forEach((timeout) => window.clearTimeout(timeout)); window.removeEventListener("pageshow", restore); listener.subscription.unsubscribe(); };
-  }, [loadProfile]);
+  }, [adoptUser]);
+
+  const resetShell = useCallback(() => {
+    setRole("member"); setName(""); setDeactivated(false); setGroups([]); setMemberships([]);
+    setAnnouncements([]); setEvents([]); setArchive([]); setResourceCount(0);
+  }, []);
+
+  // Runs once per signed-in account, not on every token refresh.
+  useEffect(() => {
+    activeUserId.current = user?.id ?? null;
+    setCacheOwner(user?.id ?? null);
+    // This effect synchronizes the shell with the signed-in account.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (user) void bootstrap(user); else resetShell();
+  }, [user, bootstrap, resetShell]);
 
   useEffect(() => {
     const restoreLocation = () => {
@@ -190,7 +225,6 @@ export default function Home() {
     return () => window.removeEventListener("popstate", restoreLocation);
   }, []);
 
-  useEffect(() => { if (user && !deactivated) loadData(); }, [user, deactivated, loadData]);
 
   const loadWorkspaces = useCallback(async () => {
     if (!supabase || !user || deactivated) return;
@@ -202,7 +236,6 @@ export default function Home() {
     setGroups((groupResult.data || []) as Subgroup[]);
     setMemberships((membershipResult.data || []) as SubgroupMembership[]);
   }, [notify, user, deactivated]);
-  useEffect(() => { loadWorkspaces(); }, [loadWorkspaces]);
 
   const canManage = role !== "member";
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));

@@ -27,7 +27,7 @@ test("resources UI is integrated as the single library while recordings stay in 
     readFile(new URL("app/resources.tsx", projectRoot), "utf8"),
   ]);
 
-  assert.match(page, /import \{ ResourceLibrary \} from "\.\/resources"/);
+  assert.match(page, /const ResourceLibrary = dynamic\(\(\) => import\("\.\/resources"\)/);
   assert.match(page, /section === "documents".*<ResourceLibrary/s);
   assert.match(page, /rawValue === "gallery" \? "documents"/);
   assert.doesNotMatch(page, /from\("resource_links"\)/);

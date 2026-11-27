@@ -2,6 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { readCache, writeCache } from "../lib/cache";
 import { supabase } from "../lib/supabase";
 import { Button } from "../components/ui/button";
 import { ClearMarkButton, SessionCorrections, ThresholdSettings, WithdrawExcuseButton } from "../components/attendance/attendance-corrections";
@@ -68,6 +69,7 @@ type Remediation = {
   note: string | null;
 };
 type Eligibility = { term_key: string; member_id: string; status: EligibilityStatus; reason: string | null };
+type AttendanceWorkspace = { sessions: AttendanceSession[]; records: AttendanceRecord[]; participants: Participant[]; excuses: Excuse[]; remediations: Remediation[]; eligibility: Eligibility[]; profiles: Profile[]; settings: { warning_absences: number; critical_absences: number } | null };
 
 const categoryLabels: Record<AbsenceCategory, string> = {
   class_exam: "Class or exam conflict",
@@ -88,18 +90,21 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   const canManage = role !== "member";
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(initialScope);
   const [termFilter, setTermFilter] = useState("all");
-  const [sessions, setSessions] = useState<AttendanceSession[]>([]);
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [excuses, setExcuses] = useState<Excuse[]>([]);
-  const [remediations, setRemediations] = useState<Remediation[]>([]);
-  const [eligibility, setEligibility] = useState<Eligibility[]>([]);
-  const [thresholds, setThresholds] = useState({ warning: 2, critical: 3 });
-  const [loading, setLoading] = useState(true);
+  // Reopening the screen shows the last data at once and refreshes behind it.
+  const cacheKey = `attendance:${scopeFilter}`;
+  const [cached] = useState(() => readCache<AttendanceWorkspace>(user.id, `attendance:${initialScope}`));
+  const [sessions, setSessions] = useState<AttendanceSession[]>(cached?.sessions || []);
+  const [records, setRecords] = useState<AttendanceRecord[]>(cached?.records || []);
+  const [participants, setParticipants] = useState<Participant[]>(cached?.participants || []);
+  const [profiles, setProfiles] = useState<Profile[]>(cached?.profiles || []);
+  const [excuses, setExcuses] = useState<Excuse[]>(cached?.excuses || []);
+  const [remediations, setRemediations] = useState<Remediation[]>(cached?.remediations || []);
+  const [eligibility, setEligibility] = useState<Eligibility[]>(cached?.eligibility || []);
+  const [thresholds, setThresholds] = useState(cached?.settings ? { warning: cached.settings.warning_absences, critical: cached.settings.critical_absences } : { warning: 2, critical: 3 });
+  const [loading, setLoading] = useState(!cached);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<AttendanceTab>(initialTab || "overview");
-  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(cached?.sessions[0]?.id ?? null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [showExcuse, setShowExcuse] = useState(false);
   const [checkInCode, setCheckInCode] = useState("");
@@ -108,40 +113,33 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   const load = useCallback(async (silent = false) => {
     if (!supabase) return;
-    if (!silent) setLoading(true);
+    if (!silent && !readCache(user.id, cacheKey)) setLoading(true);
     try {
-      const { data: sessionData, error: sessionError } = await supabase
-        .from("attendance_sessions")
-        .select("id,scope,subgroup_id,title,starts_at,status,opened_at,closes_at,closed_at,canceled_at,cancel_reason,code_expires_at,created_at,counts_toward_metrics")
-        .order("starts_at", { ascending: false });
-      const allSessions = (sessionData || []) as AttendanceSession[];
-      const nextSessions = allSessions.filter((session) => scopeFilter === "all" || (scopeFilter === "club" ? session.scope === "club" : session.subgroup_id === scopeFilter));
+      // One request for the whole screen, limited to the last 18 months.
+      const { data, error } = await supabase.rpc("get_attendance_workspace", {
+        p_scope: scopeFilter === "all" ? "all" : scopeFilter === "club" ? "club" : "subgroup",
+        p_subgroup_id: typeof scopeFilter === "number" ? scopeFilter : null,
+      });
+      if (error || !data) { notify("Attendance could not be loaded. Try again in a moment."); return; }
+      const workspace = data as AttendanceWorkspace;
+      const nextSessions = workspace.sessions;
       const ids = nextSessions.map((session) => session.id);
-      const [recordResult, participantResult, excuseResult, profileResult, settingsResult, remediationResult, eligibilityResult] = await Promise.all([
-        ids.length ? supabase.from("attendance_records").select("session_id,member_id,status,source,note,marked_at,minutes_late,unexcused_units").in("session_id", ids) : Promise.resolve({ data: [], error: null }),
-        ids.length ? supabase.from("attendance_session_participants").select("session_id,member_id,snapshotted_at").in("session_id", ids) : Promise.resolve({ data: [], error: null }),
-        ids.length ? supabase.from("attendance_excuses").select("id,session_id,member_id,reason,proof_path,reason_category,notified_at,status,submitted_at,reviewed_at,review_note").in("session_id", ids).order("submitted_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
-        canManage ? supabase.from("profiles").select("id,full_name,email").order("full_name") : supabase.from("profiles").select("id,full_name,email").eq("id", user.id),
-        supabase.from("attendance_settings").select("warning_absences,critical_absences").eq("id", true).maybeSingle(),
-        ids.length ? supabase.from("attendance_remediations").select("id,session_id,member_id,assignment,due_at,status,note").in("session_id", ids).order("created_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
-        supabase.from("attendance_eligibility").select("term_key,member_id,status,reason"),
-      ]);
-      if (sessionError || recordResult.error || participantResult.error || excuseResult.error || profileResult.error || settingsResult.error || remediationResult.error || eligibilityResult.error) notify("Some attendance information could not be loaded");
       setSessions(nextSessions);
-      setRecords((recordResult.data || []) as AttendanceRecord[]);
-      setParticipants((participantResult.data || []) as Participant[]);
-      setExcuses((excuseResult.data || []) as Excuse[]);
-      setProfiles((profileResult.data || []) as Profile[]);
-      setRemediations((remediationResult.data || []) as Remediation[]);
-      setEligibility((eligibilityResult.data || []) as Eligibility[]);
-      if (settingsResult.data) setThresholds({ warning: settingsResult.data.warning_absences, critical: settingsResult.data.critical_absences });
+      setRecords(workspace.records);
+      setParticipants(workspace.participants);
+      setExcuses(workspace.excuses);
+      setProfiles(workspace.profiles);
+      setRemediations(workspace.remediations);
+      setEligibility(workspace.eligibility);
+      if (workspace.settings) setThresholds({ warning: workspace.settings.warning_absences, critical: workspace.settings.critical_absences });
       setSelectedSessionId((current) => current && ids.includes(current) ? current : nextSessions[0]?.id || null);
+      writeCache(user.id, cacheKey, workspace);
     } catch {
       notify("Attendance could not be loaded. Check your connection and try again.");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [canManage, notify, scopeFilter, user.id]);
+  }, [cacheKey, notify, scopeFilter, user.id]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
