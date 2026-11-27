@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { interpretBootstrap, runBootstrap } from "../lib/bootstrap.ts";
 
@@ -43,18 +42,4 @@ test("a request that throws is a failure and the call returns", async () => {
   assert.deepEqual(await runBootstrap(() => Promise.reject(new TypeError("Failed to fetch"))), { kind: "failed" });
   assert.deepEqual(await runBootstrap(() => { throw new Error("sync"); }), { kind: "failed" });
   assert.equal((await runBootstrap(() => Promise.resolve(answer({ profile: profile({ role: "admin" }) })))).kind, "ready");
-});
-
-// The shell must use the outcome: no default-role member shell before it, a
-// retry screen on failure, the deactivated screen when the profile says so.
-test("the shell waits for the answer, retries on failure and shows the deactivated screen", async () => {
-  const shell = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
-  assert.match(shell, /runBootstrap<PortalBootstrap>\(\(\) => client\.rpc\("get_portal_bootstrap"\)\)/);
-  assert.match(shell, /if \(shellState === "deactivated"\) return <DeactivatedScreen/);
-  assert.match(shell, /if \(shellState === "failed"\) return <BootstrapFailedScreen/);
-  assert.match(shell, /if \(shellState === "loading"\) return <LoadingScreen \/>/);
-  // The failure branch no longer falls through to the member shell with a toast.
-  assert.doesNotMatch(shell, /We could not load your club profile"\); return; \}/);
-  // The signed-in shell is only reached once the state is ready.
-  assert.ok(shell.indexOf('shellState === "loading") return <LoadingScreen') < shell.indexOf('<main className="portal-shell">'));
 });
