@@ -193,6 +193,21 @@ describe("finance: Mark paid", () => {
     expect(payCalls()).toHaveLength(0);
   });
 
+  it("a double click on the confirmation sends one payment (both clicks land before the screen can switch the button off)", async () => {
+    const paying = deferred();
+    fake.rpc("pay_personal_reimbursement").reply(paying.reply);
+    renderFinance();
+    await waitForLoad();
+    tab("reimbursements");
+    fireEvent.click(await screen.findByRole("button", { name: "Mark paid" }));
+    const confirmButton = within(dialog()).getByRole("button", { name: "Mark paid" });
+    act(() => { confirmButton.click(); confirmButton.click(); });
+    await waitFor(() => expect(payCalls()).toHaveLength(1));
+    await flush();
+    expect(payCalls()).toHaveLength(1);
+    await act(async () => { paying.resolve(ok(null)); });
+  });
+
   it("runs once, shows Paying while it works and frees the button only after the lists were read again", async () => {
     const paying = deferred();
     fake.rpc("pay_personal_reimbursement").reply(paying.reply);
@@ -400,13 +415,13 @@ describe("finance: corrections cannot overlap", () => {
 describe("finance: removing a document", () => {
   const FILE_LEFT = "The document was removed from the request, but its file is still in storage and could not be deleted. Ask an administrator to remove it.";
 
-  async function removeReceipt() {
+  async function removeReceipt(removeAnswer: ReturnType<typeof ok> = ok("member-9/taxi.pdf")) {
     scriptFinance({
       reimbursements: [reimbursement({ status: "submitted" })],
       documents: [{ id: 11, document_type: "receipt", title: "Taxi receipt", storage_path: "member-9/taxi.pdf", uploaded_by: "member-9" }],
       reimbursementDocuments: [{ reimbursement_id: 5, document_id: 11 }],
     });
-    fake.rpc("remove_finance_document").reply(ok("member-9/taxi.pdf"));
+    fake.rpc("remove_finance_document").reply(removeAnswer);
     const notify = renderFinance();
     await waitForLoad();
     tab("reimbursements");
@@ -421,6 +436,12 @@ describe("finance: removing a document", () => {
     expect(notify.messages().filter((message) => /storage|removed from the request/.test(message))).toEqual([]);
     expect(fake.storage("finance-private", "remove").calls[0].args[0]).toEqual(["member-9/taxi.pdf"]);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("a record that had no stored file (the database returns no path) is removed without asking storage to delete anything", async () => {
+    const notify = await removeReceipt(ok(null));
+    await waitFor(() => expect(notify.find("Document removed").tone).toBe("success"));
+    expect(fake.storage("*", "remove").count).toBe(0);
   });
 
   it("the record goes first and the file after", async () => {
