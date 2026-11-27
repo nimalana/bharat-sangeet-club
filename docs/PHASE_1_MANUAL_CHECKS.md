@@ -6,7 +6,7 @@ accounts: an admin, a group manager who is not an executive, and a plain member.
 
 ## Before anything else
 
-- [ ] Apply the new migrations (`20261126230000` onward) to the test project in order. They are additive; the current production frontend keeps working against them.
+- [ ] Apply the new migrations (`20261126230000` onward) to the test project in order, **except `20261127075000_least_privilege_grants.sql`, which waits for the new frontend (see Release order below)**. The others are additive; the current production frontend keeps working against them.
 - [ ] Compare the test project's schema with production (`supabase db dump --schema public,private,storage`) so drift in production is known before the migrations are applied there.
 
 ## Storage deletes (file must go before its row)
@@ -16,14 +16,18 @@ accounts: an admin, a group manager who is not an executive, and a plain member.
 - [ ] Recording copied from the legacy archive (bucket `club-archive`): it plays, and it offers Archive but not Delete.
 - [ ] Club and concert recordings (executive): edit one, flip it to public and confirm it appears on the signed-out concert page; delete one that has no recording-room copy and confirm the object is gone from `club-archive`.
 - [ ] Resources: upload a file, then Delete it as an executive. The object is gone from `club-resources`.
-- [ ] Resources: discard a failed upload.
+- [ ] Resources: as a group manager who is not an executive, a finished file has no Delete button. Discard a failed upload still works for the manager (migration `20261127043000`: only executives delete finished items).
 - [ ] Notation: delete a file note as its author.
+- [ ] Notation: member B attaches a notation file to member A's published recording (needs the API; the portal has no control for it). A, who is not an executive, deletes the recording: B's notation file, the take and the row are all gone (migration `20261127044000`).
+- [ ] Resources, with the API (the portal has no control for this), as a group manager who is not an executive: `update resources set status = 'failed'` on a ready file is refused ("Only executives can mark a finished resource as failed..."), as is changing its `storage_path`, and a Storage `move` of the file onto the path of one of your own pending uploads returns no row (migration `20261127070000`). Failing and then discarding your own pending upload still works.
+- [ ] Abandoned upload (migration `20261127070100`): as a member, upload a file to `recordings/<your user id>/...` through the Storage API without creating the recording row (or make the row insert fail), then `remove([path])`. The object is gone. The same for `recording-notations/<your user id>/...`. Another member, and an executive, cannot see or remove that object; neither can you remove one in someone else's folder. This depends on real Storage: the SQL tests run the same `delete from storage.objects where bucket_id = ... and name = any(...)` statement but cannot prove the Storage service issues exactly that.
 
 ## Deactivation
 
 - [ ] Deactivate the plain member while they have the portal open. Their next page load shows the "access has been deactivated" screen, and no data loads.
 - [ ] With the deactivated member's still-valid session, try to open a signed URL for a recording and a resource. Both are refused.
-- [ ] Reactivate; they can sign in and see club-wide content, and their groups are empty until re-added.
+- [ ] Reactivate; they can sign in and see club-wide content. Their groups are empty: they can ask to join an open group again (active at once) or an approval group (pending), and an invitation-only group needs an executive. A group they were deliberately removed from still needs an executive (migration `20261127041100`).
+- [ ] As a plain member, `select * from member_deactivations` returns no rows and profiles has no reason column. An admin sees the reason (migration `20261127041000`).
 - [ ] Delete an account with no history succeeds; an account with a reimbursement shows the "Deactivate it instead" message.
 - [ ] The public concert page still works when signed out.
 
@@ -58,13 +62,33 @@ Run the app locally against the test project (`npm run dev`). In the browser con
 - [ ] Resources: open a PDF and a link in Safari and Chrome; each opens in a new tab without a pop-up warning.
 - [ ] Check the Supabase project's region. If it is far from North Carolina, moving it will save more than any change here.
 
-After Phase 1 is live in production (not before, because the current production frontend still writes these tables directly), run:
+The two revokes that used to be listed here (`funding_claims` insert and update, `funding_claim_expenses` insert, update and delete) are now part of `20261127075000_least_privilege_grants.sql`; see Release order. The third revoke of the original list, `review_subgroup_enrollment`, is not manual either: migration `20261127040000` does it, because the removed status made the old function a way to re-admit a removed member. The deployed main frontend never calls it.
 
-```sql
-revoke insert, update on public.funding_claims from authenticated;
-revoke insert, update, delete on public.funding_claim_expenses from authenticated;
-revoke execute on function public.review_subgroup_enrollment(bigint, uuid, public.subgroup_membership_status) from authenticated;
-```
+## Release order
+
+`20261127075000_least_privilege_grants.sql` is the one migration that is **not additive**. It takes write privileges away from `authenticated` (and everything from `anon` except the public concert list) on every table the new frontend does not write directly. The frontend deployed from `main` today still writes `funding_claims` (insert, update) and `funding_claim_expenses` (insert) straight through the REST API, so the order matters:
+
+1. Apply every other migration, including the ones from the finance and attendance branches that sort before `20261127075000`. The production frontend keeps working against them.
+2. Deploy the new frontend (the branch with this file) and run the checks above on it.
+3. Only then apply `20261127075000`. Applied before step 2, "Build a funding claim" and the claim status buttons in the live site answer "permission denied for table funding_claims" (SQLSTATE 42501) until the new frontend is out.
+4. Run the checks under "After the lockdown" below.
+
+If a screen turns out to need a privilege the list missed, give back exactly that one, for example `grant insert on public.some_table to authenticated;`, rather than undoing the file; the row-level policies still decide which rows. Applied migrations are immutable, so make the permanent change as a new migration and add it to the matrix in `supabase/tests/72_grants_matrix.test.sql` (the test fails until both agree).
+
+Undoing it completely means re-granting what the hosted defaults gave: `grant all on all tables in schema public to anon, authenticated;`, `grant all on all sequences in schema public to anon, authenticated;` and `alter default privileges for role postgres in schema public grant all on tables to anon, authenticated;` (and the same for sequences). That reopens the ledger to direct writes; do it only to get a broken release working again.
+
+Adding tables later: with the defaults gone, a migration that creates a table in `public` has to say who may use it (`grant select, insert on public.new_table to authenticated;`, never `grant all`), and the new table needs a row in the matrix of `72_grants_matrix.test.sql`, which fails until it has one. A table with a `serial` column also needs `grant usage on sequence ... to authenticated`; `generated always as identity` columns need nothing.
+
+## After the lockdown (test project, then production)
+
+Run these after applying `20261127075000`, signed in as an executive, a group manager and a plain member. The SQL tests cover the same ground on a scratch database; these confirm it on the real API.
+
+- [ ] Everything the app does still works: post and edit an announcement, add and delete an event, edit your own profile (name, phone, class year, specialty), request to join a group, upload a recording with notation and publish, archive and delete it, add a resource folder, link and file, rename, pin and delete them, check in to a meeting and submit an excuse, record an expense and an income, submit a reimbursement with a receipt, build and update a funding claim, set an eligibility status.
+- [ ] Signed out, the home page still lists the public concerts and **Watch or listen** still opens a recording.
+- [ ] With an executive's token against the REST API, `PATCH /rest/v1/finance_expenses?id=eq.<id>` and `DELETE /rest/v1/finance_payments?id=eq.<id>` answer 401/403 with code `42501` (permission denied), no longer 200 or 204. The same for `POST /rest/v1/funding_claims` and `PATCH /rest/v1/attendance_sessions?id=eq.<id>`.
+- [ ] `PATCH /rest/v1/profiles?id=eq.<own id>` with `{"role":"admin"}` answers `42501` for a plain member; with `{"phone":"1"}` it works.
+- [ ] With the anon key only, `GET /rest/v1/archive_items?select=id,title&is_public=eq.true` returns the public concerts and `GET /rest/v1/profiles?select=id` answers `42501`; the OpenAPI document at `/rest/v1/` no longer lists the ledger tables for the anon key.
+- [ ] On the hosted project (PostgreSQL 17; the SQL tests ran on 16 only) no table gives anon or authenticated `TRUNCATE`, `REFERENCES`, `TRIGGER` or `MAINTAIN`: `select c.relname, r from pg_class c cross join unnest(array['anon','authenticated']) r where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and c.relkind in ('r','p','v','m','f') and (has_table_privilege(r, c.oid, 'truncate') or has_table_privilege(r, c.oid, 'references') or has_table_privilege(r, c.oid, 'trigger') or has_table_privilege(r, c.oid, 'maintain'));` returns no rows, and `select defaclnamespace::regnamespace, defaclobjtype, defaclacl from pg_default_acl;` shows no `anon=` or `authenticated=` entry for tables (`r`) or sequences (`S`).
 
 ## Phase 2 follow-up: Resources per folder and the public concert page
 
