@@ -65,3 +65,20 @@ revoke insert, update on public.funding_claims from authenticated;
 revoke insert, update, delete on public.funding_claim_expenses from authenticated;
 revoke execute on function public.review_subgroup_enrollment(bigint, uuid, public.subgroup_membership_status) from authenticated;
 ```
+
+## Phase 2 follow-up: Resources per folder and the public concert page
+
+Not run against a real project when written (only read, type-checked, unit-tested and built). Use the test project, signed in as an executive, with a few folders three levels deep and, ideally, more than 100 items in one folder.
+
+1. Open `/?page=documents`. Only the top level appears. In the browser network tab there is one `resources` request with `parent_id=is.null`, `limit=100` style range, `order=is_pinned.desc,updated_at.desc,id.desc`, and no request for the whole table.
+2. Click a folder. The address bar becomes `?page=documents&folder=<id>`. The breadcrumb shows the path. Reload the page: the same folder opens. Press Back: the previous folder opens.
+3. Open a folder with more than 100 items. Click **Show more**: the next rows are added with no repeats. Pinned items stay first.
+4. Type in the search box. Nothing is requested while typing; about 250 ms after the last key one request with `ilike` on title, description and file name appears. It finds items in subfolders of the open folder. Clear search returns to the folder.
+5. Click the Documents, Links and Photos tabs inside a folder: each one request, filtered on the server. The active tab shows a count; the other tabs show no count (they are not loaded).
+6. Change the scope dropdown: the view returns to the top, filtered by that group or club-wide.
+7. Image thumbnails: in a folder with photos there is one `createSignedUrls` request per bucket. Leave and come back within an hour: no new signing request, and the list shows at once.
+8. Actions, each from the detail panel, on an item and on a folder you have never opened: Rename, Pin/Unpin (item moves to the top), Limit to executives / Share with members (top-level folder), Archive, Show archived, Restore, Delete (a folder with contents has no Delete; an empty one does), and Discard upload on a failed upload. After each, the list refreshes and the count and breadcrumb are correct. Archive the folder you are inside: you land in its parent.
+9. Upload a file and a folder into an open folder: rows appear, finish as ready, and the list matches after a reload. Uploading into a third-level folder with a nested folder is refused with the existing message.
+10. Open `?page=documents&folder=999999999`: "That folder could not be found" and the top level opens.
+11. Signed out, open `/`. The page source (View Source, not the inspector) contains the concert titles. Reload twice within 5 minutes: no change. Make a recording public as an executive: it appears within about 5 minutes (a redeploy shows it at once). No signed URL appears in the page source. Click **Watch or listen**: a signed URL is requested then (network tab, `club-archive`, 600 seconds expiry) and the file opens.
+12. Signed in as a member, reload `/`: the dashboard opens as before. A brief view of the public page before the scripts load is expected on a first visit.

@@ -22,3 +22,9 @@ export function writeCache<T>(userId: string, key: string, value: T) {
 export function clearCache() {
   store.clear();
 }
+
+// Drops every entry whose key starts with `prefix`. Used after a change so the
+// lists built from the old data are read again.
+export function clearCachePrefix(prefix: string) {
+  for (const key of [...store.keys()]) if (key.startsWith(prefix)) store.delete(key);
+}

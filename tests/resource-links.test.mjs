@@ -23,7 +23,7 @@ test("unified resources use database-enforced hierarchy, storage, and permission
 
 test("resources UI is integrated as the single library while recordings stay in the archive", async () => {
   const [page, resources] = await Promise.all([
-    readFile(new URL("app/page.tsx", projectRoot), "utf8"),
+    readFile(new URL("app/portal.tsx", projectRoot), "utf8"),
     readFile(new URL("app/resources.tsx", projectRoot), "utf8"),
   ]);
 
@@ -49,4 +49,17 @@ test("resources UI is integrated as the single library while recordings stay in 
   assert.ok(importRowIndex >= 0, "folder upload should create a resource_imports row");
   assert.ok(fileRowIndex > importRowIndex, "folder upload should create its import before resource rows");
   assert.match(resources, /Array\.from\(\{ length: Math\.min\(3, entries\.length\) \}/);
+});
+
+test("the library loads one folder at a time and keeps every action working inside that model", async () => {
+  const resources = await readFile(new URL("app/resources.tsx", projectRoot), "utf8");
+  assert.doesNotMatch(resources, /select\(RESOURCE_FIELDS\)\.order\("is_pinned"/, "the whole tree is no longer read in one query");
+  assert.match(resources, /buildListPlan\(\{ \.\.\.listParams, subtreeIds, offset, limit: RESOURCE_PAGE_SIZE \}\)/);
+  assert.match(resources, /setTimeout\(\(\) => setSearch\(query\), 250\)/);
+  assert.match(resources, /parseFolderParam\(window\.location\.search\)/);
+  assert.match(resources, /Show more/);
+  assert.match(resources, /createSignedUrls\(paths, THUMBNAIL_TTL_SECONDS\)/);
+  assert.match(resources, /<ResourceActions key=\{selectedCurrent\.id\}/);
+  assert.match(resources, /onChanged=\{afterChange\}/);
+  assert.match(resources, /eq\("parent_id", selectedFolderId\)/, "a folder's child count is asked on its own");
 });
