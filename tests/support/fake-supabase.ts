@@ -180,6 +180,9 @@ export function createFakeSupabase() {
       if (Array.isArray(data)) data = data[0] ?? null;
       if (data === null && call.used("single")) error = { message: "JSON object requested, multiple (or no) rows returned", code: "PGRST116" };
     }
+    // Supabase's storage client answers with a StorageError, which is an Error; the screens rely on `instanceof Error`
+    // to tell a real failure from a plain object (the table and rpc clients answer with plain objects).
+    if (error && call.kind === "storage" && !(error instanceof Error)) error = Object.assign(new Error(error.message), error);
     return { data, error, count: answer.count ?? null, status: error ? 400 : 200 };
   }
 

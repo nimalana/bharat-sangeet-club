@@ -382,6 +382,19 @@ describe("finance: corrections cannot overlap", () => {
     await waitFor(() => expect(notify.find("Payment is already voided").tone).toBe("error"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
+
+  it("a correction that throws (no network) says it could not be saved, as an error, and keeps the dialog open", async () => {
+    scriptFinance();
+    fake.rpc("void_finance_payment").reply(rejects());
+    const notify = renderFinance();
+    await waitForLoad();
+    fireEvent.click(screen.getByRole("button", { name: "Void payment: Reimbursement: Tabla repair" }));
+    fireEvent.change(within(dialog()).getByLabelText(/Reason/), { target: { value: "Wrong amount" } });
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(notify.find("That change could not be saved. Check your connection and try again.").tone).toBe("error"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(notify.messages()).not.toContain("Payment voided");
+  });
 });
 
 describe("finance: removing a document", () => {
@@ -525,6 +538,51 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
     expect(notify.find(SLOW_SAVED).tone).toBe("success");
   });
 
+  // Every flow that saves something and then waits for the lists (not only Mark paid and the dialogs).
+  const pdfFile = () => new File(["%PDF-1.4"], "statement.pdf", { type: "application/pdf" });
+  const attachTo = (name: string) => fireEvent.change(dialog().querySelector(`input[name="${name}"]`)!, { target: { files: [pdfFile()] } });
+  const flows: Array<[string, () => void]> = [
+    ["a club expense with its receipt", () => {
+      fake.rpc("record_club_expense").reply(ok(12));
+      fireEvent.click(screen.getByRole("button", { name: /Club expense/ }));
+      attachTo("receipt");
+      fireEvent.submit(dialog().querySelector("form")!);
+    }],
+    ["a funding claim with its approval proof", () => {
+      fake.rpc("create_funding_claim").reply(ok({ id: 3 }));
+      tab("Funding claims");
+      fireEvent.click(screen.getByRole("button", { name: /New funding claim/ }));
+      fireEvent.click(within(dialog()).getByLabelText("Include Tabla repair"));
+      attachTo("funding_approval");
+      fireEvent.submit(dialog().querySelector("form")!);
+    }],
+    ["a receipt added to a request", () => {
+      tab("reimbursements");
+      fireEvent.click(screen.getByRole("button", { name: /Add receipt/ }));
+      attachTo("file");
+      fireEvent.submit(dialog().querySelector("form")!);
+    }],
+    ["a document added to a claim", () => {
+      tab("Funding claims");
+      fireEvent.click(screen.getByRole("button", { name: /Document/ }));
+      attachTo("file");
+      fireEvent.submit(dialog().querySelector("form")!);
+    }],
+  ];
+  it.each(flows)("%s: the dialog waits for a slow refresh for 15 s, then moves on and says the change was saved", async (_name, run) => {
+    scriptFinance({ reimbursements: [reimbursement({ status: "submitted", member_id: "exec-1" })] });
+    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    hangOnRefresh();
+    const notify = await loaded();
+    run();
+    await advance(1);
+    await advance(REFRESH_WAIT_MS - 100);
+    expect(notify.messages()).not.toContain(SLOW_SAVED);
+    await advance(200);
+    expect(notify.find(SLOW_SAVED).tone).toBe("success");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("a correction made in a dialog: the buttons stay off until the refresh is read or 15 s have passed", async () => {
     fake.rpc("void_finance_payment").reply(ok(null));
     hangOnRefresh();
@@ -621,5 +679,90 @@ describe("finance: saving requests and documents", () => {
     expect(notify.messages()).not.toContain(SLOW_SAVED);
     await advance(100);
     expect(notify.find(SLOW_SAVED).tone).toBe("success");
+  });
+});
+
+// Toast tone: every other place this screen shows the database's own sentence.
+//
+// Replaces the part of tests/toast-call-sites.test.mjs that scanned app/finance.tsx for notify() calls that pass database
+// text. The sentence below has none of the usual words of a failure, so only an explicit "error" makes it read as one. The
+// sites already pinned above (Mark paid, claim status, the dialogs, the request form) are not repeated.
+describe("finance: a failure that shows the database's own sentence is announced as an error", () => {
+  const CHEERFUL = "Everything has been saved";
+  const cheerful = () => fail(CHEERFUL);
+  const toneOf = (notify: ReturnType<typeof notifySpy>) => notify.toasts().filter((toast) => toast.message.includes(CHEERFUL)).map((toast) => toast.tone);
+  const pdf = () => new File(["%PDF-1.4"], "statement.pdf", { type: "application/pdf" });
+  const attach = (name: string, file: File) => fireEvent.change(dialog().querySelector(`input[name="${name}"]`)!, { target: { files: [file] } });
+
+  beforeEach(() => { scriptFinance(); });
+
+  it("recording a club expense", async () => {
+    fake.rpc("record_club_expense").reply(cheerful());
+    const notify = renderFinance();
+    await waitForLoad();
+    fireEvent.click(screen.getByRole("button", { name: /Club expense/ }));
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error"]));
+  });
+
+  it("an expense that was saved but whose receipt could not be stored", async () => {
+    fake.rpc("record_club_expense").reply(ok(12));
+    fake.storage("finance-private", "upload").reply(cheerful());
+    const notify = renderFinance();
+    await waitForLoad();
+    fireEvent.click(screen.getByRole("button", { name: /Club expense/ }));
+    attach("receipt", pdf());
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error"]));
+    expect(notify.toasts().find((toast) => toast.message.includes(CHEERFUL))!.message).toBe(`Expense saved; ${CHEERFUL}`);
+  });
+
+  it("recording income", async () => {
+    fake.rpc("record_finance_income").reply(cheerful());
+    const notify = renderFinance();
+    await waitForLoad();
+    fireEvent.click(screen.getByRole("button", { name: /Record income/ }));
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error"]));
+  });
+
+  it("building a funding claim, and a claim saved whose approval proof could not be stored", async () => {
+    fake.rpc("create_funding_claim").replyOnce(cheerful()).reply(ok({ id: 3 }));
+    fake.storage("finance-private", "upload").reply(cheerful());
+    const notify = renderFinance();
+    await waitForLoad();
+    tab("Funding claims");
+    fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
+    fireEvent.click(within(dialog()).getByLabelText("Include Tabla repair"));
+    attach("funding_approval", pdf());
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error"]));
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error", "error"]));
+    expect(notify.toasts()[1].message).toBe(`Claim saved; ${CHEERFUL}`);
+  });
+
+  it("adding a receipt to a request, adding a claim document, and recording a funding payment", async () => {
+    scriptFinance({ reimbursements: [reimbursement({ status: "submitted", member_id: "exec-1" })], claims: [claim({ status: "approved", approved_amount: 80 })] });
+    fake.storage("finance-private", "upload").reply(cheerful());
+    fake.rpc("record_funding_claim_payment").reply(cheerful());
+    const notify = renderFinance();
+    await waitForLoad();
+    tab("reimbursements");
+    fireEvent.click(await screen.findByRole("button", { name: /Add receipt/ }));
+    attach("file", pdf());
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error"]));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
+    tab("Funding claims");
+    fireEvent.click(await screen.findByRole("button", { name: /Document/ }));
+    attach("file", pdf());
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error", "error"]));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Record payment" }));
+    fireEvent.change(dialog().querySelector('input[name="amount"]')!, { target: { value: "10" } });
+    fireEvent.submit(dialog().querySelector("form")!);
+    await waitFor(() => expect(toneOf(notify)).toEqual(["error", "error", "error"]));
   });
 });
