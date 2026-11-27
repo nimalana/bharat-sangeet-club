@@ -1,5 +1,5 @@
 {
- "generatedFrom": "bldytniesexkwbtyinsi (test) on 2026-11-27, by inventory.sql",
+ "generatedFrom": "bldytniesexkwbtyinsi (test) on 2026-11-27 after all 63 migrations, by inventory.sql",
  "tables": [
   {
    "name": "admin_audit_log",
@@ -14,12 +14,7 @@
     "details",
     "created_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "announcements",
@@ -35,12 +30,7 @@
     "updated_at",
     "subgroup_id"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "archive_items",
@@ -61,10 +51,7 @@
     "subgroup_id"
    ],
    "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
+    "select"
    ]
   },
   {
@@ -78,12 +65,7 @@
     "updated_by",
     "updated_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_excuses",
@@ -102,12 +84,7 @@
     "reason_category",
     "notified_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_record_audit",
@@ -123,12 +100,7 @@
     "changed_by",
     "changed_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_records",
@@ -145,12 +117,7 @@
     "minutes_late",
     "unexcused_units"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_remediations",
@@ -169,12 +136,7 @@
     "created_at",
     "updated_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_session_participants",
@@ -184,12 +146,7 @@
     "member_id",
     "snapshotted_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_sessions",
@@ -214,12 +171,7 @@
     "counts_toward_metrics",
     "cancel_reason"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "attendance_settings",
@@ -231,12 +183,7 @@
     "updated_by",
     "updated_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "events",
@@ -252,12 +199,7 @@
     "subgroup_id",
     "updated_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_audit_log",
@@ -272,12 +214,7 @@
     "after_data",
     "created_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_claim_documents",
@@ -286,12 +223,7 @@
     "claim_id",
     "document_id"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_documents",
@@ -309,12 +241,7 @@
     "uploaded_by",
     "created_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_expense_documents",
@@ -323,12 +250,7 @@
     "expense_id",
     "document_id"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_expenses",
@@ -361,12 +283,7 @@
     "voided_by",
     "voided_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_payments",
@@ -395,12 +312,7 @@
     "created_at",
     "updated_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "finance_reimbursement_documents",
@@ -409,12 +321,7 @@
     "reimbursement_id",
     "document_id"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "funding_claim_expenses",
@@ -425,12 +332,7 @@
     "claimed_amount",
     "created_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "funding_claims",
@@ -457,12 +359,18 @@
     "voided_by",
     "voided_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
+  },
+  {
+   "rls": true,
+   "name": "member_deactivations",
+   "columns": [
+    "member_id",
+    "deactivated_at",
+    "deactivated_by",
+    "reason"
+   ],
+   "anonGrants": []
   },
   {
    "name": "personal_reimbursements",
@@ -485,16 +393,11 @@
     "voided_by",
     "voided_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
-   "name": "profiles",
    "rls": true,
+   "name": "profiles",
    "columns": [
     "id",
     "email",
@@ -504,17 +407,9 @@
     "phone",
     "class_year",
     "specialty",
-    "status",
-    "deactivated_at",
-    "deactivated_by",
-    "deactivation_reason"
+    "status"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "recording_notes",
@@ -530,12 +425,7 @@
     "uploaded_by",
     "created_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "recordings",
@@ -563,12 +453,7 @@
     "published_at",
     "storage_bucket"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "resource_imports",
@@ -672,12 +557,7 @@
     "reviewed_by",
     "status_updated_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "subgroups",
@@ -692,12 +572,7 @@
     "archived_at",
     "archived_by"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   },
   {
    "name": "transactions",
@@ -712,12 +587,7 @@
     "created_by",
     "created_at"
    ],
-   "anonGrants": [
-    "delete",
-    "insert",
-    "select",
-    "update"
-   ]
+   "anonGrants": []
   }
  ],
  "functions": [
@@ -954,6 +824,64 @@
      "type": "bigint"
     }
    ]
+  },
+  {
+   "args": [
+    {
+     "name": "p_scope",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_term_key",
+     "type": "text"
+    },
+    {
+     "name": "p_since",
+     "type": "timestamp with time zone"
+    },
+    {
+     "name": "p_list_limit",
+     "type": "integer"
+    }
+   ],
+   "name": "get_attendance_overview",
+   "anonExecute": false
+  },
+  {
+   "args": [
+    {
+     "name": "p_scope",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_term_key",
+     "type": "text"
+    },
+    {
+     "name": "p_since",
+     "type": "timestamp with time zone"
+    }
+   ],
+   "name": "get_attendance_pulse",
+   "anonExecute": false
+  },
+  {
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    }
+   ],
+   "name": "get_attendance_roster",
+   "anonExecute": false
   },
   {
    "name": "get_attendance_workspace",
