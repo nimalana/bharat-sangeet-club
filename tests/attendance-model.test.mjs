@@ -337,3 +337,10 @@ test("attendance.tsx asks for a larger queue cap only from the overview, never f
   assert.match(between(source, "function changeScope", "function changeTerm"), /listLimit\.current = DEFAULT_LIST_LIMIT/, "a new audience starts at the first page");
   assert.match(between(source, "function changeTerm", "if (!data)"), /listLimit\.current = DEFAULT_LIST_LIMIT/, "so does a new term");
 });
+
+test("attendance.tsx says which view the absence-form and follow-up panels list", () => {
+  const source = pageSource();
+  assert.match(source, /awaiting review · \{viewLabel\}/);
+  assert.match(source, /pending · \{viewLabel\}/);
+  assert.match(source, /const viewLabel = `\$\{scopeLabel\} · \$\{termFilter === "all" \? "All terms" : termLabel\(termFilter\)\}`/);
+});
