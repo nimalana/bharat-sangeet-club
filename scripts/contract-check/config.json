@@ -1,0 +1,156 @@
+{
+  "_doc": "Configuration of scripts/contract-check. Nothing here names a source file: row types are found by their TypeScript name wherever they are declared.",
+  "floors": {
+    "rpc": 40,
+    "tables": 40,
+    "storage": 10
+  },
+  "maxUnresolved": 6,
+  "rowTypes": {
+    "ArchiveItem": {
+      "table": "archive_items",
+      "clientOnly": [
+        "signedUrl"
+      ]
+    },
+    "ClubEvent": {
+      "table": "events"
+    },
+    "Announcement": {
+      "table": "announcements"
+    },
+    "Subgroup": {
+      "table": "subgroups"
+    },
+    "SubgroupMembership": {
+      "table": "subgroup_memberships"
+    },
+    "MemberProfile": {
+      "table": "profiles"
+    },
+    "AttendanceSession": {
+      "table": "attendance_sessions",
+      "clientOnly": [
+        "subgroup_name",
+        "live"
+      ]
+    },
+    "AttendanceRecord": {
+      "table": "attendance_records"
+    },
+    "Excuse": {
+      "table": "attendance_excuses"
+    },
+    "Remediation": {
+      "table": "attendance_remediations"
+    },
+    "Eligibility": {
+      "table": "attendance_eligibility"
+    },
+    "Profile": {
+      "table": "profiles"
+    },
+    "Expense": {
+      "table": "finance_expenses"
+    },
+    "Reimbursement": {
+      "table": "personal_reimbursements"
+    },
+    "Payment": {
+      "table": "finance_payments"
+    },
+    "FundingClaim": {
+      "table": "funding_claims"
+    },
+    "ClaimExpense": {
+      "table": "funding_claim_expenses"
+    },
+    "FinanceDocument": {
+      "table": "finance_documents"
+    },
+    "ExpenseDocument": {
+      "table": "finance_expense_documents"
+    },
+    "ReimbursementDocument": {
+      "table": "finance_reimbursement_documents"
+    },
+    "ClaimDocument": {
+      "table": "finance_claim_documents"
+    },
+    "ResourceItem": {
+      "table": "resources",
+      "clientOnly": [
+        "signedUrl"
+      ]
+    },
+    "ManagedResource": {
+      "table": "resources"
+    },
+    "Recording": {
+      "table": "recordings"
+    },
+    "RecordingNote": {
+      "table": "recording_notes"
+    },
+    "ManagedRecording": {
+      "table": "recordings"
+    },
+    "ManagedNote": {
+      "table": "recording_notes"
+    },
+    "ClubArchiveItem": {
+      "table": "archive_items"
+    },
+    "EditableAnnouncement": {
+      "table": "announcements"
+    },
+    "ManagedGroup": {
+      "table": "subgroups"
+    }
+  },
+  "syntheticValues": {
+    "AttendanceRecord.status": [
+      "pending"
+    ]
+  },
+  "rpcShapes": [
+    {
+      "fn": "get_attendance_workspace",
+      "alias": "AttendanceSession",
+      "section": "sessions"
+    },
+    {
+      "fn": "get_attendance_workspace",
+      "alias": "AttendanceRecord",
+      "section": "records"
+    },
+    {
+      "fn": "get_attendance_workspace",
+      "alias": "Excuse",
+      "section": "excuses"
+    },
+    {
+      "fn": "get_attendance_workspace",
+      "alias": "Remediation",
+      "section": "remediations"
+    },
+    {
+      "fn": "get_attendance_workspace",
+      "alias": "Eligibility",
+      "section": "eligibility"
+    },
+    {
+      "fn": "get_attendance_workspace",
+      "alias": "Profile",
+      "section": "profiles"
+    }
+  ],
+  "accepted": [
+    {
+      "key": "rpc-enum:set_attendance_status:p_status:pending",
+      "severity": "minor",
+      "reason": "RecordStatus (TypeScript) includes the client-side 'pending' that means no mark yet; the only place that builds this call is the attendance table, whose 'pending' option is disabled, so the value cannot be sent. Type-level hole only. R2 derives the type from the enum, which removes it."
+    }
+  ],
+  "_unresolved": "Calls the extractor cannot read: 4 storage buckets that come from data (a bucket column or a function parameter fed by a table column, partly checked against every value the bucket columns allow) and the resources list, whose filters are applied by a generic helper from a plan object. A new one means a call the check no longer sees."
+}

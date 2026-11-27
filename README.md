@@ -161,6 +161,7 @@ npm install
 npm run dev
 npm run build
 npm test
+npm run test:contract   # every table, column, RPC and bucket the frontend uses exists in the migrated database (docs/CONTRACT_CHECK.md)
 ```
 
 Create `.env.local` with:

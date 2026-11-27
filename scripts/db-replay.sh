@@ -7,12 +7,20 @@
 #
 # Usage: scripts/db-replay.sh            replay and run tests
 #        KEEP=1 scripts/db-replay.sh     leave the cluster running and print its port
+#
+# For callers that only need the replayed schema (scripts/contract-check):
+#        REPLAY_WORK=<empty dir> REPLAY_ONLY=1 scripts/db-replay.sh
+#   REPLAY_WORK  use this existing empty directory instead of mktemp, so the caller knows
+#                where the cluster lives and can stop it even if the replay fails
+#   REPLAY_ONLY  stop after the migrations and the test helpers (no SQL suites, no snapshot,
+#                no concurrency tests) and leave the cluster running, like KEEP=1
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PG_BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)}"
 [ -x "$PG_BIN/initdb" ] || { echo "PostgreSQL server binaries not found; set PG_BIN" >&2; exit 2; }
-WORK="$(mktemp -d)"
+WORK="${REPLAY_WORK:-$(mktemp -d)}"
+[ "${REPLAY_ONLY:-0}" = "1" ] && KEEP=1
 PORT="${PGPORT:-54329}"
 RUN_AS=""
 if [ "$(id -u)" = "0" ]; then RUN_AS="runuser -u postgres --"; chown postgres "$WORK"; fi
@@ -43,6 +51,7 @@ done
 echo "Replayed $(ls "$ROOT"/supabase/migrations/*.sql | wc -l) migrations."
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/helpers.sql"
+if [ "${REPLAY_ONLY:-0}" = "1" ]; then echo "Cluster left running: psql -h $WORK -p $PORT -U postgres postgres"; exit 0; fi
 status=0
 for testfile in "$ROOT"/supabase/tests/*.test.sql; do
   [ -e "$testfile" ] || continue
