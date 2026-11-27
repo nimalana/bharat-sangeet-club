@@ -555,7 +555,6 @@ public.request_reimbursement_changes(p_reimbursement_id bigint, p_note text)  de
 public.request_subgroup_enrollment(target_subgroup_id bigint)  definer
 public.review_attendance_excuse(p_excuse_id bigint, p_decision text, p_note text)  definer
 public.review_personal_reimbursement(p_reimbursement_id bigint, p_decision text, p_approved_amount numeric, p_review_note text)  definer
-public.review_subgroup_enrollment(target_subgroup_id bigint, target_member_id uuid, next_status subgroup_membership_status)  definer
 public.review_subgroup_request(p_subgroup_id bigint, p_member_id uuid, p_decision text)  definer
 public.rotate_attendance_code(p_session_id bigint)  definer
 public.set_attendance_eligibility(p_term_key text, p_member_id uuid, p_status attendance_eligibility_status, p_reason text)  invoker

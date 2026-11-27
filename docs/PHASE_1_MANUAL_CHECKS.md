@@ -63,8 +63,9 @@ After Phase 1 is live in production (not before, because the current production 
 ```sql
 revoke insert, update on public.funding_claims from authenticated;
 revoke insert, update, delete on public.funding_claim_expenses from authenticated;
-revoke execute on function public.review_subgroup_enrollment(bigint, uuid, public.subgroup_membership_status) from authenticated;
 ```
+
+The third revoke of the original list, `review_subgroup_enrollment`, is no longer manual: migration `20261127040000` does it, because the removed status made the old function a way to re-admit a removed member. The deployed main frontend never calls it.
 
 ## Phase 2 follow-up: Resources per folder and the public concert page
 
