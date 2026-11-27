@@ -10,7 +10,8 @@ import { describe, expect, it } from "vitest";
 import { fake, ok } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";
 
-async function firstVisit(page: string, role: "member" | "executive", heading: string, extraLoading = 1) {
+// `alsoShows`: a second screen on the same page, loaded by its own import; it can arrive after the first.
+async function firstVisit(page: string, role: "member" | "executive", heading: string, extraLoading = 1, alsoShows?: string) {
   openPortal({ role, page });
   // The line shown while the screen's file is fetched.
   const loading = await screen.findAllByText("Loading…");
@@ -18,6 +19,7 @@ async function firstVisit(page: string, role: "member" | "executive", heading: s
   for (const line of loading) expect(line).toHaveAttribute("role", "status");
   // Then the screen itself replaces it.
   expect(await screen.findByRole("heading", { level: 1, name: heading }, { timeout: 5000 })).toBeInTheDocument();
+  if (alsoShows) expect(await screen.findByText(alsoShows, {}, { timeout: 5000 })).toBeInTheDocument();
   expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
 }
 
@@ -29,7 +31,6 @@ describe("a code-split screen shows a loading line until its file has arrived", 
   it("finances", async () => { await firstVisit("finances", "executive", "Club finances"); });
   it("the resource library", async () => { await firstVisit("documents", "member", "Resources"); });
   it("the recording workspace and, for executives, the club archive manager", async () => {
-    await firstVisit("recordings", "executive", "Recordings", 2);
-    expect(await screen.findByText("Club and concert recordings")).toBeInTheDocument();
+    await firstVisit("recordings", "executive", "Recordings", 2, "Club and concert recordings");
   });
 });

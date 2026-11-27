@@ -3,7 +3,8 @@
 // Replaces, from the old text tests:
 //  shell-wiring "the admin and group lists drop answers that are no longer the newest (frontend-7)"
 //    (each of AdminPage and SubgroupSpaces has its own gate; removing it from one must not be hidden by the other)
-//    -> "the Admin lists ..." and "the group lists ..." (two overlapping reloads, the older answering last).
+//    -> "the Admin lists ..." and "the group lists ..." (two overlapping reloads, the older answering last), and
+//       "the shell's own group list" for the shell's gate on the groups it passes to every page.
 //  shell-wiring "the dashboard, workspace, directory and recordings loaders keep their guards (round 1)"
 //    -> the dashboard, directory (Members), workspace (shell-bootstrap.test.tsx) and recordings (people-recordings.test.tsx) races.
 //  refresh-wiring "members, groups, admin and the dashboard keep a list that failed to load"
@@ -62,6 +63,34 @@ describe("only the newest answer changes a list that is reloaded after each chan
     await act(async () => { olderReload.resolve(ok([{ id: 1, title: "Stale update", body: "b", is_pinned: false, published_at: "2026-09-01T00:00:00Z", subgroup_id: 7 }])); });
     expect(screen.queryByText("Stale update")).not.toBeInTheDocument();
     expect(screen.getByText("Fresh update")).toBeInTheDocument();
+  });
+
+  it("the shell's own group list (the audiences offered on other pages): of two overlapping reloads, the older answer arriving last is dropped", async () => {
+    const mine = { id: 7, name: "Hindustani Vocal", description: "", enrollment_mode: "open", archived_at: null };
+    const older = deferred();
+    let shellReads = 0;
+    openPortal({ role: "executive", page: "groups", boot: { groups: [mine] } });
+    // The shell filters out archived groups; the Groups page's own read does not. Only the shell's reads are scripted slow.
+    fake.from("subgroups", "select").reply((call) => {
+      if (!call.used("is", "archived_at")) return ok([mine]);
+      shellReads += 1;
+      return shellReads === 1 ? older.reply : ok([mine, { ...mine, id: 8, name: "Fresh Choir" }]);
+    });
+    fake.rpc("create_subgroup").reply(ok(null));
+    // Each group created makes the shell read its groups again. The first read is slow; a second group is created meanwhile.
+    const createGroup = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "＋ New group" }));
+      fireEvent.submit(screen.getByRole("heading", { name: "Create a group" }).closest("form")!);
+    };
+    await createGroup();
+    await waitFor(() => expect(shellReads).toBe(1));
+    await createGroup();
+    await waitFor(() => expect(shellReads).toBe(2));
+    await act(async () => { older.resolve(ok([mine, { ...mine, id: 9, name: "Stale Choir" }])); });
+    nav("Calendar");
+    const audience = await screen.findByLabelText("Filter by audience");
+    expect(within(audience).getByRole("option", { name: "Fresh Choir" })).toBeInTheDocument();
+    expect(within(audience).queryByRole("option", { name: "Stale Choir" })).not.toBeInTheDocument();
   });
 
   it("the member directory: an older answer arriving last does not replace the newer one", async () => {
