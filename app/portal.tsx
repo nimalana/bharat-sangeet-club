@@ -7,6 +7,7 @@ import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../co
 import { readCache, setCacheOwner, writeCache } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
 import type { PublicConcert } from "../lib/public-concerts";
+import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type ClubRole, type Section } from "../lib/sections";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -25,8 +26,6 @@ const ResourceLibrary = dynamic(() => import("./resources").then((module) => mod
 const RecordingWorkspace = dynamic(() => import("../components/recordings/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
 const ClubArchiveManager = dynamic(() => import("../components/recordings/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false });
 
-type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "admin";
-type ClubRole = "member" | "executive" | "admin";
 type ArchiveType = "recording";
 type ArchiveItem = {
   id: number; title: string; description: string; type: ArchiveType;
@@ -47,13 +46,9 @@ type MemberProfile = { id: string; full_name: string; email: string; role: ClubR
 type ScopeFilter = "all" | "club" | number;
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
 
-const sectionValues: Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "admin"];
 function sectionFromUrl(): Section {
   if (typeof window === "undefined") return "home";
-  const rawValue = new URLSearchParams(window.location.search).get("page");
-  if (rawValue === "meetings") return "attendance";
-  const value = rawValue === "gallery" ? "documents" : rawValue as Section | null;
-  return value && sectionValues.includes(value) ? value : "home";
+  return sectionFromSearch(window.location.search);
 }
 
 function attendanceTabFromUrl(): "overview" | "meetings" | "excuses" {
@@ -257,7 +252,7 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const navigate = (next: Section) => {
     if (next === "home" && user) loadData();
     setSection(next);
-    const nextUrl = next === "home" ? window.location.pathname : `${window.location.pathname}?page=${next}`;
+    const nextUrl = sectionUrl(window.location.pathname, next);
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) window.history.pushState({ section: next }, "", nextUrl);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -292,6 +287,8 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   if (!user) return showLogin ? <LoginScreen onBack={closeLogin} /> : <PublicSite onSignIn={openLogin} initialRecordings={publicConcerts} />;
   if (deactivated) return <DeactivatedScreen onSignOut={() => { setDeactivated(false); void supabase?.auth.signOut(); }} />;
 
+  const outcome = resolveSection(section, role);
+
   return (
     <main className="portal-shell">
       <header className="topbar">
@@ -300,23 +297,25 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
         <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
-      {section === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData, notify } : undefined} />}
+      {outcome.kind === "render" && outcome.section === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData, notify } : undefined} />}
 
-      {section === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={(groupId) => { setAttendanceInitialScope(groupId); navigate("attendance"); }} onOpenRecordings={(groupId) => { setRecordingScope(groupId); navigate("recordings"); }} onOpenResources={(groupId) => { setResourceInitialScope(groupId); navigate("documents"); }} notify={notify} />}
+      {outcome.kind === "render" && outcome.section === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={(groupId) => { setAttendanceInitialScope(groupId); navigate("attendance"); }} onOpenRecordings={(groupId) => { setRecordingScope(groupId); navigate("recordings"); }} onOpenResources={(groupId) => { setResourceInitialScope(groupId); navigate("documents"); }} notify={notify} />}
 
-      {section === "admin" && role === "admin" && <AdminPage user={user} groups={groups} notify={notify} />}
+      {outcome.kind === "render" && outcome.section === "admin" && <AdminPage user={user} groups={groups} notify={notify} />}
 
-      {section === "recordings" && <><RecordingWorkspace user={user} groups={availableGroups} memberships={memberships} canManage={canManage} initialScope={recordingScope === "club" ? "all" : recordingScope} notify={notify} onDataChanged={loadData} />{canManage && <ClubArchiveManager items={archive} groups={groups} onAdd={() => setShowUpload(true)} onChanged={loadData} notify={notify} />}</>}
+      {outcome.kind === "render" && outcome.section === "recordings" && <><RecordingWorkspace user={user} groups={availableGroups} memberships={memberships} canManage={canManage} initialScope={recordingScope === "club" ? "all" : recordingScope} notify={notify} onDataChanged={loadData} />{canManage && <ClubArchiveManager items={archive} groups={groups} onAdd={() => setShowUpload(true)} onChanged={loadData} notify={notify} />}</>}
 
-      {section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Club and subgroup rehearsals, performances, meetings, and deadlines in one calendar." /><div className="toolbar"><p className="access-note">Every date shows who it is for</p><ScopeFilterBar value={calendarScope} onChange={setCalendarScope} groups={availableGroups} />{canManage && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={visibleEvents} groups={groups} canManage={canManage} onEdit={setEditingEvent} onDelete={deleteEvent} />}</section>}
+      {outcome.kind === "render" && outcome.section === "calendar" && <section className="section-shell page-section"><PageTitle eyebrow="CLUB CALENDAR" title="Important dates" text="Club and subgroup rehearsals, performances, meetings, and deadlines in one calendar." /><div className="toolbar"><p className="access-note">Every date shows who it is for</p><ScopeFilterBar value={calendarScope} onChange={setCalendarScope} groups={availableGroups} />{canManage && <button className="primary" onClick={() => setShowEvent(true)}>＋ Add important date</button>}</div>{dataLoading ? <InlineLoading /> : <CalendarView events={visibleEvents} groups={groups} canManage={canManage} onEdit={setEditingEvent} onDelete={deleteEvent} />}</section>}
 
-      {section === "attendance" && <AttendancePage key={`${attendanceInitialScope}-${attendanceTabFromUrl()}`} user={user} role={role} groups={availableGroups} initialScope={attendanceInitialScope} initialTab={attendanceTabFromUrl()} notify={notify} />}
+      {outcome.kind === "render" && outcome.section === "attendance" && <AttendancePage key={`${attendanceInitialScope}-${attendanceTabFromUrl()}`} user={user} role={role} groups={availableGroups} initialScope={attendanceInitialScope} initialTab={attendanceTabFromUrl()} notify={notify} />}
 
-      {section === "members" && <MembersPage user={user} notify={notify} />}
+      {outcome.kind === "render" && outcome.section === "members" && <MembersPage user={user} notify={notify} />}
 
-      {section === "documents" && <ResourceLibrary user={user} role={role} groups={availableGroups} memberships={memberships} events={events} notify={notify} onResourceCountChange={setResourceCount} initialScope={resourceInitialScope} />}
+      {outcome.kind === "render" && outcome.section === "documents" && <ResourceLibrary user={user} role={role} groups={availableGroups} memberships={memberships} events={events} notify={notify} onResourceCountChange={setResourceCount} initialScope={resourceInitialScope} />}
 
-      {section === "finances" && <FinancePage user={user} role={role} groups={availableGroups} events={events} notify={notify} />}
+      {outcome.kind === "render" && outcome.section === "finances" && <FinancePage user={user} role={role} groups={availableGroups} events={events} notify={notify} />}
+
+      {outcome.kind === "refused" && <SectionRefused label={SECTION_LABELS[outcome.section]} onHome={() => navigate("home")} />}
 
       <footer><div className="footer-brand"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="" /><div><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></div></div><p>Carnatic and Hindustani music at UNC Chapel Hill.</p><p>2026–27 Season</p></footer>
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
@@ -479,12 +478,8 @@ function ContentScopeLabel({ subgroupId, groups }: { subgroupId?: number | null;
 
 function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
   const [open, setOpen] = useState(false); const shell = useRef<HTMLDivElement>(null);
-  const labels: Record<Section, string> = { home: "Overview", groups: "My Groups", calendar: "Calendar", members: "Members", attendance: "Attendance", recordings: "Recordings", documents: "Resources", finances: "Finances", admin: "Admin" };
-  const primaryPages: Section[] = ["home", "calendar", "members"];
-  const libraryPages: Section[] = ["recordings", "documents"];
-  const subgroupPages: Section[] = ["groups", "attendance"];
-  const managePages: Section[] = role === "admin" ? ["admin"] : [];
-  const menuPages = [...primaryPages, ...libraryPages, ...subgroupPages, ...managePages];
+  const groups = menuGroups(role);
+  const pages = menuPages(role);
   useEffect(() => {
     function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); }
     function escape(event: KeyboardEvent) { if (event.key === "Escape") { setOpen(false); shell.current?.querySelector<HTMLButtonElement>(".page-menu-trigger")?.focus(); } }
@@ -492,11 +487,11 @@ function PortalPageMenu({ section, role, onNavigate }: { section: Section; role:
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
   }, []);
   function go(page: Section) { onNavigate(page); setOpen(false); }
-  function menuGroup(title: string, pages: Section[], global = false) {
-    if (!pages.length) return null;
-    return <div className="page-menu-group"><p>{title}</p>{pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => go(page)}><span>{labels[page]}</span>{global && <small>Club-wide</small>}{page === section && <i>✓</i>}</button>)}</div>;
-  }
-  return <div className="portal-navigation" ref={shell}><nav className="primary-navigation" aria-label="Portal navigation">{menuPages.map((page) => <button className={page === section ? "active" : ""} aria-current={page === section ? "page" : undefined} key={page} onClick={() => go(page)}>{labels[page]}</button>)}</nav><div className="page-menu-shell"><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Navigate</small><b>{labels[section]}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="page-menu" role="menu" aria-label="All pages">{menuGroup("CLUB", primaryPages, true)}{menuGroup("LIBRARY", libraryPages)}{menuGroup("GROUPS & ATTENDANCE", subgroupPages)}{menuGroup("MANAGE CLUB", managePages, true)}<span className="menu-count">{menuPages.length} destinations</span></div>}</div></div>;
+  return <div className="portal-navigation" ref={shell}><nav className="primary-navigation" aria-label="Portal navigation">{pages.map((page) => <button className={page === section ? "active" : ""} aria-current={page === section ? "page" : undefined} key={page} onClick={() => go(page)}>{SECTION_LABELS[page]}</button>)}</nav><div className="page-menu-shell"><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Navigate</small><b>{SECTION_LABELS[section]}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="page-menu" role="menu" aria-label="All pages">{groups.map((group) => <div className="page-menu-group" key={group.title}><p>{group.title}</p>{group.pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => go(page)}><span>{SECTION_LABELS[page]}</span>{group.clubWide && <small>Club-wide</small>}{page === section && <i>✓</i>}</button>)}</div>)}<span className="menu-count">{pages.length} destinations</span></div>}</div></div>;
+}
+
+function SectionRefused({ label, onHome }: { label: string; onHome: () => void }) {
+  return <section className="section-shell page-section"><EmptyState title={`${label} is not available to your account`} text="Ask a club administrator if you think you should have access." /><div className="mt-4 flex justify-center"><Button variant="secondary" onClick={onHome}>Back to Overview</Button></div></section>;
 }
 
 function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify: (message: string) => void }) {
