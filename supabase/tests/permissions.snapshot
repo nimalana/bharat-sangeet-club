@@ -414,6 +414,9 @@ storage.objects  [Executives delete archive files]  DELETE  to authenticated
     using: ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))
     check: -
 storage.objects  [Executives delete finance files]  DELETE  to authenticated
+    using: ((bucket_id = 'finance-private'::text) AND ( SELECT private.is_executive() AS is_executive) AND (NOT private.finance_path_registered(name)))
+    check: -
+storage.objects  [Executives read finance files]  SELECT  to authenticated
     using: ((bucket_id = 'finance-private'::text) AND ( SELECT private.is_executive() AS is_executive))
     check: -
 storage.objects  [Executives update archive files]  UPDATE  to authenticated
@@ -435,7 +438,7 @@ storage.objects  [Members delete own attendance excuse proof]  DELETE  to authen
     using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR ( SELECT private.is_executive() AS is_executive)))
     check: -
 storage.objects  [Members delete own unregistered finance files]  DELETE  to authenticated
-    using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM finance_documents document WHERE (document.storage_path = objects.name)))))
+    using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT private.finance_path_registered(name)))
     check: -
 storage.objects  [Members delete their recording files]  DELETE  to authenticated
     using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
@@ -448,6 +451,9 @@ storage.objects  [Members read accessible recording notation]  SELECT  to authen
     check: -
 storage.objects  [Members read accessible recordings]  SELECT  to authenticated
     using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE (recording.storage_path = objects.name))))
+    check: -
+storage.objects  [Members read own unregistered finance files]  SELECT  to authenticated
+    using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT private.finance_path_registered(name)))
     check: -
 storage.objects  [Members read permitted archive files]  SELECT  to authenticated
     using: ((bucket_id = 'club-archive'::text) AND ((EXISTS ( SELECT 1 FROM archive_items item WHERE ((item.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((item.subgroup_id IS NULL) AND (item.visibility = 'members'::archive_visibility)) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = item.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status) AND (item.visibility = 'members'::archive_visibility)))))))) OR (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_view_resource(resource.subgroup_id, resource.visibility, resource.status, resource.created_by))))))
@@ -489,6 +495,7 @@ storage.objects  [Visitors stream public concert files]  SELECT  to anon
 private.can_manage_resource(target_subgroup_id bigint, target_visibility archive_visibility)  definer
 private.can_manage_resource_import(target_subgroup_id bigint, target_created_by uuid)  definer
 private.can_view_resource(target_subgroup_id bigint, target_visibility archive_visibility, target_status resource_status, target_created_by uuid)  definer
+private.finance_path_registered(p_path text)  definer
 private.is_active_member()  definer
 private.is_admin()  definer
 private.is_executive()  definer
