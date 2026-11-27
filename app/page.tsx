@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../components/admin/member-access";
-import { setCacheOwner } from "../lib/cache";
+import { readCache, setCacheOwner, writeCache } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
@@ -328,12 +328,12 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    const [membersResult, announcementsResult, auditResult] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").order("full_name"),
-      supabase.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }),
+    const [membersResult, announcementsResult, auditResult, membershipResult] = await Promise.all([
+      supabase.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").order("full_name").limit(2000),
+      supabase.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(50),
       supabase.from("admin_audit_log").select("id,action,actor_email,target_email,details,created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
     ]);
-    const membershipResult = await supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role");
     if (membersResult.error || membershipResult.error || announcementsResult.error || auditResult.error) notify("Some admin data could not be loaded");
     setMembers((membersResult.data || []) as MemberProfile[]);
     setMemberships((membershipResult.data || []) as SubgroupMembership[]);
@@ -505,8 +505,8 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
     const [groupResult, membershipResult, archiveResult, announcementResult, requestResult] = await Promise.all([
       supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
-      supabase.from("archive_items").select("*").eq("type", "recording").not("subgroup_id", "is", null).order("created_at", { ascending: false }),
-      supabase.from("announcements").select("*").order("published_at", { ascending: false }),
+      supabase.from("archive_items").select("*").eq("type", "recording").not("subgroup_id", "is", null).order("created_at", { ascending: false }).limit(500),
+      supabase.from("announcements").select("*").not("subgroup_id", "is", null).order("published_at", { ascending: false }).limit(300),
       // Row-level security returns other people's waiting requests only to executives and to that group's leaders and managers.
       supabase.from("subgroup_memberships").select("subgroup_id").in("status", ["pending", "waitlisted"]).neq("member_id", user.id),
     ]);
@@ -642,27 +642,29 @@ function CalendarView({ events, groups, canManage, onEdit, onDelete }: { events:
 }
 
 function MembersPage({ user, notify }: { user: User; notify: (message: string) => void }) {
-  const [members, setMembers] = useState<MemberProfile[]>([]);
-  const [groups, setGroups] = useState<Subgroup[]>([]);
-  const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
+  // Reopening the directory shows the last data at once and refreshes behind it.
+  const [cached] = useState(() => readCache<{ members: MemberProfile[]; groups: Subgroup[]; memberships: SubgroupMembership[] }>(user.id, "members"));
+  const [members, setMembers] = useState<MemberProfile[]>(cached?.members || []);
+  const [groups, setGroups] = useState<Subgroup[]>(cached?.groups || []);
+  const [memberships, setMemberships] = useState<SubgroupMembership[]>(cached?.memberships || []);
   const [query, setQuery] = useState("");
   const [subgroupFilter, setSubgroupFilter] = useState<ScopeFilter>("all");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
   const loadMembers = useCallback(async () => {
     if (!supabase) return;
     const [memberResult, groupResult, membershipResult] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name"),
+      supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name").limit(2000),
       supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
-      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role"),
+      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
     ]);
     if (memberResult.error || groupResult.error || membershipResult.error) notify("The member directory could not be loaded");
-    setMembers((memberResult.data || []) as MemberProfile[]);
-    setGroups((groupResult.data || []) as Subgroup[]);
-    setMemberships((membershipResult.data || []) as SubgroupMembership[]);
+    const next = { members: (memberResult.data || []) as MemberProfile[], groups: (groupResult.data || []) as Subgroup[], memberships: (membershipResult.data || []) as SubgroupMembership[] };
+    setMembers(next.members); setGroups(next.groups); setMemberships(next.memberships);
+    if (!memberResult.error && !groupResult.error && !membershipResult.error) writeCache(user.id, "members", next);
     setLoading(false);
-  }, [notify]);
+  }, [notify, user.id]);
   useEffect(() => { loadMembers(); }, [loadMembers]);
   const ownProfile = members.find((member) => member.id === user.id);
   const filtered = members.filter((member) => {

@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { clubToday, formatDay } from "../lib/dates";
 import { supabase } from "../lib/supabase";
+import { readCache, writeCache } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
 import { FormDialog, type FormField } from "../components/ui/form-dialog";
 import { Badge } from "../components/ui/badge";
@@ -46,6 +47,8 @@ type ActionResult = PromiseLike<{ error: { message?: string; code?: string } | n
 type FinanceAction = { title: string; description?: string; fields: FormField[]; submitLabel: string; danger?: boolean; success: string; run: (values: Record<string, string>) => ActionResult };
 type FinanceSummary = { available_cash: number; income: number; spending: number; pending_reimbursement_total: number; pending_reimbursement_count: number; expected_funding: number };
 const reasonField = (label = "Reason"): FormField => ({ name: "reason", label, type: "textarea", required: true, minLength: 3, maxLength: 500, placeholder: "Kept in the audit trail" });
+type FinanceSnapshot = { expenses: Expense[]; reimbursements: Reimbursement[]; payments: Payment[]; documents: FinanceDocument[]; expenseDocuments: ExpenseDocument[]; reimbursementDocuments: ReimbursementDocument[]; claims: FundingClaim[]; claimExpenses: ClaimExpense[]; claimDocuments: ClaimDocument[]; profiles: Profile[]; summary: FinanceSummary | null };
+const LIST_LIMIT = 500;
 type FinanceModal = "reimbursement" | "expense" | "income" | "claim" | null;
 
 const expenseCategories = ["Food", "Instruments", "Venue", "Travel", "Publicity", "Performance", "Supplies", "Fees", "Other"];
@@ -63,17 +66,19 @@ export function FinancePage({ user, role, groups, events, notify }: {
   const [modal, setModal] = useState<FinanceModal>(null);
   const [claimUploadId, setClaimUploadId] = useState<number | null>(null);
   const [claimPaymentId, setClaimPaymentId] = useState<number | null>(null);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [reimbursements, setReimbursements] = useState<Reimbursement[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [claims, setClaims] = useState<FundingClaim[]>([]);
-  const [claimExpenses, setClaimExpenses] = useState<ClaimExpense[]>([]);
-  const [documents, setDocuments] = useState<FinanceDocument[]>([]);
-  const [expenseDocuments, setExpenseDocuments] = useState<ExpenseDocument[]>([]);
-  const [reimbursementDocuments, setReimbursementDocuments] = useState<ReimbursementDocument[]>([]);
-  const [claimDocuments, setClaimDocuments] = useState<ClaimDocument[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Reopening the screen shows the last data at once and refreshes behind it.
+  const [cached] = useState(() => readCache<FinanceSnapshot>(user.id, "finance"));
+  const [expenses, setExpenses] = useState<Expense[]>(cached?.expenses || []);
+  const [reimbursements, setReimbursements] = useState<Reimbursement[]>(cached?.reimbursements || []);
+  const [payments, setPayments] = useState<Payment[]>(cached?.payments || []);
+  const [claims, setClaims] = useState<FundingClaim[]>(cached?.claims || []);
+  const [claimExpenses, setClaimExpenses] = useState<ClaimExpense[]>(cached?.claimExpenses || []);
+  const [documents, setDocuments] = useState<FinanceDocument[]>(cached?.documents || []);
+  const [expenseDocuments, setExpenseDocuments] = useState<ExpenseDocument[]>(cached?.expenseDocuments || []);
+  const [reimbursementDocuments, setReimbursementDocuments] = useState<ReimbursementDocument[]>(cached?.reimbursementDocuments || []);
+  const [claimDocuments, setClaimDocuments] = useState<ClaimDocument[]>(cached?.claimDocuments || []);
+  const [profiles, setProfiles] = useState<Profile[]>(cached?.profiles || []);
+  const [loading, setLoading] = useState(!cached);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [flowFilter, setFlowFilter] = useState("all");
@@ -81,45 +86,50 @@ export function FinancePage({ user, role, groups, events, notify }: {
   const [selectedClaimExpenses, setSelectedClaimExpenses] = useState<Set<number>>(new Set());
   const [action, setAction] = useState<FinanceAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
-  const [summary, setSummary] = useState<FinanceSummary | null>(null);
+  const [summary, setSummary] = useState<FinanceSummary | null>(cached?.summary ?? null);
   const [receiptRequestId, setReceiptRequestId] = useState<number | null>(null);
 
   const loadFinance = useCallback(async () => {
-    if (!supabase) return;
-    setLoading(true);
-    const baseRequests = await Promise.all([
-      supabase.from("finance_expenses").select("*").order("purchase_date", { ascending: false }),
-      supabase.from("personal_reimbursements").select("*").order("created_at", { ascending: false }),
-      supabase.from("finance_payments").select("*").order("payment_date", { ascending: false }),
-      supabase.from("finance_documents").select("id,document_type,title,storage_path,uploaded_by").order("created_at", { ascending: false }),
-      supabase.from("finance_expense_documents").select("expense_id,document_id"),
-      supabase.from("finance_reimbursement_documents").select("reimbursement_id,document_id"),
+    const client = supabase;
+    if (!client) return;
+    if (!readCache(user.id, "finance")) setLoading(true);
+    const none = Promise.resolve({ data: [] as unknown[], error: null });
+    // Everything in one wave (it used to be three, one after another). The
+    // lists show the latest LIST_LIMIT rows; totals come from the database.
+    const [expenseResult, reimbursementResult, paymentResult, documentResult, expenseDocumentResult, reimbursementDocumentResult, summaryResult, claimResult, claimExpenseResult, claimDocumentResult, profileResult] = await Promise.all([
+      client.from("finance_expenses").select("*").order("purchase_date", { ascending: false }).order("id", { ascending: false }).limit(LIST_LIMIT),
+      client.from("personal_reimbursements").select("*").order("created_at", { ascending: false }).limit(LIST_LIMIT),
+      client.from("finance_payments").select("*").order("payment_date", { ascending: false }).order("id", { ascending: false }).limit(LIST_LIMIT),
+      client.from("finance_documents").select("id,document_type,title,storage_path,uploaded_by").order("created_at", { ascending: false }).limit(LIST_LIMIT * 4),
+      client.from("finance_expense_documents").select("expense_id,document_id").limit(LIST_LIMIT * 4),
+      client.from("finance_reimbursement_documents").select("reimbursement_id,document_id").limit(LIST_LIMIT * 4),
+      client.rpc("get_finance_summary"),
+      canManage ? client.from("funding_claims").select("*").order("created_at", { ascending: false }).limit(LIST_LIMIT) : none,
+      canManage ? client.from("funding_claim_expenses").select("claim_id,expense_id,claimed_amount").limit(LIST_LIMIT * 4) : none,
+      canManage ? client.from("finance_claim_documents").select("claim_id,document_id").limit(LIST_LIMIT * 4) : none,
+      canManage ? client.from("profiles").select("id,full_name,email").order("full_name").limit(2000) : none,
     ]);
-    setExpenses((baseRequests[0].data || []) as Expense[]);
-    setReimbursements((baseRequests[1].data || []) as Reimbursement[]);
-    setPayments((baseRequests[2].data || []) as Payment[]);
-    setDocuments((baseRequests[3].data || []) as FinanceDocument[]);
-    setExpenseDocuments((baseRequests[4].data || []) as ExpenseDocument[]);
-    setReimbursementDocuments((baseRequests[5].data || []) as ReimbursementDocument[]);
-    if (baseRequests.some((request) => request.error)) notify("Some finance records could not be loaded");
-
-    if (canManage) {
-      const managementRequests = await Promise.all([
-        supabase.from("funding_claims").select("*").order("created_at", { ascending: false }),
-        supabase.from("funding_claim_expenses").select("claim_id,expense_id,claimed_amount"),
-        supabase.from("finance_claim_documents").select("claim_id,document_id"),
-        supabase.from("profiles").select("id,full_name,email").order("full_name"),
-      ]);
-      setClaims((managementRequests[0].data || []) as FundingClaim[]);
-      setClaimExpenses((managementRequests[1].data || []) as ClaimExpense[]);
-      setClaimDocuments((managementRequests[2].data || []) as ClaimDocument[]);
-      setProfiles((managementRequests[3].data || []) as Profile[]);
-      if (managementRequests.some((request) => request.error)) notify("Some funding workflow data could not be loaded");
-    }
-    const summaryResult = await supabase.rpc("get_finance_summary");
-    setSummary(summaryResult.error || !summaryResult.data ? null : Object.fromEntries(Object.entries(summaryResult.data as Record<string, unknown>).map(([key, value]) => [key, Number(value)])) as FinanceSummary);
+    const snapshot: FinanceSnapshot = {
+      expenses: (expenseResult.data || []) as Expense[],
+      reimbursements: (reimbursementResult.data || []) as Reimbursement[],
+      payments: (paymentResult.data || []) as Payment[],
+      documents: (documentResult.data || []) as FinanceDocument[],
+      expenseDocuments: (expenseDocumentResult.data || []) as ExpenseDocument[],
+      reimbursementDocuments: (reimbursementDocumentResult.data || []) as ReimbursementDocument[],
+      claims: (claimResult.data || []) as FundingClaim[],
+      claimExpenses: (claimExpenseResult.data || []) as ClaimExpense[],
+      claimDocuments: (claimDocumentResult.data || []) as ClaimDocument[],
+      profiles: (profileResult.data || []) as Profile[],
+      summary: summaryResult.error || !summaryResult.data ? null : Object.fromEntries(Object.entries(summaryResult.data as Record<string, unknown>).map(([key, value]) => [key, Number(value)])) as FinanceSummary,
+    };
+    setExpenses(snapshot.expenses); setReimbursements(snapshot.reimbursements); setPayments(snapshot.payments);
+    setDocuments(snapshot.documents); setExpenseDocuments(snapshot.expenseDocuments); setReimbursementDocuments(snapshot.reimbursementDocuments);
+    setClaims(snapshot.claims); setClaimExpenses(snapshot.claimExpenses); setClaimDocuments(snapshot.claimDocuments);
+    setProfiles(snapshot.profiles); setSummary(snapshot.summary);
+    const failed = [expenseResult, reimbursementResult, paymentResult, documentResult, expenseDocumentResult, reimbursementDocumentResult, claimResult, claimExpenseResult, claimDocumentResult, profileResult].some((result) => result.error);
+    if (failed) notify("Some finance records could not be loaded"); else writeCache(user.id, "finance", snapshot);
     setLoading(false);
-  }, [canManage, notify]);
+  }, [canManage, notify, user.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { loadFinance(); }, 0);
@@ -472,9 +482,9 @@ export function FinancePage({ user, role, groups, events, notify }: {
     <div className="finance-tabs" role="tablist">{(canManage ? ["overview", "expenses", "reimbursements", "claims"] : ["reimbursements"] as FinanceView[]).map((item) => <button key={item} role="tab" aria-selected={view === item} className={view === item ? "active" : ""} onClick={() => setView(item as FinanceView)}>{item === "claims" ? "Funding claims" : item}</button>)}</div>
 
     {loading ? <div className="inline-loading">Loading finance workspace…</div> : <>
-      {canManage && view === "overview" && <div className="finance-overview-grid"><section className="finance-panel"><PanelHeading title="Cash ledger" meta={`${filteredPayments.length} payments`} /><div className="finance-ledger-tools"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search payments" /></label><select aria-label="Filter cash ledger" value={flowFilter} onChange={(event) => setFlowFilter(event.target.value)}><option value="all">All activity</option><option value="inflow">Money in</option><option value="outflow">Money out</option><option value="member_reimbursement">Member reimbursements</option><option value="external_reimbursement">Funding received</option></select></div><PaymentLedger payments={filteredPayments} onVoid={askVoidPayment} /></section><aside className="finance-panel"><PanelHeading title="Action queue" meta="Needs attention" />{pendingReimbursements.length ? pendingReimbursements.slice(0, 4).map((request) => <button className="finance-queue-item" key={request.id} onClick={() => setView("reimbursements")}><span>Member reimbursement</span><b>{expenseById.get(request.expense_id)?.description || "Purchase"}</b><small>{money(Number(request.requested_amount))} · {request.status}</small></button>) : <p className="finance-empty-copy">No reimbursements need attention.</p>}{claims.filter((claim) => !["paid", "denied", "voided"].includes(claim.status)).slice(0, 3).map((claim) => <button className="finance-queue-item" key={claim.id} onClick={() => setView("claims")}><span>Funding claim</span><b>{claim.title}</b><small>{claimChecklist(claim).checks.filter((check) => check.done).length}/6 requirements · {claim.status}</small></button>)}</aside></div>}
+      {canManage && view === "overview" && <div className="finance-overview-grid"><section className="finance-panel"><PanelHeading title="Cash ledger" meta={payments.length >= LIST_LIMIT ? `Latest ${LIST_LIMIT} payments` : `${filteredPayments.length} payments`} /><div className="finance-ledger-tools"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search payments" /></label><select aria-label="Filter cash ledger" value={flowFilter} onChange={(event) => setFlowFilter(event.target.value)}><option value="all">All activity</option><option value="inflow">Money in</option><option value="outflow">Money out</option><option value="member_reimbursement">Member reimbursements</option><option value="external_reimbursement">Funding received</option></select></div><PaymentLedger payments={filteredPayments} onVoid={askVoidPayment} /></section><aside className="finance-panel"><PanelHeading title="Action queue" meta="Needs attention" />{pendingReimbursements.length ? pendingReimbursements.slice(0, 4).map((request) => <button className="finance-queue-item" key={request.id} onClick={() => setView("reimbursements")}><span>Member reimbursement</span><b>{expenseById.get(request.expense_id)?.description || "Purchase"}</b><small>{money(Number(request.requested_amount))} · {request.status}</small></button>) : <p className="finance-empty-copy">No reimbursements need attention.</p>}{claims.filter((claim) => !["paid", "denied", "voided"].includes(claim.status)).slice(0, 3).map((claim) => <button className="finance-queue-item" key={claim.id} onClick={() => setView("claims")}><span>Funding claim</span><b>{claim.title}</b><small>{claimChecklist(claim).checks.filter((check) => check.done).length}/6 requirements · {claim.status}</small></button>)}</aside></div>}
 
-      {canManage && view === "expenses" && <section className="finance-panel"><PanelHeading title="Expense register" meta={`${expenses.length} purchases`} />{expenses.length ? <div className="finance-table"><div className="finance-table-head"><span>Purchase</span><span>Paid by</span><span>Status</span><span>Amount</span></div>{expenses.map((expense) => <div className="finance-table-row" key={expense.id}><div><b>{expense.description}</b><small>{expense.vendor || expense.category} · {formatDay(expense.purchase_date)}{expense.payment_card_last4 ? ` · •••• ${expense.payment_card_last4}` : ""}</small></div><span>{expense.paid_by === "member" ? profileById.get(expense.paid_by_member_id || "")?.full_name || "Member" : "Club account"}</span><StatusBadge status={expense.status} /><strong>{money(Number(expense.amount))}{expense.status !== "voided" && <span className="finance-row-actions"><button type="button" className="finance-row-action" onClick={() => askEditExpense(expense)}>Edit</button><button type="button" className="finance-row-action" onClick={() => askVoidExpense(expense)}>Void</button></span>}</strong></div>)}</div> : <FinanceEmpty title="No expenses yet" text="Record a club purchase or approve a member reimbursement." />}</section>}
+      {canManage && view === "expenses" && <section className="finance-panel"><PanelHeading title="Expense register" meta={expenses.length >= LIST_LIMIT ? `Latest ${LIST_LIMIT} purchases` : `${expenses.length} purchases`} />{expenses.length ? <div className="finance-table"><div className="finance-table-head"><span>Purchase</span><span>Paid by</span><span>Status</span><span>Amount</span></div>{expenses.map((expense) => <div className="finance-table-row" key={expense.id}><div><b>{expense.description}</b><small>{expense.vendor || expense.category} · {formatDay(expense.purchase_date)}{expense.payment_card_last4 ? ` · •••• ${expense.payment_card_last4}` : ""}</small></div><span>{expense.paid_by === "member" ? profileById.get(expense.paid_by_member_id || "")?.full_name || "Member" : "Club account"}</span><StatusBadge status={expense.status} /><strong>{money(Number(expense.amount))}{expense.status !== "voided" && <span className="finance-row-actions"><button type="button" className="finance-row-action" onClick={() => askEditExpense(expense)}>Edit</button><button type="button" className="finance-row-action" onClick={() => askVoidExpense(expense)}>Void</button></span>}</strong></div>)}</div> : <FinanceEmpty title="No expenses yet" text="Record a club purchase or approve a member reimbursement." />}</section>}
 
       {view === "reimbursements" && <section className="finance-panel"><PanelHeading title={canManage ? "Member reimbursements" : "My requests"} meta={`${reimbursements.length} requests`} />{reimbursements.length ? <div className="reimbursement-list">{reimbursements.map((request) => { const expense = expenseById.get(request.expense_id); const receiptIds = reimbursementDocuments.filter((item) => item.reimbursement_id === request.id).map((item) => item.document_id); return <article className="reimbursement-card" key={request.id}><div className="reimbursement-main"><div><p className="eyebrow">{canManage ? profileById.get(request.member_id)?.full_name || profileById.get(request.member_id)?.email || "CLUB MEMBER" : "MY REQUEST"}</p><h3>{expense?.description || "Club purchase"}</h3><p>{expense?.vendor || expense?.category} · Purchased {expense ? formatDay(expense.purchase_date) : "recently"}</p></div><div className="reimbursement-amount"><strong>{money(Number(request.approved_amount || request.requested_amount))}</strong><StatusBadge status={request.status} /></div></div>{request.member_note && <p className="reimbursement-note">“{request.member_note}”</p>}{request.review_note && <p className="reimbursement-note"><b>{request.status === "changes_requested" ? "Changes requested: " : "Reviewer: "}</b>{request.review_note}</p>}{request.status === "voided" && request.void_reason && <p className="reimbursement-note"><b>Voided: </b>{request.void_reason}</p>}<div className="reimbursement-footer"><div>{receiptIds.map((documentId) => { const document = documentById.get(documentId); const removable = document && ["submitted", "changes_requested"].includes(request.status) && (canManage || document.uploaded_by === user.id); return <span key={documentId} className="document-chip-group"><button className="document-chip" onClick={() => openDocument(documentId)}>▤ {document?.title || "Document"}</button>{removable && <button type="button" className="finance-row-action" onClick={() => askRemoveDocument(document)} aria-label={`Remove ${document.title}`}>×</button>}</span>; })}{request.member_id === user.id && ["submitted", "changes_requested"].includes(request.status) && <button type="button" className="document-chip" onClick={() => setReceiptRequestId(request.id)}>＋ Add receipt</button>}</div><div className="reimbursement-actions">{request.member_id === user.id && expense && ["submitted", "changes_requested"].includes(request.status) && <><button className="secondary" onClick={() => askEditRequest(request, expense)}>{request.status === "changes_requested" ? "Edit and resubmit" : "Edit"}</button><button className="secondary" onClick={() => askWithdrawRequest(request)}>Withdraw</button></>}{canManage && request.member_id === user.id && request.status === "submitted" && <small>Another executive must review your own request.</small>}{canManage && request.member_id !== user.id && request.status === "submitted" && <><button className="secondary" onClick={() => askDecline(request)}>Decline</button><button className="secondary" onClick={() => askRequestChanges(request)}>Request changes</button><button className="primary" onClick={() => askApprove(request)}>Approve</button></>}{canManage && request.status === "approved" && <button className="primary" onClick={() => markReimbursementPaid(request.id)}>Mark paid</button>}{canManage && request.status === "paid" && (() => { const payment = activePayments.find((item) => item.reimbursement_id === request.id); return payment ? <button className="secondary" onClick={() => askVoidPayment(payment)}>Void payment</button> : null; })()}{canManage && expense && request.member_id !== user.id && ["submitted", "changes_requested", "approved", "rejected"].includes(request.status) && <button className="secondary" onClick={() => askVoidExpense(expense)}>Void</button>}</div></div></article>; })}</div> : <FinanceEmpty title="No reimbursement requests" text={canManage ? "Member requests will appear here for review." : "Use Request reimbursement when you buy something for the club."} />}</section>}
 

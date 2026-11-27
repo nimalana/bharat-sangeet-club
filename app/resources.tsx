@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { ResourceActions } from "../components/resources/resource-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { readCache, writeCache } from "../lib/cache";
 import { supabase } from "../lib/supabase";
 import styles from "./resources.module.css";
 
@@ -150,8 +151,8 @@ function normalizeUrl(value: string) {
 }
 
 export function ResourceLibrary({ user, role, groups, memberships, events, notify, onResourceCountChange, initialScope = "all" }: ResourceLibraryProps) {
-  const [items, setItems] = useState<ResourceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<ResourceItem[]>(() => readCache<ResourceItem[]>(user.id, "resources") || []);
+  const [loading, setLoading] = useState(() => !readCache(user.id, "resources"));
   const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState<LibraryTab>("all");
   const [query, setQuery] = useState("");
@@ -204,7 +205,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
       setLoadError("Resource storage is not configured in this environment.");
       return;
     }
-    setLoading(true);
+    if (!readCache(user.id, "resources")) setLoading(true);
     setLoadError("");
     const { data, error } = await client.from("resources").select(RESOURCE_FIELDS).order("is_pinned", { ascending: false }).order("updated_at", { ascending: false });
     if (error) {
@@ -215,15 +216,27 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
       return;
     }
     const baseItems = (data || []) as ResourceItem[];
-    const hydrated = await Promise.all(baseItems.map(async (item) => {
-      if (item.status !== "ready" || item.node_kind !== "file" || !item.storage_path) return item;
+    // Only image thumbnails need a URL up front, and they are signed in one
+    // request per bucket. Every other file is signed when it is opened.
+    const signedByPath = new Map<string, string>();
+    const imagesByBucket = new Map<string, string[]>();
+    for (const item of baseItems) {
+      if (item.status !== "ready" || item.node_kind !== "file" || !item.storage_path || !isImage(item)) continue;
       const bucket = item.storage_bucket || "club-resources";
-      const signed = await client.storage.from(bucket).createSignedUrl(item.storage_path, 900);
-      return signed.data?.signedUrl ? { ...item, signedUrl: signed.data.signedUrl } : item;
+      imagesByBucket.set(bucket, [...(imagesByBucket.get(bucket) || []), item.storage_path]);
+    }
+    await Promise.all([...imagesByBucket].map(async ([bucket, paths]) => {
+      const signed = await client.storage.from(bucket).createSignedUrls(paths, 3600);
+      for (const entry of signed.data || []) if (entry.signedUrl && entry.path) signedByPath.set(`${bucket}/${entry.path}`, entry.signedUrl);
     }));
+    const hydrated = baseItems.map((item) => {
+      const url = item.storage_path ? signedByPath.get(`${item.storage_bucket || "club-resources"}/${item.storage_path}`) : undefined;
+      return url ? { ...item, signedUrl: url } : item;
+    });
     setItems(hydrated);
+    writeCache(user.id, "resources", hydrated);
     setLoading(false);
-  }, [notify]);
+  }, [notify, user.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadResources(); }, 0);
@@ -451,9 +464,13 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   async function openFile(item: ResourceItem) {
     if (item.node_kind === "link" && item.external_url) { window.open(item.external_url, "_blank", "noopener,noreferrer"); return; }
     if (!supabase || !item.storage_path) return;
-    const signed = item.signedUrl || (await supabase.storage.from(item.storage_bucket || "club-resources").createSignedUrl(item.storage_path, 300)).data?.signedUrl;
-    if (!signed) { notify("This resource could not be opened"); return; }
-    window.open(signed, "_blank", "noopener,noreferrer");
+    // Open the tab during the click, before waiting for the link, so browsers
+    // that block pop-ups opened after a delay still allow it.
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    const signed = (await supabase.storage.from(item.storage_bucket || "club-resources").createSignedUrl(item.storage_path, 300)).data?.signedUrl;
+    if (!signed) { tab?.close(); notify("This resource could not be opened"); return; }
+    if (tab) tab.location.replace(signed); else window.location.assign(signed);
   }
 
   const canManageItem = (item: ResourceItem) => canManageClub || (item.visibility === "members" && canManageSubgroup(item.subgroup_id));
@@ -482,7 +499,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
     <div className={styles.breadcrumbRow}><button type="button" onClick={() => setFolderId(null)} className={folderId === null ? styles.currentCrumb : ""}>Resources</button>{breadcrumb.map((crumb) => <span key={crumb.id} className={styles.crumb}><Icon name="chevron" size={13} /><button type="button" onClick={() => setFolderId(crumb.id)} className={crumb.id === folderId ? styles.currentCrumb : ""}>{crumb.title}</button></span>)}{currentFolder && !showArchived && canManageItem(currentFolder) ? <button type="button" onClick={() => setSelected(currentFolder)}>Folder settings</button> : null}<span className={styles.scopeHint}>{showArchived ? "Archived · " : ""}{scopeLabel}{currentFolder?.visibility === "executives" ? <><span className={styles.dot}>·</span><Icon name="lock" size={13} /></> : null}</span></div>
 
     {loading ? <div className={styles.state}><span className={styles.loader} /><h2>Opening the library</h2><p>Gathering the latest club resources…</p></div> : loadError ? <div className={styles.state}><div className={styles.stateIcon}><Icon name="refresh" size={22} /></div><h2>Something interrupted the shelf</h2><p>{loadError}</p><button type="button" className={styles.secondaryButton} onClick={() => void loadResources()}>Try again</button></div> : visibleItems.length === 0 ? <div className={styles.state}><div className={styles.stateIcon}><Icon name={query ? "search" : "folder"} size={23} /></div><h2>{showArchived ? "Nothing is archived here" : query ? "No matching resources" : folderId ? "This folder is ready for something" : "Your resource shelf is empty"}</h2><p>{query ? "Try a shorter search or clear the search field." : canAdd ? "Create a folder, add a useful link, or upload a set of files to get started." : "Resources shared with your membership will appear here."}</p>{query ? <button type="button" className={styles.secondaryButton} onClick={() => setQuery("")}>Clear search</button> : canAdd ? <button type="button" className={styles.secondaryButton} onClick={() => openComposer("menu")}><Icon name="plus" size={15} /> Add the first resource</button> : null}</div> : <div className={display === "grid" || tab === "photos" ? styles.resourceGrid : styles.resourceList}>{visibleItems.map((item) => <button key={item.id} type="button" className={styles.resourceRow} onClick={() => openItem(item)}>
-      {/* Signed Supabase URLs are short-lived and dynamic, so a native img is intentional here instead of next/image. */}{item.node_kind === "file" && isImage(item) && item.signedUrl ? <img src={item.signedUrl} alt="" className={styles.thumbnail} /> : <div className={`${styles.typeIcon} ${item.node_kind === "folder" ? styles.folderIcon : ""}`}><Icon name={itemIcon(item)} size={20} /></div>}
+      {/* Signed Supabase URLs are short-lived and dynamic, so a native img is intentional here instead of next/image. */}{item.node_kind === "file" && isImage(item) && item.signedUrl ? <img src={item.signedUrl} alt="" className={styles.thumbnail} loading="lazy" decoding="async" /> : <div className={`${styles.typeIcon} ${item.node_kind === "folder" ? styles.folderIcon : ""}`}><Icon name={itemIcon(item)} size={20} /></div>}
       <div className={styles.resourceCopy}><div className={styles.resourceTitle}>{item.title}{item.is_pinned ? <span className={styles.pinned}>Pinned</span> : null}{item.status === "failed" ? <span className={styles.failedBadge}>Upload failed</span> : null}</div><p>{item.description || (item.node_kind === "folder" ? "Folder" : item.node_kind === "link" ? item.external_url : item.original_filename) || "No description"}</p></div>
       <div className={styles.resourceMeta}><span>{item.node_kind === "folder" ? "Folder" : item.node_kind === "link" ? "Link" : formatBytes(item.byte_size)}</span><span>{formatDate(item.updated_at)}</span></div><Icon name="arrow" size={17} /></button>)}</div>}
 
