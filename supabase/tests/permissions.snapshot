@@ -486,6 +486,8 @@ storage.objects  [Visitors stream public concert files]  SELECT  to anon
     using: ((bucket_id = 'club-archive'::text) AND (EXISTS ( SELECT 1 FROM archive_items WHERE ((archive_items.storage_path = objects.name) AND archive_items.is_public AND (archive_items.type = 'recording'::archive_type)))))
     check: -
 # functions callable by signed-in users (definer = runs with owner rights)
+private.attendance_items_version(p_session_ids bigint[])  invoker
+private.attendance_roster_version(p_session_id bigint)  invoker
 private.can_manage_resource(target_subgroup_id bigint, target_visibility archive_visibility)  definer
 private.can_manage_resource_import(target_subgroup_id bigint, target_created_by uuid)  definer
 private.can_view_resource(target_subgroup_id bigint, target_visibility archive_visibility, target_status resource_status, target_created_by uuid)  definer
