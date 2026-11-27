@@ -67,7 +67,9 @@ begin
   assert test.count_as(v_owner, format('select count(*) from storage.objects where bucket_id = ''recordings'' and name = %L', v_other_lost)) = 0, 'the uploader cannot see another member''s abandoned take';
   assert test.count_as(v_owner, 'select count(*) from storage.objects where bucket_id = ''recordings'' and name = ''loose-at-root.webm''') = 0, 'a file outside any user folder is not readable';
   assert test.count_as(v_owner, format('select count(*) from storage.objects where bucket_id = ''club-resources'' and name = %L', v_owner || '/not-a-recording-bucket.pdf')) = 0, 'the own-folder rule is not extended to other buckets';
-  assert test.count_as(v_owner, format('select count(*) from storage.objects where bucket_id = ''finance-private'' and name = %L', v_owner || '/receipt.pdf')) = 0, 'or to finance, which keeps its own rules';
+  -- finance-private has its own rule (20261127050200): a member reads their own UNREGISTERED files so Storage can delete them; nobody else's.
+  assert test.count_as(v_owner, format('select count(*) from storage.objects where bucket_id = ''finance-private'' and name = %L', v_owner || '/receipt.pdf')) = 1, 'finance keeps its own rule: the owner reads their own unregistered file';
+  assert test.count_as(v_outsider, format('select count(*) from storage.objects where bucket_id = ''finance-private'' and name = %L', v_owner || '/receipt.pdf')) = 0, 'and nobody else can';
   assert test.count_as(v_exec, format('select count(*) from storage.objects where bucket_id = ''club-archive'' and name = %L', v_exec_archive)) = 1, 'an executive sees their abandoned archive upload';
   assert test.count_as(v_owner, format('select count(*) from storage.objects where bucket_id = ''club-archive'' and name = %L', v_exec_archive)) = 0, 'a member does not';
 

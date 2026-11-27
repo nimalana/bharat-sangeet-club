@@ -64,9 +64,9 @@ begin
   select id into v_claim2 from public.create_funding_claim('Second claim', 'GPSG Senate', '', '', null, '', array[v_club2]);
   perform test.logout();
   update public.funding_claims set requested_amount = 1000 where id = v_claim2;
-  message := test.error_as(v_exec, format('insert into public.funding_claim_expenses (claim_id, expense_id, claimed_amount) values (%s, %s, 30)', v_claim2, v_voided));
+  message := test.error_of(format('insert into public.funding_claim_expenses (claim_id, expense_id, claimed_amount) values (%s, %s, 30)', v_claim2, v_voided));
   assert message like 'That expense cannot be claimed%', 'direct link to a voided expense: ' || coalesce(message, 'no error');
-  message := test.error_as(v_exec, format('insert into public.funding_claim_expenses (claim_id, expense_id, claimed_amount) values (%s, %s, 100)', v_claim2, v_club));
+  message := test.error_of(format('insert into public.funding_claim_expenses (claim_id, expense_id, claimed_amount) values (%s, %s, 100)', v_claim2, v_club));
   assert message like 'claims cannot exceed the expense amount%', 'direct second claim of the same expense: ' || coalesce(message, 'no error');
   -- A rejected request is refused too.
   perform test.login(v_member);
@@ -76,7 +76,7 @@ begin
   perform test.login(v_exec);
   perform public.review_personal_reimbursement(v_reimbursement_rejected, 'rejected', null, 'No');
   perform test.logout();
-  message := test.error_as(v_exec, format('insert into public.funding_claim_expenses (claim_id, expense_id, claimed_amount) values (%s, %s, 20)', v_claim2, v_expense_rejected));
+  message := test.error_of(format('insert into public.funding_claim_expenses (claim_id, expense_id, claimed_amount) values (%s, %s, 20)', v_claim2, v_expense_rejected));
   assert message like 'That expense cannot be claimed%', 'direct link to a rejected expense: ' || coalesce(message, 'no error');
 
   -- finance-2 / finance-3: a claim cannot be marked ready or submitted with a stale link.
