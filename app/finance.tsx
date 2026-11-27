@@ -6,6 +6,7 @@ import { clubToday, formatDay } from "../lib/dates";
 import { supabase } from "../lib/supabase";
 import { readCache, writeCache } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
+import { REFRESH_WAIT_MS, waitAtMost } from "../lib/bounded-wait";
 import { financeRefreshFailed } from "../lib/finance-load";
 import { createRequestGate } from "../lib/request-gate";
 import { createSingleFlight } from "../lib/single-flight";
@@ -57,6 +58,10 @@ type FinanceSummary = { available_cash: number; income: number; spending: number
 const reasonField = (label = "Reason"): FormField => ({ name: "reason", label, type: "textarea", required: true, minLength: 3, maxLength: 500, placeholder: "Kept in the audit trail" });
 type FinanceSnapshot = { expenses: Expense[]; reimbursements: Reimbursement[]; payments: Payment[]; documents: FinanceDocument[]; expenseDocuments: ExpenseDocument[]; reimbursementDocuments: ReimbursementDocument[]; claims: FundingClaim[]; claimExpenses: ClaimExpense[]; claimDocuments: ClaimDocument[]; profiles: Profile[]; summary: FinanceSummary | null };
 const LIST_LIMIT = 500;
+// Shown when the lists have not come back REFRESH_WAIT_MS after a change that was saved.
+const REFRESH_SLOW_NOTICE = "Saved. The lists are slow to refresh and will update on their own.";
+// Said after a document's record is removed but its file could not be: a retry cannot help, the record is gone.
+const FILE_LEFT_IN_STORAGE = "The document was removed from the request, but its file is still in storage and could not be deleted. Ask an administrator to remove it.";
 type FinanceModal = "reimbursement" | "expense" | "income" | "claim" | null;
 // One-click changes that need a yes first: paying out money, and sending a claim to the funder (it cannot go back to editing).
 type FinanceConfirm = { kind: "pay"; request: Reimbursement } | { kind: "submit"; claim: FundingClaim } | null;
@@ -165,6 +170,14 @@ export function FinancePage({ user, role, groups, events, notify }: {
     return () => window.clearTimeout(timer);
   }, [loadFinance]);
 
+  // After a change the dialog stays busy until the lists have been read again, but not for ever: a read
+  // that hangs must not leave a dialog stuck on a change that already went through. After REFRESH_WAIT_MS
+  // the caller moves on (the dialog closes), the read carries on in the background and the person is told.
+  const refreshAfterChange = useCallback(async () => {
+    const result = await waitAtMost(loadFinance(), REFRESH_WAIT_MS);
+    if (result === "timeout") notify(REFRESH_SLOW_NOTICE, "success");
+  }, [loadFinance, notify]);
+
   const expenseById = useMemo(() => new Map(expenses.map((expense) => [expense.id, expense])), [expenses]);
   const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
   const documentById = useMemo(() => new Map(documents.map((document) => [document.id, document])), [documents]);
@@ -255,10 +268,10 @@ export function FinancePage({ user, role, groups, events, notify }: {
     try {
       await uploadDocument(receipt, "receipt", `Receipt — ${String(form.get("description") || "Purchase")}`, { expenseId: result.expense_id, reimbursementId: result.reimbursement_id }, last4);
       if (statement?.size) await uploadDocument(statement, "card_statement", "Payment card statement", { expenseId: result.expense_id, reimbursementId: result.reimbursement_id }, last4);
-      setModal(null); setEventRelated(false); notify("Reimbursement request submitted"); await loadFinance();
+      setModal(null); setEventRelated(false); notify("Reimbursement request submitted"); await refreshAfterChange();
     } catch (uploadError) {
       notify(uploadError instanceof Error ? `Request saved; ${uploadError.message}` : "Request saved, but a document failed to upload", "error");
-      await loadFinance();
+      await refreshAfterChange();
     } finally { setSaving(false); }
   }
 
@@ -284,10 +297,10 @@ export function FinancePage({ user, role, groups, events, notify }: {
     if (error) { setSaving(false); notify(friendlyError(error, "The expense could not be recorded."), "error"); return; }
     try {
       await uploadDocument(receipt, "receipt", `Receipt — ${String(form.get("description") || "Purchase")}`, { expenseId: Number(data) }, last4);
-      setModal(null); setEventRelated(false); notify("Club expense recorded"); await loadFinance();
+      setModal(null); setEventRelated(false); notify("Club expense recorded"); await refreshAfterChange();
     } catch (uploadError) {
       notify(uploadError instanceof Error ? `Expense saved; ${uploadError.message}` : "Expense saved, but the receipt failed to upload", "error");
-      await loadFinance();
+      await refreshAfterChange();
     } finally { setSaving(false); }
   }
 
@@ -322,10 +335,10 @@ export function FinancePage({ user, role, groups, events, notify }: {
     const claimId = Number((saved.data as { id: number }).id);
     try {
       await uploadDocument(approval, "funding_approval", "Funding approval", { claimId });
-      setModal(null); setSelectedClaimExpenses(new Set()); notify("Funding claim workspace created"); await loadFinance();
+      setModal(null); setSelectedClaimExpenses(new Set()); notify("Funding claim workspace created"); await refreshAfterChange();
     } catch (uploadError) {
       notify(uploadError instanceof Error ? `Claim saved; ${uploadError.message}` : "Claim saved, but approval proof failed to upload", "error");
-      await loadFinance();
+      await refreshAfterChange();
     } finally { setSaving(false); }
   }
 
@@ -337,7 +350,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
     const form = new FormData(event.currentTarget);
     try {
       await uploadDocument(form.get("file") as File, "receipt", String(form.get("title") || "Receipt"), { expenseId: request.expense_id, reimbursementId: request.id });
-      setReceiptRequestId(null); notify("Receipt added"); await loadFinance();
+      setReceiptRequestId(null); notify("Receipt added"); await refreshAfterChange();
     } catch (error) { notify(error instanceof Error ? error.message : "Receipt could not be uploaded", "error"); }
     finally { setSaving(false); }
   }
@@ -349,7 +362,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
     const form = new FormData(event.currentTarget);
     try {
       await uploadDocument(form.get("file") as File, String(form.get("document_type") || "other"), String(form.get("title") || "Claim document"), { claimId: claimUploadId });
-      setClaimUploadId(null); notify("Claim document added"); await loadFinance();
+      setClaimUploadId(null); notify("Claim document added"); await refreshAfterChange();
     } catch (error) { notify(error instanceof Error ? error.message : "Document could not be uploaded", "error"); }
     finally { setSaving(false); }
   }
@@ -371,8 +384,8 @@ export function FinancePage({ user, role, groups, events, notify }: {
     await runOnce(`pay-${id}`, async () => {
       const { error } = await client.rpc("pay_personal_reimbursement", { p_reimbursement_id: id, p_payment_date: clubToday(), p_account_name: "Club bank account" });
       // Reload either way: a failure usually means another executive already paid it.
-      if (error) { notify(friendlyError(error, "The payment could not be recorded."), "error"); await loadFinance(); return; }
-      notify("Reimbursement marked paid"); await loadFinance();
+      if (error) { notify(friendlyError(error, "The payment could not be recorded."), "error"); await refreshAfterChange(); return; }
+      notify("Reimbursement marked paid"); await refreshAfterChange();
     });
   }
 
@@ -381,8 +394,8 @@ export function FinancePage({ user, role, groups, events, notify }: {
     if (status === "ready" && !claimChecklist(claim).complete) { notify("Complete every required claim document first", "error"); return; }
     await runOnce(`claim-${claim.id}-${status}`, async () => {
       const { error } = await client.rpc("set_funding_claim_status", { p_claim_id: claim.id, p_status: status });
-      if (error) { notify(friendlyError(error, "The claim could not be updated"), "error"); await loadFinance(); return; }
-      notify("Funding claim updated"); await loadFinance();
+      if (error) { notify(friendlyError(error, "The claim could not be updated"), "error"); await refreshAfterChange(); return; }
+      notify("Funding claim updated"); await refreshAfterChange();
     });
   }
 
@@ -406,8 +419,8 @@ export function FinancePage({ user, role, groups, events, notify }: {
         catch { notify("That change could not be saved. Check your connection and try again.", "error"); return; }
         if (outcome.error) { notify(friendlyError(outcome.error, "That change could not be saved."), "error"); return; }
         // A change that went through but left something undone is reported as the problem it is.
-        if (outcome.warning) notify(outcome.warning, "error"); else notify(current.success);
-        setAction(null); await loadFinance();
+        if (outcome.warning) notify(outcome.warning, "error"); else notify(current.success, "success");
+        setAction(null); await refreshAfterChange();
       } finally { setActionBusy(false); }
     });
   }
@@ -480,8 +493,11 @@ export function FinancePage({ user, role, groups, events, notify }: {
         if (removed.error || typeof removed.data !== "string") return { error: removed.error };
         // The record goes first; the file is cleaned up after. Storage answers a refused delete with an
         // empty list and no error, so an empty answer is a failure to report, not a success. The record
-        // is already gone by now, so the dialog still closes; the warning says the file is still stored.
-        const leftover = await removeStoredFile("finance-private", removed.data, { refusedMessage: "The document was removed from the request, but its file is still in storage and could not be deleted. Ask an administrator to remove it." });
+        // is already gone by now, so the dialog still closes. Whatever went wrong with the file (refused,
+        // a storage error, no network), the warning says the record is removed and the file is still
+        // stored; the person is never told to retry. A deleted file (the usual case: the uploader and
+        // the executives can delete an unregistered object) gives no warning.
+        const leftover = await removeStoredFile("finance-private", removed.data, { refusedMessage: FILE_LEFT_IN_STORAGE, failedMessage: FILE_LEFT_IN_STORAGE });
         return { error: null, warning: leftover ?? undefined };
       } });
   }

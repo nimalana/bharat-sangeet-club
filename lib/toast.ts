@@ -1,13 +1,20 @@
 // What a toast says about itself. A failure must not wear the tick that marks
-// a success, so every toast has a tone. Callers that know it pass it:
+// a success, so every toast has a tone. The caller knows it and says it:
 //
-//   notify("Payment voided");                       // success
-//   notify(friendlyError(error), "error");          // failure
+//   notify("Payment voided");                       // success (also fine untagged)
+//   notify(friendlyError(error), "error");          // failure: ALWAYS tagged
 //
-// A message sent without a tone is read for the ordinary words of a failure
-// ("could not be loaded", "must be", "Choose a file"), so the many fixed
-// messages in the screens come out right without every call being edited.
-// Text that comes from the database is not predictable; pass "error" for it.
+// Text that comes from the database (error.message, friendlyError(...)) cannot
+// be read for its tone: most of what the migrations raise ("Only administrators
+// can change member roles", "session is not open") has none of the usual words
+// of a failure. Every call that passes such text, or a message built around it,
+// must pass "error"; tests/toast-call-sites.test.mjs fails when one does not,
+// and toast.test.mjs runs the real messages of the migrations through it.
+//
+// A message sent without a tone is only a fallback for the fixed messages
+// written in the screens: it is read for the ordinary words of a failure
+// ("could not be loaded", "must be", "Choose a file"). Do not rely on it for
+// anything that is not a fixed sentence in this repository.
 
 export type ToastTone = "success" | "error";
 export type Notify = (message: string, tone?: ToastTone) => void;

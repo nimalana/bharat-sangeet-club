@@ -35,6 +35,10 @@ export type RemoveOptions = {
   describeError: (error: StorageError) => string;
   // Said when storage removed nothing and the file may still exist.
   refusedMessage?: string;
+  // Said, in place of describeError's sentence, when the delete itself failed (a storage
+  // error, or no network). For a caller whose database record is already gone: there a
+  // "try again" hint is wrong, because the person must hear that the file is still stored.
+  failedMessage?: string;
   // Callers that delete a file in several steps can be retried after a partial
   // failure, when part of the files are already gone. For those, an empty answer
   // is accepted only if the file can no longer be signed (it really is gone).
@@ -51,11 +55,11 @@ export async function removeAndVerify(client: StorageClient, bucket: string, pat
   try {
     answer = await bucketApi.remove([path]);
   } catch (thrown) {
-    return options.describeError({ message: thrown instanceof Error ? thrown.message : "Failed to fetch" });
+    return options.failedMessage ?? options.describeError({ message: thrown instanceof Error ? thrown.message : "Failed to fetch" });
   }
   const verdict = judgeRemove(answer);
   if (verdict === "removed") return null;
-  if (verdict === "error") return options.describeError(answer?.error ?? null);
+  if (verdict === "error") return options.failedMessage ?? options.describeError(answer?.error ?? null);
   if (!options.confirmGone) return refused;
   try {
     const check = await bucketApi.createSignedUrl(path, 60);

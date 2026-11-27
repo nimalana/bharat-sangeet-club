@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { friendlyError } from "../lib/errors";
 import { readCache, writeCache } from "../lib/cache";
 import { supabase } from "../lib/supabase";
+import type { Notify } from "../lib/toast";
 import { Button } from "../components/ui/button";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
 import { FormDialog, type FormField } from "../components/ui/form-dialog";
@@ -70,7 +71,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   groups: Workspace[];
   initialScope?: ScopeFilter;
   initialTab?: AttendanceTab;
-  notify: (message: string) => void;
+  notify: Notify;
 }) {
   const canManage = role !== "member";
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(initialScope);
@@ -123,7 +124,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   }), [scopeFilter, termFilter]);
 
   const reportFailure = useCallback((background: boolean, message: string) => {
-    if (failures.shouldNotify(background)) notify(message);
+    if (failures.shouldNotify(background)) notify(message, "error");
   }, [failures, notify]);
 
   const load = useCallback(async (silent = false, limit: number = listLimit.current) => {
@@ -298,7 +299,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     if (error) {
       const message = `Could not open check-in: ${error.message}`;
       setFeedback(message);
-      notify(message);
+      notify(message, "error");
       return;
     }
     const result = Array.isArray(opened) ? opened[0] : opened;
@@ -306,7 +307,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     if (!code) {
       const message = "Check-in opened, but no sign-in code was returned. Refresh and try again.";
       setFeedback(message);
-      notify(message);
+      notify(message, "error");
       rereadRoster();
       await load();
       return;
@@ -335,7 +336,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
         p_title: subgroupId === null ? "General Body Meeting" : `${groupName || "Subgroup"} rehearsal`,
         p_starts_at: new Date(String(form.get("starts_at"))).toISOString(),
       });
-      if (error) { notify(friendlyError(error, "The meeting could not be created.")); return; }
+      if (error) { notify(friendlyError(error, "The meeting could not be created."), "error"); return; }
       const session = Array.isArray(created) ? created[0] : created;
       if (form.get("open_now") === "on" && session?.id) await openCheckIn(client, session.id, Number(form.get("duration") || 60));
       setShowNewSession(false);
@@ -355,7 +356,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     if (!client) return;
     await exclusive(async () => {
       const { data: rotated, error } = await client.rpc("rotate_attendance_code", { p_session_id: sessionId });
-      if (error) notify(friendlyError(error, "The code could not be changed."));
+      if (error) notify(friendlyError(error, "The code could not be changed."), "error");
       else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLiveCode(result?.check_in_code || result?.code || ""); notify("A new code is active"); load(); }
     });
   }
@@ -367,10 +368,10 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     if (!client) return;
     await exclusive(async () => {
       const { error } = await call(client);
-      if (error) { notify(friendlyError(error, fallback)); return; }
+      if (error) { notify(friendlyError(error, fallback), "error"); return; }
       setDialog(null);
       onDone?.();
-      notify(success);
+      notify(success, "success");
       refresh();
     });
   }
@@ -382,7 +383,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       let minutesLate = 0;
       if (status === "tardy") {
         const minutes = parseMinutesLate(values.minutes ?? "");
-        if (minutes === null) { notify("Enter a whole number of minutes, from 0 to 1440."); return; }
+        if (minutes === null) { notify("Enter a whole number of minutes, from 0 to 1440.", "error"); return; }
         minutesLate = minutes;
       }
       runDialog((client) => client.rpc("set_attendance_status", { p_session_id: sessionId, p_member_id: memberId, p_status: status, p_note: values.note ?? "", p_minutes_late: minutesLate }), "Attendance updated", "The mark could not be saved.");
@@ -416,8 +417,8 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const file = form.get("proof") as File;
-    if (file?.size && file.size > 8 * 1024 * 1024) { notify("Proof images must be smaller than 8 MB"); return; }
-    if (file?.size && !file.type.startsWith("image/")) { notify("Choose an image as proof"); return; }
+    if (file?.size && file.size > 8 * 1024 * 1024) { notify("Proof images must be smaller than 8 MB", "error"); return; }
+    if (file?.size && !file.type.startsWith("image/")) { notify("Choose an image as proof", "error"); return; }
     await exclusive(async () => {
       const sessionId = Number(form.get("session_id"));
       let proofPath: string | null = null;
@@ -425,7 +426,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
         proofPath = `${user.id}/${sessionId}/${crypto.randomUUID()}-${safeName}`;
         const upload = await client.storage.from("attendance-excuses").upload(proofPath, file, { upsert: false });
-        if (upload.error) { notify(upload.error.message); return; }
+        if (upload.error) { notify(upload.error.message, "error"); return; }
       }
       const { error } = await client.rpc("submit_attendance_excuse", {
         p_session_id: sessionId,
@@ -436,7 +437,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       });
       if (error) {
         if (proofPath) await client.storage.from("attendance-excuses").remove([proofPath]);
-        notify(error.message);
+        notify(error.message, "error");
         return;
       }
       formElement.reset();
@@ -449,7 +450,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   async function openProof(excuse: Excuse) {
     if (!supabase || !excuse.proof_path) return;
     const { data: signed, error } = await supabase.storage.from("attendance-excuses").createSignedUrl(excuse.proof_path, 300);
-    if (error || !signed) notify("Proof could not be opened"); else window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
+    if (error || !signed) notify("Proof could not be opened", "error"); else window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   function changeScope(value: ScopeFilter) {
