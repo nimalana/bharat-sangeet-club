@@ -186,6 +186,15 @@ test("a roster is stale when the open meeting's marks moved after it was read", 
   assert.equal(rosterIsStale({ session_id: 5, version: "1:1" }, { id: 5, live: null }), false, "members have no live counts");
 });
 
+test("opening check-in on a draft makes the roster the page holds stale", () => {
+  // A draft's roster has no members; the server's version of that is the digest of nothing.
+  const draftRoster = { session_id: 5, version: "d41d8cd98f00b204e9800998ecf8427e", rows: [] };
+  // Opening check-in adds every participant and no mark yet: the live version moves.
+  const afterOpen = { id: 5, live: { roster_count: 4, checked_in_count: 0, version: "7c1f6b0e4d35a2c94a1c0b61e4d8f3a2" } };
+  assert.equal(rosterIsStale(draftRoster, afterOpen), true, "the poll reads the roster again although no one has checked in");
+  assert.equal(rosterIsStale({ ...draftRoster, version: afterOpen.live.version }, afterOpen), false, "and stops once it has the new one");
+});
+
 test("the poll is paused for a hidden page and for no open meeting", () => {
   assert.equal(shouldPoll("visible", true), true);
   assert.equal(shouldPoll("hidden", true), false);
@@ -257,4 +266,24 @@ test("attendance.tsx has no window.prompt or window.confirm and polls through th
   assert.match(source, /visibilitychange/, "polling follows page visibility");
   assert.match(source, /FormDialog/);
   assert.match(source, /ConfirmDialog/);
+});
+
+// ---- what the page reads again after check-in opens or closes (round 2)
+
+const pageSource = () => readFileSync(new URL("../app/attendance.tsx", import.meta.url), "utf8");
+const between = (source, start, end) => { const from = source.indexOf(start); const to = source.indexOf(end, from); assert.ok(from >= 0 && to > from, `${start} .. ${end}`); return source.slice(from, to); };
+
+test("attendance.tsx reads the roster again after check-in opens or closes", () => {
+  const source = pageSource();
+  // Opening: the roster of a draft is empty and opening adds the participants; neither the
+  // tab nor the selection changes, so the page has to ask for the roster itself.
+  const opening = between(source, "async function openCheckIn", "async function createSession");
+  assert.match(opening, /open_attendance_session/);
+  assert.equal((opening.match(/rereadRoster\(\)/g) || []).length, 2, "after a successful open, with and without a code in the answer");
+  // Closing and canceling (and every mark) go through refresh(), which reads the roster again too.
+  assert.match(between(source, "function refresh()", "async function checkIn"), /load\(true\);\s*rereadRoster\(\);/);
+  assert.match(between(source, "function confirmSession()", "async function submitExcuse"), /close_attendance_session/);
+  assert.match(between(source, "async function runDialog", "function submitDialog"), /refresh\(\);/, "a confirmed dialog (close, cancel, a mark) refreshes");
+  // The effect that reads the roster listens to the counter.
+  assert.match(between(source, "const [rosterTick", "const hasOpenSession"), /\[canManage, tab, selectedSessionId, loadRoster, rosterTick\]/);
 });

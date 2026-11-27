@@ -10,7 +10,10 @@ export type EligibilityStatus = "eligible" | "under_review" | "restricted" | "re
 export type AbsenceCategory = "class_exam" | "family_emergency" | "illness" | "other_club_event" | "other";
 
 // What an executive sees about a meeting that is open right now. `version`
-// changes whenever a mark is added, changed or cleared (same text as the roster's).
+// changes whenever the roster's content does: a participant joins (opening
+// check-in adds them all, with no mark yet) or a mark is added, changed or
+// cleared. It is the same text as the roster's own `version`. Treat it as
+// opaque: only compare it for equality.
 export type SessionLive = { roster_count: number; checked_in_count: number; version: string };
 
 export type AttendanceSession = {
@@ -220,7 +223,8 @@ export function applyPulse(state: { sessions: AttendanceSession[]; records: Atte
   return { sessions, records };
 }
 
-// A roster is out of date when the open meeting's marks changed after it was read.
+// A roster is out of date when the open meeting's roster changed after it was read:
+// someone joined it or a mark was added, changed or cleared.
 export function rosterIsStale(roster: { session_id: number; version: string } | null, session: { id: number; live?: SessionLive | null } | null) {
   return !!roster && !!session?.live && roster.session_id === session.id && roster.version !== session.live.version;
 }

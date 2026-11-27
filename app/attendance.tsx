@@ -172,12 +172,17 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   }, [failures, reportFailure, rosterSeq]);
 
   // The meeting roster is read when a meeting is selected, not with the overview.
+  // `rosterTick` reads it again although neither the tab nor the selection
+  // changed: opening check-in on the meeting that is on screen adds its whole
+  // roster (the roster of a draft is empty), and nothing else would refresh it.
+  const [rosterTick, setRosterTick] = useState(0);
+  const rereadRoster = useCallback(() => setRosterTick((count) => count + 1), []);
   useEffect(() => {
     if (!canManage || tab !== "meetings" || selectedSessionId === null) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRosterFailed(false);
     loadRoster(selectedSessionId);
-  }, [canManage, tab, selectedSessionId, loadRoster]);
+  }, [canManage, tab, selectedSessionId, loadRoster, rosterTick]);
 
   // While check-in is open: a tiny poll every 10 seconds, only for a visible
   // page, plus one at once when the page becomes visible again. It patches the
@@ -253,9 +258,12 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     try { await work(); } finally { inFlight.current = false; setSaving(false); }
   }
 
+  // After anything changed on the server: read the overview again and, when the
+  // Meetings tab shows a roster, that roster too. Closing or canceling check-in
+  // and every mark go through here.
   function refresh() {
     load(true);
-    if (canManage && tab === "meetings" && selectedSessionId !== null) loadRoster(selectedSessionId, true);
+    rereadRoster();
   }
 
   async function checkIn(event: FormEvent<HTMLFormElement>) {
@@ -286,11 +294,15 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       const message = "Check-in opened, but no sign-in code was returned. Refresh and try again.";
       setFeedback(message);
       notify(message);
+      rereadRoster();
       await load();
       return;
     }
     setLiveCode(code);
     setTab("meetings");
+    // Opening adds every participant to the meeting. If it is on screen as a
+    // draft its roster is empty and nothing else would refresh it.
+    rereadRoster();
     notify("Check-in is open");
     await load();
   }
