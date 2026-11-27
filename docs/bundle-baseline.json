@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "generated": "2026-11-27T23:02:38.480Z",
+  "commit": "988b3b7",
+  "branch": "phase-2-5-r1-contract",
+  "next": "16.2.6",
+  "source": "route-bundle-stats",
+  "placeholderEnv": true,
+  "routes": {
+    "/": {
+      "jsRaw": 973986,
+      "jsGzip": 273831,
+      "jsBrotli": 235262,
+      "cssRaw": 145928,
+      "cssGzip": 26970,
+      "cssBrotli": 23034,
+      "jsChunks": 9,
+      "cssFiles": 2
+    },
+    "/_not-found": {
+      "jsRaw": 516675,
+      "jsGzip": 146208,
+      "jsBrotli": 125476,
+      "cssRaw": 145928,
+      "cssGzip": 26970,
+      "cssBrotli": 23034,
+      "jsChunks": 6,
+      "cssFiles": 2
+    },
+    "/meetings": {
+      "jsRaw": 516675,
+      "jsGzip": 146208,
+      "jsBrotli": 125476,
+      "cssRaw": 145928,
+      "cssGzip": 26970,
+      "cssBrotli": 23034,
+      "jsChunks": 6,
+      "cssFiles": 2
+    }
+  },
+  "totals": {
+    "jsRawAll": 1556996,
+    "jsGzipAll": 436991,
+    "jsChunksAll": 16,
+    "lazyRaw": 583010,
+    "lazyGzip": 163160,
+    "lazyBrotli": 142663,
+    "lazyChunks": 7
+  }
+}
