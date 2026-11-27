@@ -1,0 +1,1937 @@
+{
+ "generatedFrom": "bldytniesexkwbtyinsi (test) on 2026-11-27, by inventory.sql",
+ "tables": [
+  {
+   "name": "admin_audit_log",
+   "rls": true,
+   "columns": [
+    "id",
+    "action",
+    "actor_id",
+    "actor_email",
+    "target_id",
+    "target_email",
+    "details",
+    "created_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "announcements",
+   "rls": true,
+   "columns": [
+    "id",
+    "title",
+    "body",
+    "is_pinned",
+    "published_at",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "subgroup_id"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "archive_items",
+   "rls": true,
+   "columns": [
+    "id",
+    "title",
+    "description",
+    "type",
+    "storage_path",
+    "visibility",
+    "event_date",
+    "raga",
+    "tala",
+    "uploaded_by",
+    "created_at",
+    "is_public",
+    "subgroup_id"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_eligibility",
+   "rls": true,
+   "columns": [
+    "term_key",
+    "member_id",
+    "status",
+    "reason",
+    "updated_by",
+    "updated_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_excuses",
+   "rls": true,
+   "columns": [
+    "id",
+    "session_id",
+    "member_id",
+    "reason",
+    "proof_path",
+    "status",
+    "submitted_at",
+    "reviewed_by",
+    "reviewed_at",
+    "review_note",
+    "reason_category",
+    "notified_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_record_audit",
+   "rls": true,
+   "columns": [
+    "id",
+    "session_id",
+    "member_id",
+    "previous_status",
+    "new_status",
+    "source",
+    "note",
+    "changed_by",
+    "changed_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_records",
+   "rls": true,
+   "columns": [
+    "session_id",
+    "member_id",
+    "status",
+    "marked_by",
+    "marked_at",
+    "source",
+    "note",
+    "updated_at",
+    "minutes_late",
+    "unexcused_units"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_remediations",
+   "rls": true,
+   "columns": [
+    "id",
+    "session_id",
+    "member_id",
+    "assignment",
+    "due_at",
+    "status",
+    "note",
+    "assigned_by",
+    "completed_by",
+    "completed_at",
+    "created_at",
+    "updated_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_session_participants",
+   "rls": true,
+   "columns": [
+    "session_id",
+    "member_id",
+    "snapshotted_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_sessions",
+   "rls": true,
+   "columns": [
+    "id",
+    "subgroup_id",
+    "title",
+    "session_date",
+    "created_by",
+    "created_at",
+    "scope",
+    "status",
+    "starts_at",
+    "opened_at",
+    "closes_at",
+    "closed_at",
+    "canceled_at",
+    "code_hash",
+    "code_expires_at",
+    "roster_count",
+    "counts_toward_metrics",
+    "cancel_reason"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "attendance_settings",
+   "rls": true,
+   "columns": [
+    "id",
+    "warning_absences",
+    "critical_absences",
+    "updated_by",
+    "updated_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "events",
+   "rls": true,
+   "columns": [
+    "id",
+    "title",
+    "description",
+    "starts_at",
+    "location",
+    "created_by",
+    "created_at",
+    "subgroup_id",
+    "updated_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_audit_log",
+   "rls": true,
+   "columns": [
+    "id",
+    "entity_type",
+    "entity_id",
+    "action",
+    "actor_id",
+    "before_data",
+    "after_data",
+    "created_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_claim_documents",
+   "rls": true,
+   "columns": [
+    "claim_id",
+    "document_id"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_documents",
+   "rls": true,
+   "columns": [
+    "id",
+    "document_type",
+    "title",
+    "storage_path",
+    "mime_type",
+    "file_size_bytes",
+    "payment_card_last4",
+    "statement_period_start",
+    "statement_period_end",
+    "uploaded_by",
+    "created_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_expense_documents",
+   "rls": true,
+   "columns": [
+    "expense_id",
+    "document_id"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_expenses",
+   "rls": true,
+   "columns": [
+    "id",
+    "description",
+    "vendor",
+    "amount",
+    "purchase_date",
+    "category",
+    "paid_by",
+    "paid_by_member_id",
+    "payment_card_last4",
+    "subgroup_id",
+    "club_event_id",
+    "event_related",
+    "event_name",
+    "event_starts_at",
+    "event_attendee_count",
+    "event_schedule",
+    "status",
+    "notes",
+    "created_by",
+    "approved_by",
+    "approved_at",
+    "void_reason",
+    "created_at",
+    "updated_at",
+    "voided_by",
+    "voided_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_payments",
+   "rls": true,
+   "columns": [
+    "id",
+    "direction",
+    "purpose",
+    "amount",
+    "description",
+    "category",
+    "account_name",
+    "counterparty",
+    "payment_date",
+    "cleared_date",
+    "status",
+    "expense_id",
+    "reimbursement_id",
+    "funding_claim_id",
+    "transfer_group_id",
+    "legacy_transaction_id",
+    "created_by",
+    "voided_by",
+    "voided_at",
+    "void_reason",
+    "created_at",
+    "updated_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "finance_reimbursement_documents",
+   "rls": true,
+   "columns": [
+    "reimbursement_id",
+    "document_id"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "funding_claim_expenses",
+   "rls": true,
+   "columns": [
+    "claim_id",
+    "expense_id",
+    "claimed_amount",
+    "created_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "funding_claims",
+   "rls": true,
+   "columns": [
+    "id",
+    "title",
+    "funder_name",
+    "award_reference",
+    "heellife_reference",
+    "requested_amount",
+    "approved_amount",
+    "received_amount",
+    "submission_deadline",
+    "status",
+    "notes",
+    "submitted_at",
+    "reviewed_at",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+    "void_reason",
+    "voided_by",
+    "voided_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "personal_reimbursements",
+   "rls": true,
+   "columns": [
+    "id",
+    "expense_id",
+    "member_id",
+    "requested_amount",
+    "approved_amount",
+    "status",
+    "member_note",
+    "review_note",
+    "reviewed_by",
+    "reviewed_at",
+    "paid_at",
+    "created_at",
+    "updated_at",
+    "void_reason",
+    "voided_by",
+    "voided_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "profiles",
+   "rls": true,
+   "columns": [
+    "id",
+    "email",
+    "full_name",
+    "role",
+    "joined_at",
+    "phone",
+    "class_year",
+    "specialty",
+    "status",
+    "deactivated_at",
+    "deactivated_by",
+    "deactivation_reason"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "recording_notes",
+   "rls": true,
+   "columns": [
+    "id",
+    "recording_id",
+    "title",
+    "note_type",
+    "body",
+    "storage_path",
+    "mime_type",
+    "uploaded_by",
+    "created_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "recordings",
+   "rls": true,
+   "columns": [
+    "id",
+    "title",
+    "description",
+    "subgroup_id",
+    "uploaded_by",
+    "storage_path",
+    "mime_type",
+    "media_kind",
+    "status",
+    "audience",
+    "recording_kind",
+    "event_date",
+    "raga",
+    "tala",
+    "sruthi",
+    "tempo",
+    "duration_seconds",
+    "created_at",
+    "updated_at",
+    "published_at",
+    "storage_bucket"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "resource_imports",
+   "rls": true,
+   "columns": [
+    "id",
+    "name",
+    "root_parent_id",
+    "subgroup_id",
+    "visibility",
+    "status",
+    "total_files",
+    "completed_files",
+    "failed_files",
+    "total_bytes",
+    "uploaded_bytes",
+    "created_by",
+    "created_at",
+    "updated_at"
+   ],
+   "anonGrants": []
+  },
+  {
+   "name": "resource_links",
+   "rls": true,
+   "columns": [
+    "id",
+    "title",
+    "description",
+    "url",
+    "created_by",
+    "created_at"
+   ],
+   "anonGrants": []
+  },
+  {
+   "name": "resource_tag_assignments",
+   "rls": true,
+   "columns": [
+    "resource_id",
+    "tag_id",
+    "created_by",
+    "created_at"
+   ],
+   "anonGrants": []
+  },
+  {
+   "name": "resource_tags",
+   "rls": true,
+   "columns": [
+    "id",
+    "name",
+    "created_by",
+    "created_at"
+   ],
+   "anonGrants": []
+  },
+  {
+   "name": "resources",
+   "rls": true,
+   "columns": [
+    "id",
+    "node_kind",
+    "media_kind",
+    "title",
+    "description",
+    "parent_id",
+    "subgroup_id",
+    "visibility",
+    "storage_bucket",
+    "storage_path",
+    "external_url",
+    "original_filename",
+    "mime_type",
+    "byte_size",
+    "checksum_sha256",
+    "event_id",
+    "occurred_on",
+    "season_label",
+    "status",
+    "is_pinned",
+    "import_id",
+    "created_by",
+    "metadata",
+    "created_at",
+    "updated_at"
+   ],
+   "anonGrants": []
+  },
+  {
+   "name": "subgroup_memberships",
+   "rls": true,
+   "columns": [
+    "subgroup_id",
+    "member_id",
+    "added_by",
+    "joined_at",
+    "status",
+    "membership_role",
+    "requested_by",
+    "reviewed_by",
+    "status_updated_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "subgroups",
+   "rls": true,
+   "columns": [
+    "id",
+    "name",
+    "description",
+    "created_by",
+    "created_at",
+    "enrollment_mode",
+    "archived_at",
+    "archived_by"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  },
+  {
+   "name": "transactions",
+   "rls": true,
+   "columns": [
+    "id",
+    "description",
+    "amount",
+    "category",
+    "transaction_date",
+    "receipt_path",
+    "created_by",
+    "created_at"
+   ],
+   "anonGrants": [
+    "delete",
+    "insert",
+    "select",
+    "update"
+   ]
+  }
+ ],
+ "functions": [
+  {
+   "name": "add_funding_claim_expense",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_claim_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_expense_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "add_subgroup_member",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    }
+   ]
+  },
+  {
+   "name": "admin_change_member_role",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_target_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_new_role",
+     "type": "club_role"
+    }
+   ]
+  },
+  {
+   "name": "admin_deactivate_member",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_target_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "admin_delete_member",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_target_id",
+     "type": "uuid"
+    }
+   ]
+  },
+  {
+   "name": "admin_reactivate_member",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_target_id",
+     "type": "uuid"
+    }
+   ]
+  },
+  {
+   "name": "admin_update_member_profile",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_target_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_full_name",
+     "type": "text"
+    },
+    {
+     "name": "p_phone",
+     "type": "text"
+    },
+    {
+     "name": "p_class_year",
+     "type": "text"
+    },
+    {
+     "name": "p_specialty",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_ids",
+     "type": "bigint[]"
+    }
+   ]
+  },
+  {
+   "name": "cancel_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "check_in_attendance",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_code",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "clear_attendance_status",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    }
+   ]
+  },
+  {
+   "name": "close_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "create_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_scope",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_title",
+     "type": "text"
+    },
+    {
+     "name": "p_starts_at",
+     "type": "timestamp with time zone"
+    }
+   ]
+  },
+  {
+   "name": "create_funding_claim",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_title",
+     "type": "text"
+    },
+    {
+     "name": "p_funder_name",
+     "type": "text"
+    },
+    {
+     "name": "p_award_reference",
+     "type": "text"
+    },
+    {
+     "name": "p_heellife_reference",
+     "type": "text"
+    },
+    {
+     "name": "p_submission_deadline",
+     "type": "date"
+    },
+    {
+     "name": "p_notes",
+     "type": "text"
+    },
+    {
+     "name": "p_expense_ids",
+     "type": "bigint[]"
+    }
+   ]
+  },
+  {
+   "name": "create_subgroup",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "subgroup_name",
+     "type": "text"
+    },
+    {
+     "name": "subgroup_description",
+     "type": "text"
+    },
+    {
+     "name": "subgroup_mode",
+     "type": "subgroup_enrollment_mode"
+    }
+   ]
+  },
+  {
+   "name": "delete_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "get_attendance_workspace",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_scope",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_since",
+     "type": "timestamp with time zone"
+    }
+   ]
+  },
+  {
+   "name": "get_finance_summary",
+   "anonExecute": false,
+   "args": []
+  },
+  {
+   "name": "get_portal_bootstrap",
+   "anonExecute": false,
+   "args": []
+  },
+  {
+   "name": "leave_subgroup",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "list_subgroup_roster",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "open_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_duration_minutes",
+     "type": "integer"
+    }
+   ]
+  },
+  {
+   "name": "pay_personal_reimbursement",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_reimbursement_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_payment_date",
+     "type": "date"
+    },
+    {
+     "name": "p_account_name",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "record_club_expense",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_description",
+     "type": "text"
+    },
+    {
+     "name": "p_vendor",
+     "type": "text"
+    },
+    {
+     "name": "p_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_purchase_date",
+     "type": "date"
+    },
+    {
+     "name": "p_category",
+     "type": "text"
+    },
+    {
+     "name": "p_account_name",
+     "type": "text"
+    },
+    {
+     "name": "p_payment_card_last4",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_club_event_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_event_related",
+     "type": "boolean"
+    },
+    {
+     "name": "p_event_name",
+     "type": "text"
+    },
+    {
+     "name": "p_event_starts_at",
+     "type": "timestamp with time zone"
+    },
+    {
+     "name": "p_event_attendee_count",
+     "type": "integer"
+    },
+    {
+     "name": "p_event_schedule",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "record_finance_income",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_description",
+     "type": "text"
+    },
+    {
+     "name": "p_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_payment_date",
+     "type": "date"
+    },
+    {
+     "name": "p_category",
+     "type": "text"
+    },
+    {
+     "name": "p_counterparty",
+     "type": "text"
+    },
+    {
+     "name": "p_account_name",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "record_funding_claim_payment",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_claim_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_payment_date",
+     "type": "date"
+    },
+    {
+     "name": "p_account_name",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "remove_finance_document",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_document_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "remove_funding_claim_expense",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_claim_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_expense_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "remove_subgroup_member",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    }
+   ]
+  },
+  {
+   "name": "request_reimbursement_changes",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_reimbursement_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_note",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "request_subgroup_enrollment",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "target_subgroup_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "review_attendance_excuse",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_excuse_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_decision",
+     "type": "text"
+    },
+    {
+     "name": "p_note",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "review_personal_reimbursement",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_reimbursement_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_decision",
+     "type": "text"
+    },
+    {
+     "name": "p_approved_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_review_note",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "review_subgroup_enrollment",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "target_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "target_member_id",
+     "type": "uuid"
+    },
+    {
+     "name": "next_status",
+     "type": "subgroup_membership_status"
+    }
+   ]
+  },
+  {
+   "name": "review_subgroup_request",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_decision",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "rls_auto_enable",
+   "anonExecute": false,
+   "args": []
+  },
+  {
+   "name": "rotate_attendance_code",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "set_attendance_eligibility",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_term_key",
+     "type": "text"
+    },
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_status",
+     "type": "attendance_eligibility_status"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "set_attendance_remediation",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_remediation_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_status",
+     "type": "attendance_remediation_status"
+    },
+    {
+     "name": "p_assignment",
+     "type": "text"
+    },
+    {
+     "name": "p_due_at",
+     "type": "timestamp with time zone"
+    },
+    {
+     "name": "p_note",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "set_attendance_status",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_status",
+     "type": "attendance_status"
+    },
+    {
+     "name": "p_note",
+     "type": "text"
+    },
+    {
+     "name": "p_minutes_late",
+     "type": "integer"
+    }
+   ]
+  },
+  {
+   "name": "set_attendance_thresholds",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_warning",
+     "type": "integer"
+    },
+    {
+     "name": "p_critical",
+     "type": "integer"
+    }
+   ]
+  },
+  {
+   "name": "set_funding_claim_status",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_claim_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_status",
+     "type": "text"
+    },
+    {
+     "name": "p_approved_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_note",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "set_resource_archived",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_resource_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_archived",
+     "type": "boolean"
+    }
+   ]
+  },
+  {
+   "name": "set_resource_visibility",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_resource_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_visibility",
+     "type": "archive_visibility"
+    }
+   ]
+  },
+  {
+   "name": "set_subgroup_archived",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_archived",
+     "type": "boolean"
+    }
+   ]
+  },
+  {
+   "name": "set_subgroup_enrollment_mode",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_mode",
+     "type": "subgroup_enrollment_mode"
+    }
+   ]
+  },
+  {
+   "name": "set_subgroup_member_role",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "target_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "target_member_id",
+     "type": "uuid"
+    },
+    {
+     "name": "next_role",
+     "type": "subgroup_membership_role"
+    }
+   ]
+  },
+  {
+   "name": "submit_attendance_excuse",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    },
+    {
+     "name": "p_proof_path",
+     "type": "text"
+    },
+    {
+     "name": "p_reason_category",
+     "type": "text"
+    },
+    {
+     "name": "p_notified_at",
+     "type": "timestamp with time zone"
+    }
+   ]
+  },
+  {
+   "name": "submit_member_reimbursement",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_description",
+     "type": "text"
+    },
+    {
+     "name": "p_vendor",
+     "type": "text"
+    },
+    {
+     "name": "p_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_purchase_date",
+     "type": "date"
+    },
+    {
+     "name": "p_category",
+     "type": "text"
+    },
+    {
+     "name": "p_payment_card_last4",
+     "type": "text"
+    },
+    {
+     "name": "p_member_note",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_club_event_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_event_related",
+     "type": "boolean"
+    },
+    {
+     "name": "p_event_name",
+     "type": "text"
+    },
+    {
+     "name": "p_event_starts_at",
+     "type": "timestamp with time zone"
+    },
+    {
+     "name": "p_event_attendee_count",
+     "type": "integer"
+    },
+    {
+     "name": "p_event_schedule",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "update_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_title",
+     "type": "text"
+    },
+    {
+     "name": "p_starts_at",
+     "type": "timestamp with time zone"
+    }
+   ]
+  },
+  {
+   "name": "update_finance_expense",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_expense_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_description",
+     "type": "text"
+    },
+    {
+     "name": "p_vendor",
+     "type": "text"
+    },
+    {
+     "name": "p_category",
+     "type": "text"
+    },
+    {
+     "name": "p_payment_card_last4",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_club_event_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_event_related",
+     "type": "boolean"
+    },
+    {
+     "name": "p_event_name",
+     "type": "text"
+    },
+    {
+     "name": "p_event_starts_at",
+     "type": "timestamp with time zone"
+    },
+    {
+     "name": "p_event_attendee_count",
+     "type": "integer"
+    },
+    {
+     "name": "p_event_schedule",
+     "type": "text"
+    },
+    {
+     "name": "p_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_purchase_date",
+     "type": "date"
+    }
+   ]
+  },
+  {
+   "name": "update_member_reimbursement",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_reimbursement_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_description",
+     "type": "text"
+    },
+    {
+     "name": "p_vendor",
+     "type": "text"
+    },
+    {
+     "name": "p_amount",
+     "type": "numeric"
+    },
+    {
+     "name": "p_purchase_date",
+     "type": "date"
+    },
+    {
+     "name": "p_category",
+     "type": "text"
+    },
+    {
+     "name": "p_payment_card_last4",
+     "type": "text"
+    },
+    {
+     "name": "p_member_note",
+     "type": "text"
+    },
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_club_event_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_event_related",
+     "type": "boolean"
+    },
+    {
+     "name": "p_event_name",
+     "type": "text"
+    },
+    {
+     "name": "p_event_starts_at",
+     "type": "timestamp with time zone"
+    },
+    {
+     "name": "p_event_attendee_count",
+     "type": "integer"
+    },
+    {
+     "name": "p_event_schedule",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "update_subgroup",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_subgroup_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_name",
+     "type": "text"
+    },
+    {
+     "name": "p_description",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "void_attendance_session",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_session_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "void_finance_expense",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_expense_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "void_finance_payment",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_payment_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "void_funding_claim",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_claim_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_reason",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "withdraw_attendance_excuse",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_excuse_id",
+     "type": "bigint"
+    }
+   ]
+  },
+  {
+   "name": "withdraw_member_reimbursement",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_reimbursement_id",
+     "type": "bigint"
+    }
+   ]
+  }
+ ],
+ "buckets": [
+  {
+   "id": "attendance-excuses",
+   "public": false
+  },
+  {
+   "id": "club-archive",
+   "public": false
+  },
+  {
+   "id": "club-resources",
+   "public": false
+  },
+  {
+   "id": "finance-private",
+   "public": false
+  },
+  {
+   "id": "recording-notations",
+   "public": false
+  },
+  {
+   "id": "recordings",
+   "public": false
+  }
+ ],
+ "enums": {
+  "archive_type": [
+   "recording",
+   "document",
+   "photo"
+  ],
+  "archive_visibility": [
+   "members",
+   "executives"
+  ],
+  "attendance_eligibility_status": [
+   "eligible",
+   "under_review",
+   "restricted",
+   "reinstated"
+  ],
+  "attendance_excuse_status": [
+   "pending",
+   "approved",
+   "denied",
+   "withdrawn"
+  ],
+  "attendance_mark_source": [
+   "self_check_in",
+   "executive",
+   "session_close",
+   "excuse_approval"
+  ],
+  "attendance_remediation_status": [
+   "pending",
+   "complete",
+   "waived"
+  ],
+  "attendance_scope": [
+   "club",
+   "subgroup"
+  ],
+  "attendance_session_status": [
+   "draft",
+   "open",
+   "closed",
+   "canceled"
+  ],
+  "attendance_status": [
+   "present",
+   "absent",
+   "excused",
+   "tardy"
+  ],
+  "club_role": [
+   "member",
+   "executive",
+   "admin"
+  ],
+  "recording_status": [
+   "draft",
+   "published",
+   "archived"
+  ],
+  "resource_media_kind": [
+   "document",
+   "image",
+   "other"
+  ],
+  "resource_node_kind": [
+   "folder",
+   "file",
+   "link"
+  ],
+  "resource_status": [
+   "pending_upload",
+   "ready",
+   "failed",
+   "archived"
+  ],
+  "subgroup_enrollment_mode": [
+   "open",
+   "approval",
+   "invite"
+  ],
+  "subgroup_membership_role": [
+   "member",
+   "leader",
+   "manager"
+  ],
+  "subgroup_membership_status": [
+   "active",
+   "pending",
+   "waitlisted",
+   "inactive",
+   "removed"
+  ]
+ }
+}
