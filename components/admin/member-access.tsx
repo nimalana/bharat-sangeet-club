@@ -7,6 +7,7 @@ import { Dialog } from "../ui/dialog";
 import { Textarea } from "../ui/textarea";
 import { friendlyError } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 
 export type AccessMember = { id: string; full_name: string; email: string; status?: "active" | "deactivated" };
 
@@ -22,7 +23,7 @@ export const adminActionLabels: Record<string, string> = {
 // attendance and recording history. Delete is only offered for a deactivated
 // account and only succeeds when the account has no such history.
 export function MemberAccessActions({ member, isSelf, onChanged, notify }: {
-  member: AccessMember; isSelf: boolean; onChanged: () => void | Promise<void>; notify: (message: string) => void;
+  member: AccessMember; isSelf: boolean; onChanged: () => void | Promise<void>; notify: Notify;
 }) {
   const [dialog, setDialog] = useState<"deactivate" | "reactivate" | "delete" | null>(null);
   const [reason, setReason] = useState("");
@@ -39,7 +40,7 @@ export function MemberAccessActions({ member, isSelf, onChanged, notify }: {
         ? await supabase.rpc("admin_reactivate_member", { p_target_id: member.id })
         : await supabase.rpc("admin_delete_member", { p_target_id: member.id });
     setBusy(false);
-    if (error) { notify(friendlyError(error, "That change could not be saved.")); return; }
+    if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
     setDialog(null); setReason("");
     notify(action === "deactivate" ? `${label} was deactivated` : action === "reactivate" ? `${label} was reactivated` : `${label} was deleted`);
     await onChanged();

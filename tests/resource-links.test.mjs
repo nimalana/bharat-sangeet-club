@@ -28,8 +28,9 @@ test("resources UI is integrated as the single library while recordings stay in 
   ]);
 
   assert.match(page, /const ResourceLibrary = dynamic\(\(\) => import\("\.\/resources"\)/);
-  assert.match(page, /section === "documents".*<ResourceLibrary/s);
-  assert.match(page, /rawValue === "gallery" \? "documents"/);
+  assert.match(page, /outcome\.section === "documents".*<ResourceLibrary/s);
+  // The old ?page=gallery link opens the library (the alias lives in lib/sections.ts, see tests/sections.test.mjs).
+  assert.equal((await import("../lib/sections.ts")).sectionFromSearch("?page=gallery"), "documents");
   assert.doesNotMatch(page, /from\("resource_links"\)/);
   assert.match(page, /from\("archive_items"\)\.select\("\*"\)\.eq\("type", "recording"\)/);
   assert.match(page, /onOpenResources=\{\(groupId\) => \{ setResourceInitialScope\(groupId\); navigate\("documents"\); \}\}/);

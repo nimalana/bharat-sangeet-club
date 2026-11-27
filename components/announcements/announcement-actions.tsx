@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
 import { friendlyError } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog } from "../ui/dialog";
@@ -17,7 +18,7 @@ type GroupOption = { id: number; name: string };
 // admins to write announcements; nobody else is shown this dialog.
 export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupId, onClose, onSaved, notify }: {
   user: User; groups: GroupOption[]; announcement?: EditableAnnouncement; lockedSubgroupId?: number;
-  onClose: () => void; onSaved: () => void | Promise<void>; notify: (message: string) => void;
+  onClose: () => void; onSaved: () => void | Promise<void>; notify: Notify;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -62,7 +63,7 @@ export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupI
 // Edit, pin and delete controls for one announcement.
 export function AnnouncementActions({ user, groups, announcement, onChanged, notify }: {
   user: User; groups: GroupOption[]; announcement: EditableAnnouncement;
-  onChanged: () => void | Promise<void>; notify: (message: string) => void;
+  onChanged: () => void | Promise<void>; notify: Notify;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -73,7 +74,7 @@ export function AnnouncementActions({ user, groups, announcement, onChanged, not
     setBusy(true);
     const { error } = await supabase.from("announcements").update({ is_pinned: !announcement.is_pinned }).eq("id", announcement.id);
     setBusy(false);
-    if (error) { notify(friendlyError(error)); return; }
+    if (error) { notify(friendlyError(error), "error"); return; }
     notify(announcement.is_pinned ? "Announcement unpinned" : "Announcement pinned");
     await onChanged();
   }
@@ -83,7 +84,7 @@ export function AnnouncementActions({ user, groups, announcement, onChanged, not
     setBusy(true);
     const { error } = await supabase.from("announcements").delete().eq("id", announcement.id);
     setBusy(false); setConfirming(false);
-    if (error) { notify(friendlyError(error)); return; }
+    if (error) { notify(friendlyError(error), "error"); return; }
     notify("Announcement deleted");
     await onChanged();
   }
