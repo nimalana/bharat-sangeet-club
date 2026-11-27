@@ -14,7 +14,11 @@ end $$;
 -- EXECUTE on new functions. A real test project showed all three. Without
 -- these lines this harness is stricter than the hosted database, so a
 -- migration that forgets "revoke ... from anon" would pass here and be open
--- there. 70_default_privileges.test.sql checks that they stay in place.
+-- there. Migration 20261127075000 (least privilege) removes the table and
+-- sequence defaults for anon and authenticated again, as it does on the hosted
+-- project, so migrations before it see the hosted defaults and migrations after
+-- it see none; the function defaults stay. 70_default_privileges.test.sql
+-- checks the state after all migrations.
 -- Only the public schema has defaults on hosted Supabase; private does not.
 alter default privileges for role postgres in schema public
   grant all on tables to anon, authenticated, service_role;

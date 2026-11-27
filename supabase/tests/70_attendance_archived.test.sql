@@ -23,8 +23,13 @@ begin
 
   message := test.error_as(v_exec, format('select public.create_attendance_session(''subgroup'', %s, ''New rehearsal'', now())', v_group));
   assert message like 'This group is archived%', 'no new meeting for an archived group: ' || coalesce(message, 'no error');
-  message := test.error_as(v_exec, format('insert into public.attendance_sessions(scope, subgroup_id, title, session_date, starts_at, status, created_by) values (''subgroup'', %s, ''Direct'', current_date, now(), ''draft'', %L)', v_group, v_exec));
+  -- The trigger refuses a direct insert whoever issues it. An executive can no
+  -- longer insert directly at all (20261127075000, see 72_grants_matrix), so the
+  -- statement is run as the table owner; the privilege layer is checked in 72.
+  message := test.error_of(format('insert into public.attendance_sessions(scope, subgroup_id, title, session_date, starts_at, status, created_by) values (''subgroup'', %s, ''Direct'', current_date, now(), ''draft'', %L)', v_group, v_exec));
   assert message like 'This group is archived%', 'nor a direct insert: ' || coalesce(message, 'no error');
+  message := test.error_as(v_exec, format('insert into public.attendance_sessions(scope, subgroup_id, title, session_date, starts_at, status, created_by) values (''subgroup'', %s, ''Direct'', current_date, now(), ''draft'', %L)', v_group, v_exec));
+  assert message like 'permission denied%', 'an executive cannot insert a meeting directly: ' || coalesce(message, 'no error');
   -- A meeting that was already open can still be wound up.
   perform test.login(v_exec);
   perform public.close_attendance_session(v_open);

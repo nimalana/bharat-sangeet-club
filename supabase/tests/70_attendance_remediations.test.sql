@@ -100,10 +100,14 @@ begin
   perform public.set_attendance_status(v_open, v_member, 'present', '', 0);
   assert (select status from public.attendance_remediations where session_id = v_open and member_id = v_member) = 'waived', 'present waives it';
 
-  -- A remediation an executive adds by hand for a record that never warranted
-  -- one is not touched by later edits of that record.
+  -- A remediation added by hand for a record that never warranted one (rows of
+  -- this kind exist from before 20261127075000 took away direct inserts, and
+  -- the service role can still add them) is not touched by later edits of that
+  -- record. The row is inserted as the table owner.
+  perform test.logout();
   insert into public.attendance_remediations (session_id, member_id, assignment, assigned_by)
   values (v_open, v_other, 'Write a short reflection', v_exec);
+  perform test.login(v_exec);
   perform public.set_attendance_status(v_open, v_other, 'present', 'Arrived on time', 0);
   perform public.set_attendance_status(v_open, v_other, 'present', 'Edited note', 0);
   assert (select status from public.attendance_remediations where session_id = v_open and member_id = v_other) = 'pending', 'a hand-made remediation stays pending';
