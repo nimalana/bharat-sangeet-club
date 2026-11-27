@@ -16,14 +16,16 @@ accounts: an admin, a group manager who is not an executive, and a plain member.
 - [ ] Recording copied from the legacy archive (bucket `club-archive`): it plays, and it offers Archive but not Delete.
 - [ ] Club and concert recordings (executive): edit one, flip it to public and confirm it appears on the signed-out concert page; delete one that has no recording-room copy and confirm the object is gone from `club-archive`.
 - [ ] Resources: upload a file, then Delete it as an executive. The object is gone from `club-resources`.
-- [ ] Resources: discard a failed upload.
+- [ ] Resources: as a group manager who is not an executive, a finished file has no Delete button. Discard a failed upload still works for the manager (migration `20261127043000`: only executives delete finished items).
 - [ ] Notation: delete a file note as its author.
+- [ ] Notation: member B attaches a notation file to member A's published recording (needs the API; the portal has no control for it). A, who is not an executive, deletes the recording: B's notation file, the take and the row are all gone (migration `20261127044000`).
 
 ## Deactivation
 
 - [ ] Deactivate the plain member while they have the portal open. Their next page load shows the "access has been deactivated" screen, and no data loads.
 - [ ] With the deactivated member's still-valid session, try to open a signed URL for a recording and a resource. Both are refused.
-- [ ] Reactivate; they can sign in and see club-wide content, and their groups are empty until re-added.
+- [ ] Reactivate; they can sign in and see club-wide content. Their groups are empty: they can ask to join an open group again (active at once) or an approval group (pending), and an invitation-only group needs an executive. A group they were deliberately removed from still needs an executive (migration `20261127041100`).
+- [ ] As a plain member, `select * from member_deactivations` returns no rows and profiles has no reason column. An admin sees the reason (migration `20261127041000`).
 - [ ] Delete an account with no history succeeds; an account with a reimbursement shows the "Deactivate it instead" message.
 - [ ] The public concert page still works when signed out.
 
