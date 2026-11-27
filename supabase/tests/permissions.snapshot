@@ -469,10 +469,10 @@ storage.objects  [Members delete own unregistered finance files]  DELETE  to aut
     using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM finance_documents document WHERE (document.storage_path = objects.name)))))
     check: -
 storage.objects  [Members delete their recording files]  DELETE  to authenticated
-    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
+    using: ((bucket_id = 'recordings'::text) AND ((EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))) OR (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM recordings recording WHERE (recording.storage_path = objects.name)))))))
     check: -
 storage.objects  [Members delete their recording notation]  DELETE  to authenticated
-    using: ((bucket_id = 'recording-notations'::text) AND (EXISTS ( SELECT 1 FROM recording_notes note WHERE ((note.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (note.uploaded_by = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.id = note.recording_id) AND (recording.uploaded_by = ( SELECT auth.uid() AS uid))))))))))
+    using: ((bucket_id = 'recording-notations'::text) AND ((EXISTS ( SELECT 1 FROM recording_notes note WHERE ((note.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (note.uploaded_by = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.id = note.recording_id) AND (recording.uploaded_by = ( SELECT auth.uid() AS uid))))))))) OR (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM recording_notes note WHERE (note.storage_path = objects.name)))))))
     check: -
 storage.objects  [Members read accessible recording notation]  SELECT  to authenticated
     using: ((bucket_id = 'recording-notations'::text) AND (EXISTS ( SELECT 1 FROM recording_notes note WHERE (note.storage_path = objects.name))))
@@ -513,6 +513,9 @@ storage.objects  [Members upload recordings]  INSERT  to authenticated
 storage.objects  [Update resource files: executives, or unfinished uploads]  UPDATE  to authenticated
     using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((resource.status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))))
     check: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((resource.status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))))
+storage.objects  [Uploaders read objects in their own folder]  SELECT  to authenticated
+    using: ((bucket_id = ANY (ARRAY['recordings'::text, 'recording-notations'::text, 'club-archive'::text])) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
+    check: -
 storage.objects  [Uploaders read own recording objects]  SELECT  to authenticated
     using: ((bucket_id = ANY (ARRAY['recordings'::text, 'recording-notations'::text, 'club-archive'::text])) AND (owner_id = (( SELECT auth.uid() AS uid))::text))
     check: -
