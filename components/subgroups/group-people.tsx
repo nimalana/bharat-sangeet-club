@@ -89,7 +89,7 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
       try {
         const { error } = await action();
         if (error) { notify(friendlyError(error), "error"); return false; }
-        notify(success);
+        notify(success, "success");
         return true;
       } catch {
         notify("The change could not be saved. Check your connection and try again.", "error");

@@ -419,7 +419,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
         catch { notify("That change could not be saved. Check your connection and try again.", "error"); return; }
         if (outcome.error) { notify(friendlyError(outcome.error, "That change could not be saved."), "error"); return; }
         // A change that went through but left something undone is reported as the problem it is.
-        if (outcome.warning) notify(outcome.warning, "error"); else notify(current.success);
+        if (outcome.warning) notify(outcome.warning, "error"); else notify(current.success, "success");
         setAction(null); await refreshAfterChange();
       } finally { setActionBusy(false); }
     });

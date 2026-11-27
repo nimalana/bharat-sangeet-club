@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { friendlyError } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog } from "../ui/dialog";
@@ -11,7 +12,6 @@ import { Textarea } from "../ui/textarea";
 
 type CorrectableSession = { id: number; title: string; starts_at: string; status: "draft" | "open" | "closed" | "canceled"; cancel_reason?: string | null };
 type Done = () => void | Promise<void>;
-type Notify = (message: string) => void;
 
 function toLocalInput(value: string) {
   const date = new Date(value);
@@ -27,8 +27,8 @@ export function SessionCorrections({ session, notify, onChanged }: { session: Co
 
   async function finish(error: { message?: string; code?: string } | null, message: string) {
     setBusy(false);
-    if (error) { notify(friendlyError(error, "That change could not be saved.")); return; }
-    setDialog(null); setReason(""); notify(message); await onChanged();
+    if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
+    setDialog(null); setReason(""); notify(message, "success"); await onChanged();
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
@@ -101,7 +101,7 @@ export function ClearMarkButton({ sessionId, memberId, memberName, notify, onCha
     setBusy(true);
     const { error } = await supabase.rpc("clear_attendance_status", { p_session_id: sessionId, p_member_id: memberId });
     setBusy(false);
-    if (error) { notify(friendlyError(error, "The mark could not be cleared.")); return; }
+    if (error) { notify(friendlyError(error, "The mark could not be cleared."), "error"); return; }
     setOpen(false); notify("Mark cleared"); await onChanged();
   }
   return <>
@@ -125,7 +125,7 @@ export function ThresholdSettings({ warning, critical, notify, onChanged }: { wa
     setBusy(true);
     const { error } = await supabase.rpc("set_attendance_thresholds", { p_warning: nextWarning, p_critical: nextCritical });
     setBusy(false);
-    if (error) { notify(friendlyError(error, "Thresholds could not be saved.")); return; }
+    if (error) { notify(friendlyError(error, "Thresholds could not be saved."), "error"); return; }
     setOpen(false); notify("Attendance thresholds updated"); await onChanged();
   }
   return <>
@@ -153,7 +153,7 @@ export function WithdrawExcuseButton({ excuseId, notify, onChanged }: { excuseId
     setBusy(true);
     const { error } = await supabase.rpc("withdraw_attendance_excuse", { p_excuse_id: excuseId });
     setBusy(false);
-    if (error) { notify(friendlyError(error, "The form could not be withdrawn.")); return; }
+    if (error) { notify(friendlyError(error, "The form could not be withdrawn."), "error"); return; }
     setOpen(false); notify("Absence form withdrawn"); await onChanged();
   }
   return <>
