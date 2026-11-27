@@ -3,7 +3,7 @@
 // executive, the administrator or a member who skips the functions and writes the table gets "permission denied for table".
 // supabase/tests/permissions.snapshot is the list of what each role holds; this section checks the real project agrees.
 import { readFileSync } from "node:fs";
-import { ok, equal, succeeded, describeError } from "../lib/assert.mjs";
+import { ok, succeeded, describeError } from "../lib/assert.mjs";
 import { mark } from "../lib/ctx.mjs";
 
 const inventory = JSON.parse(readFileSync(new URL("../inventory.json", import.meta.url), "utf8"));

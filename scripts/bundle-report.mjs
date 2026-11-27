@@ -121,7 +121,7 @@ const report = {
 
 // ---- output ---------------------------------------------------------------------------------------------------------------
 const kb = (n) => (n / 1000).toFixed(1);
-const signed = (n) => `${n >= 0 ? "+" : "-"}${kb(Math.abs(n))}`;
+const signed = (n) => `${kb(n) === "-0.0" ? "+0.0" : n >= 0 ? "+" + kb(n) : kb(n)}`;
 const pad = (s, n, left = false) => (left ? String(s).padStart(n) : String(s).padEnd(n));
 function table(rows, head) {
   const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
