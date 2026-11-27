@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   SHARED_ACCESS_NOTICE,
@@ -55,12 +54,4 @@ test("the access choice maps to the stored columns and back", () => {
   for (const access of ["members", "executives", "public"]) assert.equal(archiveAccess(accessColumns(access)), access);
   assert.equal(archiveAccess({ visibility: "members" }), "members");
   assert.equal(archiveAccess({ visibility: "executives", is_public: true }), "public");
-});
-
-test("the manager uses the guard, and the old advice is gone from the source", async () => {
-  const source = await readFile(new URL("../components/recordings/club-archive-manager.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /Hide it by setting access to Executives only/);
-  assert.match(source, /accessChangeBreaksPlayback\(/);
-  assert.match(source, /SHARED_ACCESS_NOTICE/);
-  assert.match(source, /SHARED_DELETE_NOTICE/);
 });

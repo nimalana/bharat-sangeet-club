@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   DEFAULT_LIST_LIMIT,
@@ -290,57 +289,4 @@ test("Show more climbs 100, 250, 500, 1000 and then stops", () => {
   // Every note with a larger cap available leaves room to ask for it; at the top it does not.
   assert.equal(queueNote(500, 800, "open items", 500).includes("Narrow"), false);
   assert.equal(queueNote(1000, 1400, "open items", 1000).includes("Narrow"), true);
-});
-
-// ---- the screen no longer uses the browser's own dialogs
-
-test("attendance.tsx has no window.prompt or window.confirm and polls through the small function", () => {
-  const source = readFileSync(new URL("../app/attendance.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /window\.(prompt|confirm|alert)\s*\(|[^.\w](prompt|confirm|alert)\s*\(/, "use FormDialog and ConfirmDialog");
-  assert.match(source, /get_attendance_pulse/, "the 10 second poll uses the pulse");
-  assert.match(source, /get_attendance_overview/);
-  assert.doesNotMatch(source, /get_attendance_workspace/, "the 5 MB read is gone from the page");
-  assert.match(source, /visibilitychange/, "polling follows page visibility");
-  assert.match(source, /FormDialog/);
-  assert.match(source, /ConfirmDialog/);
-});
-
-// ---- what the page reads again after check-in opens or closes (round 2)
-
-const pageSource = () => readFileSync(new URL("../app/attendance.tsx", import.meta.url), "utf8");
-const between = (source, start, end) => { const from = source.indexOf(start); const to = source.indexOf(end, from); assert.ok(from >= 0 && to > from, `${start} .. ${end}`); return source.slice(from, to); };
-
-test("attendance.tsx reads the roster again after check-in opens or closes", () => {
-  const source = pageSource();
-  // Opening: the roster of a draft is empty and opening adds the participants; neither the
-  // tab nor the selection changes, so the page has to ask for the roster itself.
-  const opening = between(source, "async function openCheckIn", "async function createSession");
-  assert.match(opening, /open_attendance_session/);
-  assert.equal((opening.match(/rereadRoster\(\)/g) || []).length, 2, "after a successful open, with and without a code in the answer");
-  // Closing and canceling (and every mark) go through refresh(), which reads the roster again too.
-  assert.match(between(source, "function refresh()", "async function checkIn"), /load\(true\);\s*rereadRoster\(\);/);
-  assert.match(between(source, "function confirmSession()", "async function submitExcuse"), /close_attendance_session/);
-  assert.match(between(source, "async function runDialog", "function submitDialog"), /refresh\(\);/, "a confirmed dialog (close, cancel, a mark) refreshes");
-  // The effect that reads the roster listens to the counter.
-  assert.match(between(source, "const [rosterTick", "const hasOpenSession"), /\[canManage, tab, selectedSessionId, loadRoster, rosterTick\]/);
-});
-
-test("attendance.tsx compares the overview's items version in the poll", () => {
-  assert.match(pageSource(), /pulseNeedsReload\(state\.data\.sessions, reply, state\.data\.excuses_pending, canManage, state\.data\.items_version\)/);
-});
-
-test("attendance.tsx asks for a larger queue cap only from the overview, never from the poll", () => {
-  const source = pageSource();
-  assert.match(source, /rpc\("get_attendance_overview", \{ \.\.\.scopeArgs, p_list_limit: limit \}\)/);
-  assert.match(source, /rpc\("get_attendance_pulse", scopeArgs\)/, "the poll does not take a list limit");
-  assert.match(source, /Show more/);
-  assert.match(between(source, "function changeScope", "function changeTerm"), /listLimit\.current = DEFAULT_LIST_LIMIT/, "a new audience starts at the first page");
-  assert.match(between(source, "function changeTerm", "if (!data)"), /listLimit\.current = DEFAULT_LIST_LIMIT/, "so does a new term");
-});
-
-test("attendance.tsx says which view the absence-form and follow-up panels list", () => {
-  const source = pageSource();
-  assert.match(source, /awaiting review · \{viewLabel\}/);
-  assert.match(source, /pending · \{viewLabel\}/);
-  assert.match(source, /const viewLabel = `\$\{scopeLabel\} · \$\{termFilter === "all" \? "All terms" : termLabel\(termFilter\)\}`/);
 });

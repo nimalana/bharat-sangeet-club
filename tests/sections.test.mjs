@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   SECTIONS,
@@ -103,18 +102,4 @@ test("every menu page has a label and a menu group", () => {
   assert.equal(memberFinance.clubWide, false);
   const execFinance = menuGroups("executive").find((group) => group.pages.includes("finances"));
   assert.equal(execFinance.title, "MANAGE CLUB");
-});
-
-// The shell must use these rules. A section the table allows but the shell
-// never renders (the original bug) is caught here.
-test("the shell renders the finance screen from the shared rules", async () => {
-  const shell = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
-  assert.match(shell, /from "\.\.\/lib\/sections"/);
-  assert.match(shell, /outcome\.kind === "render" && outcome\.section === "finances" && <FinancePage /);
-  assert.match(shell, /outcome\.kind === "refused" && /);
-  assert.match(shell, /outcome\.kind === "render" && outcome\.section === "admin" && <AdminPage /);
-  // No private copy of the section list, the label table or the menu left behind.
-  assert.doesNotMatch(shell, /const sectionValues/);
-  assert.doesNotMatch(shell, /const labels: Record<Section, string>/);
-  assert.doesNotMatch(shell, /const managePages/);
 });

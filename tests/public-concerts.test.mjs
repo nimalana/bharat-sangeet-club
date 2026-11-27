@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PUBLIC_CONCERT_COLUMNS, loadPublicConcerts, parsePublicConcerts, publicConcertsUrl } from "../lib/public-concerts.ts";
 
@@ -29,13 +28,4 @@ test("the list is fetched with the anon key, cached five minutes, and failure gi
   assert.equal(await loadPublicConcerts({ url: "https://x.supabase.co", key: "anon" }, async () => ({ ok: false, json: async () => [] })), null);
   assert.equal(await loadPublicConcerts({ url: "https://x.supabase.co", key: "anon" }, async () => { throw new Error("down"); }), null);
   assert.equal(await loadPublicConcerts({}), null);
-});
-
-test("the page is server-rendered with a literal 5 minute revalidate and signed links are only requested on click", async () => {
-  const [page, portal] = await Promise.all([readFile(new URL("../app/page.tsx", import.meta.url), "utf8"), readFile(new URL("../app/portal.tsx", import.meta.url), "utf8")]);
-  assert.doesNotMatch(page, /use client/);
-  assert.match(page, /export const revalidate = 300;/);
-  assert.match(page, /<Home publicConcerts=\{publicConcerts\} \/>/);
-  assert.match(portal, /createSignedUrl\(item\.storage_path, 600\)/);
-  assert.doesNotMatch(page, /createSignedUrl/);
 });

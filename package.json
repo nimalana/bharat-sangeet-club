@@ -10,14 +10,15 @@
     "build": "next build",
     "report:bundle": "node scripts/bundle-report.mjs",
     "start": "next start",
-    "test": "npm run test:unit",
+    "test": "npm run test:unit && npm run test:component",
+    "test:component": "vitest run",
     "test:db": "scripts/db-replay.sh",
     "test:contract": "scripts/contract-check/run.sh",
     "test:contract:selftest": "scripts/contract-check/run.sh --selftest",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "lint:ratchet": "node scripts/lint-ratchet.mjs",
     "db:generate": "drizzle-kit generate",
-    "test:unit": "node --test tests/dates.test.mjs tests/admin-permission-parity.test.mjs tests/resource-links.test.mjs tests/unified-resources-schema.test.mjs tests/resources-query.test.mjs tests/public-concerts.test.mjs tests/sections.test.mjs tests/bootstrap.test.mjs tests/load-state.test.mjs tests/shell-resilience.test.mjs tests/archive-sharing.test.mjs tests/refresh-wiring.test.mjs tests/finance-summary.test.mjs tests/single-flight.test.mjs tests/toast.test.mjs tests/storage-remove.test.mjs tests/finance-wiring.test.mjs tests/shell-wiring.test.mjs tests/people-recordings-wiring.test.mjs tests/attendance-model.test.mjs tests/toast-call-sites.test.mjs tests/bounded-wait.test.mjs"
+    "test:unit": "node --test tests/archive-sharing.test.mjs tests/attendance-model.test.mjs tests/bootstrap.test.mjs tests/bounded-wait.test.mjs tests/dates.test.mjs tests/finance-summary.test.mjs tests/load-state.test.mjs tests/public-concerts.test.mjs tests/resources-query.test.mjs tests/sections.test.mjs tests/single-flight.test.mjs tests/storage-remove.test.mjs tests/toast.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.6",
@@ -37,6 +38,10 @@
     "@eslint/js": "9.39.4",
     "@next/eslint-plugin-next": "16.2.6",
     "@tailwindcss/postcss": "4.2.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "8.0.0",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.13",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -48,12 +53,14 @@
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "16.4.0",
+    "jsdom": "31.0.1",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.59.3",
     "vinext": "1.0.0-beta.2",
     "vite": "8.0.13",
+    "vitest": "5.1.2",
     "wrangler": "4.92.0"
   },
   "type": "module"
