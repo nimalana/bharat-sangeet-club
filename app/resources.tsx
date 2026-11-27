@@ -12,6 +12,7 @@ import {
   type LibraryTab, type ScopeFilter, type SortKey, type ThumbnailEntry,
 } from "../lib/resources-query";
 import { supabase } from "../lib/supabase";
+import type { Notify } from "../lib/toast";
 import styles from "./resources.module.css";
 
 export type ResourceItem = {
@@ -48,7 +49,7 @@ export type ResourceLibraryProps = {
   groups: Array<{ id: number; name: string }>;
   memberships: Array<{ subgroup_id: number; status: string; membership_role: string }>;
   events: Array<{ id: number; title: string; starts_at: string; subgroup_id: number | null }>;
-  notify: (message: string) => void;
+  notify: Notify;
   onResourceCountChange?: (count: number) => void;
   initialScope?: "all" | "club" | number;
 };
@@ -549,7 +550,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
     await client.from("resource_imports").update({ completed_files: completed, failed_files: failed, uploaded_bytes: uploadedBytes, status: failed ? (completed > 0 ? "partial" : "failed") : "completed" }).eq("id", importId);
     setUploading(false);
     refreshAll();
-    if (failed) { setComposerError(`${failed} file${failed === 1 ? "" : "s"} failed. You can retry the failed rows after checking their error details.`); notify(`${completed} file${completed === 1 ? "" : "s"} uploaded; ${failed} failed`); }
+    if (failed) { setComposerError(`${failed} file${failed === 1 ? "" : "s"} failed. You can retry the failed rows after checking their error details.`); notify(`${completed} file${completed === 1 ? "" : "s"} uploaded; ${failed} failed`, "error"); }
     else { notify(`${completed} file${completed === 1 ? "" : "s"} uploaded`); setComposer(null); setUploadEntries([]); }
   }
 

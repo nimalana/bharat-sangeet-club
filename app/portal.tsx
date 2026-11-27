@@ -7,6 +7,8 @@ import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../co
 import { readCache, setCacheOwner, writeCache } from "../lib/cache";
 import { runBootstrap, type ShellState } from "../lib/bootstrap";
 import { friendlyError } from "../lib/errors";
+import { removeStoredFile } from "../lib/storage";
+import { toastDuration, toastMark, toastTone, type Notify, type ToastTone } from "../lib/toast";
 import type { PublicConcert } from "../lib/public-concerts";
 import { anyFailed, countOrKeep, listOrKeep } from "../lib/refresh";
 import { createRequestGate } from "../lib/request-gate";
@@ -99,7 +101,7 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [query, setQuery] = useState("");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showEvent, setShowEvent] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ClubEvent | null>(null);
@@ -116,10 +118,16 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const [dataGate] = useState(createRequestGate);
   const [workspaceGate] = useState(createRequestGate);
 
-  const notify = useCallback((message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2800);
+  // A failure is shown as one: no tick, and screen readers get an alert. A newer
+  // toast replaces the older one and takes over its timer.
+  const toastTimer = useRef<number | null>(null);
+  const notify = useCallback<Notify>((message, tone) => {
+    const resolved = toastTone(message, tone);
+    setToast({ message, tone: resolved });
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => { setToast(null); toastTimer.current = null; }, toastDuration(resolved));
   }, []);
+  useEffect(() => () => { if (toastTimer.current !== null) window.clearTimeout(toastTimer.current); }, []);
 
   // Supabase hands back a new user object on every token refresh. Keeping the
   // old one while the id is unchanged stops every screen from reloading.
@@ -343,12 +351,12 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
       {showEvent && <EventModal user={user} groups={groups} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(); notify("Important date added"); }} notify={notify} />}
       {editingEvent && <EventModal key={editingEvent.id} editing={editingEvent} user={user} groups={groups} onClose={() => setEditingEvent(null)} onSaved={() => { setEditingEvent(null); loadData(); notify("Calendar date updated"); }} notify={notify} />}
-      {toast && <div className="toast" role="status">✓ {toast}</div>}
+      {toast && <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toastMark[toast.tone]} {toast.message}</div>}
     </main>
   );
 }
 
-function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; notify: (message: string) => void }) {
+function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; notify: Notify }) {
   const [members, setMembers] = useState<MemberProfile[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -358,29 +366,33 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [showDeactivated, setShowDeactivated] = useState(false);
+  // A reload after an edit can overlap the one before it; only the newest answer may change the lists.
+  const [loadGate] = useState(createRequestGate);
 
   const load = useCallback(async () => {
     if (!supabase) return;
+    const isCurrent = loadGate.begin();
     const [membersResult, announcementsResult, auditResult, membershipResult] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").order("full_name").limit(2000),
       supabase.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(50),
       supabase.from("admin_audit_log").select("id,action,actor_email,target_email,details,created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
     ]);
-    if (membersResult.error || membershipResult.error || announcementsResult.error || auditResult.error) notify("Some admin data could not be loaded");
+    if (!isCurrent()) return;
+    if (membersResult.error || membershipResult.error || announcementsResult.error || auditResult.error) notify("Some admin data could not be loaded", "error");
     // A list that failed keeps what is shown (an empty roster would read as "no members").
     setMembers((current) => listOrKeep(current, membersResult as { data: MemberProfile[] | null; error?: unknown }));
     setMemberships((current) => listOrKeep(current, membershipResult as { data: SubgroupMembership[] | null; error?: unknown }));
     setAnnouncements((current) => listOrKeep(current, announcementsResult as { data: Announcement[] | null; error?: unknown }));
     setAudit((current) => listOrKeep(current, auditResult));
     setLoading(false);
-  }, [notify]);
+  }, [loadGate, notify]);
   useEffect(() => { load(); }, [load]);
 
   async function changeRole(member: MemberProfile, nextRole: ClubRole) {
     if (!supabase || member.role === nextRole) return;
     const { error } = await supabase.rpc("admin_change_member_role", { p_target_id: member.id, p_new_role: nextRole });
-    if (error) notify(error.message); else { notify(`${member.full_name || member.email} is now ${nextRole}`); load(); }
+    if (error) notify(friendlyError(error), "error"); else { notify(`${member.full_name || member.email} is now ${nextRole}`); load(); }
   }
   async function saveMemberProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -397,7 +409,7 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
       p_subgroup_ids: subgroupIds,
     });
     setSavingMember(false);
-    if (error) notify(error.message);
+    if (error) notify(friendlyError(error), "error");
     else { setEditingMember(null); notify(`${editingMember.full_name || editingMember.email} was updated`); load(); }
   }
   async function createAnnouncement(event: FormEvent<HTMLFormElement>) {
@@ -409,7 +421,7 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
     const payload: Record<string, string | boolean | number> = { title: String(form.get("title")), body: String(form.get("body")), is_pinned: form.get("is_pinned") === "on", created_by: user.id };
     if (subgroupId) payload.subgroup_id = Number(subgroupId);
     const { error } = await supabase.from("announcements").insert(payload);
-    if (error) notify(friendlyError(error)); else { formElement.reset(); notify("Announcement published"); load(); }
+    if (error) notify(friendlyError(error), "error"); else { formElement.reset(); notify("Announcement published"); load(); }
   }
 
   const activeMembers = members.filter((member) => member.status !== "deactivated");
@@ -484,7 +496,7 @@ function ClubDashboard({ name, role, events, resourceCount, announcements, onNav
   return <>{(announcements.length > 0 || manage) && <AnnouncementFeed announcements={announcements} manage={manage} />}<section className="portal-dashboard"><div className="dashboard-intro"><div><h1>Welcome back, {name}.</h1><p>Carnatic and Hindustani musicians, one shared club home.</p></div><span>{role === "executive" ? "Executive view" : role === "admin" ? "Admin view" : "Member view"}</span></div><TalamMeasure next={next} nextWhen={nextWhen} onNavigate={onNavigate} /><div className="dashboard-beats"><article><span className="beat-number">1</span><h2>Announcements</h2><h3>{latest?.title || "Nothing new to review"}</h3><p>{latest?.body || "Club and group updates will appear here when an executive posts one."}</p><button type="button" onClick={() => onNavigate("home")}>{latest ? "Read update" : "Refresh overview"}</button></article><article><span className="beat-number">2</span><h2>Attendance</h2><h3>Ready for the next meeting</h3><p>Check in with a meeting code, review your history, or submit an absence excuse.</p><button type="button" onClick={() => onNavigate("attendance")}>Open attendance</button></article><article><span className="beat-number">3</span><h2>Resources</h2><h3>{resourceCount} available {resourceCount === 1 ? "resource" : "resources"}</h3><p>Repertoire, planning documents, shared links, and references for every tradition and group.</p><button type="button" onClick={() => onNavigate("documents")}>Open library</button></article></div></section></>;
 }
 
-type AnnouncementManage = { user: User; groups: Subgroup[]; onChanged: () => void | Promise<void>; notify: (message: string) => void };
+type AnnouncementManage = { user: User; groups: Subgroup[]; onChanged: () => void | Promise<void>; notify: Notify };
 function AnnouncementFeed({ announcements, manage }: { announcements: Announcement[]; manage?: AnnouncementManage }) {
   const [composing, setComposing] = useState(false);
   return <section className="announcement-feed" aria-labelledby="announcement-heading"><div className="announcement-feed-heading"><div><p className="eyebrow">CLUB & GROUP UPDATES</p><h2 id="announcement-heading">Announcements</h2></div>{manage ? <Button size="sm" onClick={() => setComposing(true)}>＋ Post announcement</Button> : <span>{announcements.length} recent</span>}</div>{announcements.length ? <div className="announcement-list">{announcements.map((item) => <article className={item.is_pinned ? "pinned" : ""} key={item.id}>{item.is_pinned && <span className="announcement-pin">Pinned</span>}<div><h3>{item.title}</h3><p>{item.body}</p>{manage && <AnnouncementActions user={manage.user} groups={manage.groups} announcement={item} onChanged={manage.onChanged} notify={manage.notify} />}</div><time>{formatDate(item.published_at)}</time></article>)}</div> : <p className="workspace-empty">No announcements yet.</p>}{composing && manage && <AnnouncementEditor user={manage.user} groups={manage.groups} onClose={() => setComposing(false)} onSaved={manage.onChanged} notify={manage.notify} />}</section>;
@@ -517,7 +529,7 @@ function SectionRefused({ label, onHome }: { label: string; onHome: () => void }
   return <section className="section-shell page-section"><EmptyState title={`${label} is not available to your account`} text="Ask a club administrator if you think you should have access." /><div className="mt-4 flex justify-center"><Button variant="secondary" onClick={onHome}>Back to Overview</Button></div></section>;
 }
 
-function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify: (message: string) => void }) {
+function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify: Notify }) {
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [items, setItems] = useState<ArchiveItem[]>([]);
@@ -529,9 +541,12 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
   const [joining, setJoining] = useState<number | null>(null);
   const [inlineMessage, setInlineMessage] = useState("");
   const [requestCounts, setRequestCounts] = useState<Record<number, number>>({});
+  // Several actions reload this screen; a slower, older answer must not replace a newer one.
+  const [loadGate] = useState(createRequestGate);
 
   const load = useCallback(async () => {
     if (!supabase) return;
+    const isCurrent = loadGate.begin();
     const [groupResult, membershipResult, archiveResult, announcementResult, requestResult] = await Promise.all([
       supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
@@ -540,7 +555,8 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
       // Row-level security returns other people's waiting requests only to executives and to that group's leaders and managers.
       supabase.from("subgroup_memberships").select("subgroup_id").in("status", ["pending", "waitlisted"]).neq("member_id", user.id),
     ]);
-    if (groupResult.error || membershipResult.error || archiveResult.error || announcementResult.error) notify("Some group information could not be loaded");
+    if (!isCurrent()) return;
+    if (groupResult.error || membershipResult.error || archiveResult.error || announcementResult.error) notify("Some group information could not be loaded", "error");
     // A list that failed keeps what is shown instead of becoming empty.
     if (!requestResult.error) {
       const counts: Record<number, number> = {};
@@ -552,7 +568,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
     setItems((current) => listOrKeep(current, archiveResult as { data: ArchiveItem[] | null; error?: unknown }));
     setAnnouncements((current) => listOrKeep(current, announcementResult as { data: Announcement[] | null; error?: unknown }));
     setLoading(false);
-  }, [notify, user.id]);
+  }, [loadGate, notify, user.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -583,7 +599,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
       subgroup_description: String(form.get("description") || ""),
       subgroup_mode: String(form.get("enrollment_mode") || "approval"),
     });
-    if (error) { notify(error.message); return; }
+    if (error) { notify(friendlyError(error), "error"); return; }
     const created = data as Subgroup;
     setShowCreate(false); await load(); onGroupsChanged();
     if (created?.id) setSelectedGroupId(created.id);
@@ -594,7 +610,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
     event.preventDefault(); if (!supabase || !active) return;
     const form = new FormData(event.currentTarget);
     const { error } = await supabase.from("announcements").insert({ title: String(form.get("title") || ""), body: String(form.get("body") || ""), is_pinned: form.get("is_pinned") === "on", subgroup_id: active.id, created_by: user.id });
-    if (error) { notify(error.message); return; }
+    if (error) { notify(friendlyError(error), "error"); return; }
     setShowAnnouncement(false); await load(); notify(`Announcement posted to ${active.name}`);
   }
 
@@ -633,7 +649,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
   </section>;
 }
 
-function EventModal({ user, groups, editing, onClose, onSaved, notify }: { user: User; groups: Subgroup[]; editing?: ClubEvent; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+function EventModal({ user, groups, editing, onClose, onSaved, notify }: { user: User; groups: Subgroup[]; editing?: ClubEvent; onClose: () => void; onSaved: () => void; notify: Notify }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase) return; setSaving(true);
@@ -645,7 +661,7 @@ function EventModal({ user, groups, editing, onClose, onSaved, notify }: { user:
       : await supabase.from("events").insert({ ...fields, created_by: user.id }).select("id");
     setSaving(false);
     // An update that matches no row returns no error, so check that something was written.
-    if (result.error || !result.data?.length) notify(friendlyError(result.error, "This date could not be saved. It may have been removed.")); else onSaved();
+    if (result.error || !result.data?.length) notify(friendlyError(result.error, "This date could not be saved. It may have been removed."), "error"); else onSaved();
   }
   return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>{editing ? "Edit this date" : "Add an important date"}</h2><label>Audience<select name="subgroup_id" defaultValue={editing?.subgroup_id ?? ""}><option value="">Whole club</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>Title<input name="title" required defaultValue={editing?.title ?? ""} placeholder="Concert, rehearsal, meeting…" /></label><label>Date and time<input name="starts_at" type="datetime-local" required defaultValue={editing ? toLocalInputValue(editing.starts_at) : undefined} /></label><label>Location<input name="location" defaultValue={editing?.location ?? ""} placeholder="Room, venue, or online" /></label><label>Details<input name="description" defaultValue={editing?.description ?? ""} placeholder="Anything members should know" /></label><Button type="submit" disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Add to calendar"}</Button></form></div>;
 }
@@ -674,7 +690,7 @@ function CalendarView({ events, groups, canManage, onEdit, onDelete }: { events:
   return <div className="month-calendar"><div className="calendar-controls"><button onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="Previous month">←</button><h2>{cursor.toLocaleString("en-US", { month: "long", year: "numeric" })}</h2><div><button className="today-button" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>Today</button><button onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="Next month">→</button></div></div><div className="weekday-row">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{days.map((day) => { const dayEvents = events.filter((item) => sameDay(new Date(item.starts_at), day)); return <div className={`calendar-cell ${day.getMonth() !== month ? "outside" : ""} ${sameDay(day, today) ? "today" : ""}`} key={day.toISOString()}><span className="day-number">{day.getDate()}</span><div className="day-events">{dayEvents.map((item) => <div className="calendar-event" key={item.id} title={[item.description, item.location].filter(Boolean).join(" · ")}><time>{new Date(item.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time><b>{item.title}</b><small className="calendar-scope">{item.subgroup_id ? groups.find((group) => group.id === item.subgroup_id)?.name || "Group" : "Club-wide"}</small>{item.location && <small>{item.location}</small>}{canManage && <><button className="calendar-edit" onClick={() => onEdit(item)} aria-label={`Edit ${item.title}`}>✎</button><button onClick={() => onDelete(item.id)} aria-label={`Delete ${item.title}`}>×</button></>}</div>)}</div></div>; })}</div><div className="calendar-agenda">{agendaDays.length ? agendaDays.map((day) => <section className="calendar-agenda-day" key={day.key}><h3><time dateTime={day.date.toISOString()}>{day.date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</time></h3><div>{day.events.map((item) => <article className="calendar-agenda-event" key={item.id}><time dateTime={item.starts_at}>{new Date(item.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time><b>{item.title}</b><small className="calendar-scope">{item.subgroup_id ? groups.find((group) => group.id === item.subgroup_id)?.name || "Group" : "Club-wide"}</small>{item.location && <small>{item.location}</small>}{item.description && <p>{item.description}</p>}{canManage && <><button className="calendar-edit" onClick={() => onEdit(item)} aria-label={`Edit ${item.title}`}>✎</button><button onClick={() => onDelete(item.id)} aria-label={`Delete ${item.title}`}>×</button></>}</article>)}</div></section>) : <p className="calendar-agenda-empty">No dates in this view.</p>}</div>{events.length === 0 && <p className="calendar-empty">No dates in this view.</p>}</div>;
 }
 
-function MembersPage({ user, notify }: { user: User; notify: (message: string) => void }) {
+function MembersPage({ user, notify }: { user: User; notify: Notify }) {
   // Reopening the directory shows the last data at once and refreshes behind it.
   const [cached] = useState(() => readCache<{ members: MemberProfile[]; groups: Subgroup[]; memberships: SubgroupMembership[] }>(user.id, "members"));
   const [members, setMembers] = useState<MemberProfile[]>(cached?.members || []);
@@ -784,7 +800,7 @@ function LoginScreen({ onBack }: { onBack: () => void }) {
   return <main className="login-page"><div className="login-art"><img src={heroPhotos[0].src} alt={heroPhotos[0].alt} /><div><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h1>Many traditions.<br /><em>One place to make music.</em></h1></div></div><section className="login-panel"><button className="login-back" type="button" onClick={onBack}>← Back to public site</button><div className="login-box"><span className="login-context">UNC CHAPEL HILL MEMBER PORTAL</span><div className="auth-tabs"><button className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setErrorMessage(""); window.sessionStorage.removeItem(pendingSignupNameKey); }}>Member sign in</button><button className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setErrorMessage(""); }}>Join the club</button></div><h2>{mode === "signup" ? "Join Bharat Sangeet" : "Welcome to Bharat Sangeet"}</h2><p>{mode === "signup" ? "Sign up with Google to join UNC's Carnatic and Hindustani music community. Every new account begins as a regular member." : "Use the Google account connected to your UNC Chapel Hill club membership. No password is required."}</p>{mode === "signup" && <label className="signup-name">Preferred name<input autoComplete="name" value={preferredName} onChange={(event) => setPreferredName(event.target.value)} placeholder="What should we call you?" required /></label>}<button className="google-button" type="button" onClick={signInWithGoogle} disabled={sending}><span aria-hidden="true">G</span>{sending ? "Opening Google…" : mode === "signup" ? "Sign up with Google" : "Continue with Google"}</button>{errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}<small>{mode === "signup" ? "Executive access is assigned separately by current club executives." : "Access your recordings, documents, calendar, groups, and attendance."}</small></div></section></main>;
 }
 
-function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: Notify }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase) return; setSaving(true);
@@ -792,10 +808,14 @@ function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose:
     const file = form.get("file") as File; if (!file?.size) { setSaving(false); notify("Choose a file to upload"); return; }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-"); const storagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
     const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
-    if (upload.error) { setSaving(false); notify(upload.error.message); return; }
+    if (upload.error) { setSaving(false); notify(friendlyError(upload.error, "The file could not be uploaded."), "error"); return; }
     const access = String(form.get("visibility") || "members");
     const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type: "recording", storage_path: storagePath, visibility: access === "public" ? "members" : access, is_public: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploaded_by: user.id });
-    if (saved.error) { await supabase.storage.from("club-archive").remove([storagePath]); setSaving(false); notify(saved.error.message); return; }
+    if (saved.error) {
+      // The row was not saved, so the file just uploaded is an orphan: remove it, and say so if it stays.
+      const leftover = await removeStoredFile("club-archive", storagePath, { refusedMessage: "The recording could not be saved, and its uploaded file could not be removed. Ask an administrator to delete it." });
+      setSaving(false); notify(leftover ?? friendlyError(saved.error, "The recording could not be saved."), "error"); return;
+    }
     setSaving(false); onSaved();
   }
   return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add a club recording</h2><label>Title<input name="title" required placeholder="Give this recording a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label><div className="form-pair"><label>Raga / raag<input name="raga" /></label><label>Tala / taal<input name="tala" /></label></div><label>Choose file<input name="file" type="file" required accept="audio/*,video/*" /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option><option value="public">Everyone (public concert)</option></select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save recording"}</button></form></div>;
