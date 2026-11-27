@@ -35,3 +35,21 @@ function (`permissions.sql`) and compares it with `permissions.snapshot`. Any
 change to who can do what therefore shows up as a diff in review. After a
 deliberate change, regenerate it with `UPDATE_SNAPSHOT=1 scripts/db-replay.sh`
 and commit the result.
+
+## Two-session tests
+
+A SQL test file runs in one transaction, so it cannot show a race or a deadlock.
+`supabase/tests/concurrency/*.sh` can: each script clones the replayed database,
+commits its own data, and drives two `psql` connections against each other
+(for example, one expense claimed from two sessions at once, or void and
+withdraw on the same request released together). `scripts/db-replay.sh` runs
+them after the SQL tests. To run one by hand against a cluster left up with
+`KEEP=1`:
+
+```bash
+PGHOST=<socket dir> PGPORT=<port> PGUSER=postgres bash supabase/tests/concurrency/80_finance_locks.sh
+```
+
+The scripts need no other connection to the `postgres` database while they
+clone it. The lock order they check is written in
+`20261127050000_finance_claim_locking.sql`.

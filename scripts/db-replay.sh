@@ -58,5 +58,13 @@ if [ "${UPDATE_SNAPSHOT:-0}" = "1" ]; then cp "$WORK/permissions" "$SNAPSHOT"; e
 elif diff -u "$SNAPSHOT" "$WORK/permissions" >"$WORK/permdiff" 2>&1; then echo "ok   permissions.snapshot"
 else echo "FAIL permissions.snapshot (run with UPDATE_SNAPSHOT=1 if the change is intended)"; sed 's/^/     /' "$WORK/permdiff"; status=1; fi
 
+# Two-session tests (supabase/tests/concurrency/*.sh). They need committed data
+# and two connections, so each works on a clone of the replayed database.
+for script in "$ROOT"/supabase/tests/concurrency/*.sh; do
+  [ -e "$script" ] || continue
+  if PGHOST="$WORK" PGPORT="$PORT" PGUSER=postgres bash "$script" >"$WORK/out" 2>&1; then echo "ok   concurrency/$(basename "$script")"
+  else echo "FAIL concurrency/$(basename "$script")"; sed 's/^/     /' "$WORK/out"; status=1; fi
+done
+
 if [ "${KEEP:-0}" = "1" ]; then echo "Cluster left running: psql -h $WORK -p $PORT -U postgres postgres"; fi
 exit $status
