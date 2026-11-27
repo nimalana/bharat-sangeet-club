@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncEx
 import { motion, useReducedMotion } from "framer-motion";
 import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../components/admin/member-access";
 import { readCache, setCacheOwner, writeCache } from "../lib/cache";
+import { runBootstrap, type ShellState } from "../lib/bootstrap";
 import { friendlyError } from "../lib/errors";
 import type { PublicConcert } from "../lib/public-concerts";
 import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type ClubRole, type Section } from "../lib/sections";
@@ -84,7 +85,9 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<ClubRole>("member");
-  const [deactivated, setDeactivated] = useState(false);
+  // The signed-in screens wait for get_portal_bootstrap: the role and the
+  // deactivated flag both come from it, so nothing is shown on a guess.
+  const [shellState, setShellState] = useState<ShellState>("loading");
   const [name, setName] = useState("");
   const [section, setSection] = useState<Section>(sectionFromUrl);
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
@@ -115,18 +118,19 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const adoptUser = useCallback((next: User | null) => { setUser((current) => (current?.id === next?.id ? current : next)); }, []);
 
   // One request loads everything the shell needs. A response that arrives
-  // after the signed-in account has changed is thrown away (P1-07).
+  // after the signed-in account has changed is thrown away (P1-07). If it does
+  // not arrive, the shell shows an error with Retry, never the member screens.
   const activeUserId = useRef<string | null>(null);
   const bootstrap = useCallback(async (currentUser: User) => {
     if (!supabase) return;
+    const client = supabase;
+    setShellState("loading");
     setDataLoading(true);
-    const { data, error } = await supabase.rpc("get_portal_bootstrap");
+    const outcome = await runBootstrap<PortalBootstrap>(() => client.rpc("get_portal_bootstrap"));
     if (activeUserId.current !== currentUser.id) return;
     setDataLoading(false);
-    const boot = data as PortalBootstrap | null;
-    if (error || !boot?.profile) { notify("We could not load your club profile"); return; }
-    setDeactivated(boot.profile.status === "deactivated");
-    if (boot.profile.status === "deactivated") return;
+    if (outcome.kind !== "ready") { setShellState(outcome.kind); return; }
+    const boot = outcome.boot;
     setRole(boot.profile.role);
     setGroups(boot.groups);
     setMemberships(boot.memberships);
@@ -134,17 +138,17 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
     setEvents(boot.events);
     setArchive(boot.archive);
     setResourceCount(Number(boot.resource_count) || 0);
-    let profileName = boot.profile.full_name;
+    setName(boot.profile.full_name || currentUser.email?.split("@")[0] || "Club member");
+    setShellState("ready");
     const pendingSignupName = window.sessionStorage.getItem(pendingSignupNameKey)?.trim();
     if (pendingSignupName) {
-      const { error: updateError } = await supabase.from("profiles").update({ full_name: pendingSignupName }).eq("id", currentUser.id);
+      const { error: updateError } = await client.from("profiles").update({ full_name: pendingSignupName }).eq("id", currentUser.id);
       if (updateError) notify("Your account was created, but your preferred name could not be saved");
       else {
-        profileName = pendingSignupName;
         window.sessionStorage.removeItem(pendingSignupNameKey);
+        if (activeUserId.current === currentUser.id) setName(pendingSignupName);
       }
     }
-    setName(profileName || currentUser.email?.split("@")[0] || "Club member");
   }, [notify]);
 
   const loadData = useCallback(async () => {
@@ -206,7 +210,7 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   }, [adoptUser]);
 
   const resetShell = useCallback(() => {
-    setRole("member"); setName(""); setDeactivated(false); setGroups([]); setMemberships([]);
+    setRole("member"); setName(""); setShellState("loading"); setGroups([]); setMemberships([]);
     setAnnouncements([]); setEvents([]); setArchive([]); setResourceCount(0);
   }, []);
 
@@ -232,7 +236,7 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
 
 
   const loadWorkspaces = useCallback(async () => {
-    if (!supabase || !user || deactivated) return;
+    if (!supabase || !user || shellState !== "ready") return;
     const [groupResult, membershipResult] = await Promise.all([
       supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").is("archived_at", null).order("name"),
       supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
@@ -240,7 +244,7 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
     if (groupResult.error || membershipResult.error) { notify("Your groups could not be loaded"); return; }
     setGroups((groupResult.data || []) as Subgroup[]);
     setMemberships((membershipResult.data || []) as SubgroupMembership[]);
-  }, [notify, user, deactivated]);
+  }, [notify, user, shellState]);
 
   const canManage = role !== "member";
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
@@ -285,7 +289,9 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   if (authLoading) return publicConcerts && !savedSession && supabase ? <PublicSite onSignIn={openLogin} initialRecordings={publicConcerts} /> : <LoadingScreen />;
   if (!supabase) return <SetupScreen />;
   if (!user) return showLogin ? <LoginScreen onBack={closeLogin} /> : <PublicSite onSignIn={openLogin} initialRecordings={publicConcerts} />;
-  if (deactivated) return <DeactivatedScreen onSignOut={() => { setDeactivated(false); void supabase?.auth.signOut(); }} />;
+  if (shellState === "deactivated") return <DeactivatedScreen onSignOut={() => { void supabase?.auth.signOut(); }} />;
+  if (shellState === "failed") return <BootstrapFailedScreen onRetry={() => void bootstrap(user)} onSignOut={() => { void supabase?.auth.signOut(); }} />;
+  if (shellState === "loading") return <LoadingScreen />;
 
   const outcome = resolveSection(section, role);
 
@@ -774,6 +780,14 @@ function PageTitle({ eyebrow, title, text, scope }: { eyebrow: string; title: st
   return <div className="page-title">{resolvedScope && <span className="scope-badge">{resolvedScope}</span>}<p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div>;
 }
 function EmptyState({ title, text }: { title: string; text: string }) { return <div className="empty-state"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="" /><h3>{title}</h3><p>{text}</p></div>; }
+function BootstrapFailedScreen({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {
+  return <main className="loading-screen" role="alert">
+    <img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" />
+    <h2>We could not load your club profile</h2>
+    <p>Check your connection and try again. Nothing has been changed.</p>
+    <div className="flex flex-wrap justify-center gap-2"><Button onClick={onRetry}>Try again</Button><Button variant="secondary" onClick={onSignOut}>Sign out</Button></div>
+  </main>;
+}
 function LoadingScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><p>Opening the club archive…</p></main>; }
 function InlineLoading() { return <div className="inline-loading">Loading the archive…</div>; }
 function SetupScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
