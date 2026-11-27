@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { functionSource } from "./source-slice.mjs";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -17,11 +18,18 @@ test("the portal shows the tick by tone and announces failures as alerts", async
 
 test("the admin and group lists drop answers that are no longer the newest (frontend-7)", async () => {
   const shell = await read("app/portal.tsx");
-  const loaders = [
-    ["AdminPage", /function AdminPage[\s\S]*?const load = useCallback\(async \(\) => \{\s*if \(!supabase\) return;\s*const isCurrent = loadGate\.begin\(\);[\s\S]*?if \(!isCurrent\(\)\) return;/],
-    ["SubgroupSpaces", /function SubgroupSpaces[\s\S]*?const load = useCallback\(async \(\) => \{\s*if \(!supabase\) return;\s*const isCurrent = loadGate\.begin\(\);[\s\S]*?if \(!isCurrent\(\)\) return;/],
-  ];
-  for (const [name, pattern] of loaders) assert.match(shell, pattern, name);
+  // Each list is checked inside its own function. Matched across the whole file, a lazy pattern
+  // starting at AdminPage runs on into SubgroupSpaces, so removing the gate from one of them
+  // would still pass on the other's.
+  const gate = /const \[loadGate\] = useState\(createRequestGate\);[\s\S]*?const load = useCallback\(async \(\) => \{\s*if \(!supabase\) return;\s*const isCurrent = loadGate\.begin\(\);[\s\S]*?if \(!isCurrent\(\)\) return;/;
+  for (const name of ["AdminPage", "SubgroupSpaces"]) {
+    const body = functionSource(shell, name);
+    assert.match(body, gate, `${name} drops answers that are not the newest`);
+    assert.equal(body.match(/loadGate\.begin\(\)/g)?.length, 1, `${name} opens exactly one gate`);
+  }
+  // The two slices are different text: one gate cannot answer for both.
+  assert.notEqual(functionSource(shell, "AdminPage"), functionSource(shell, "SubgroupSpaces"));
+  assert.doesNotMatch(functionSource(shell, "AdminPage"), /function SubgroupSpaces/);
 });
 
 test("the dashboard, workspace, directory and recordings loaders keep their guards (round 1)", async () => {
