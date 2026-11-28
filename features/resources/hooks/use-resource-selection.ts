@@ -1,9 +1,9 @@
 // The item whose details are open in the side panel: where it sits in the folder tree, how many items a folder holds, opening it
-// (a folder is entered, a file or link is opened), and reading it again after a change made to it.
+// (a folder is entered, a file is shown in a preview over the page, a link opens its address), and reading it again after a change made to it.
 import { useEffect, useMemo, useState } from "react";
 import { countFolderChildren, resourcesAvailable, signResourceFile } from "../../../lib/api/resources";
 import { chainFromKnown, resolveFolderChain } from "../../../lib/resources-query";
-import { useToast } from "../../../components/ui/toast";
+import type { PreviewFile } from "../../../components/ui/preview-dialog";
 import type { ResourceItem } from "../types";
 
 export type ResourceSelectionOptions = {
@@ -17,8 +17,9 @@ export type ResourceSelectionOptions = {
 };
 
 export function useResourceSelection({ itemById, version, changeFolder, fetchOneFolder, refreshAll, replaceRow }: ResourceSelectionOptions) {
-  const { notify } = useToast();
   const [selected, setSelected] = useState<ResourceItem | null>(null);
+  // The file shown in the preview dialog.
+  const [previewing, setPreviewing] = useState<ResourceItem | null>(null);
   const [childCountState, setChildCountState] = useState<{ id: number; count: number } | null>(null);
   const [selectedChain, setSelectedChain] = useState<{ id: number; chain: ResourceItem[] } | null>(null);
 
@@ -56,16 +57,20 @@ export function useResourceSelection({ itemById, version, changeFolder, fetchOne
     setSelected(item);
   }
 
-  async function openFile(item: ResourceItem) {
+  // A link opens its address in a new tab (it is another site); a file is shown over the page, where its signed link is made when the
+  // dialog opens (previewFile), so a link that went stale while the details were open is never used.
+  function openFile(item: ResourceItem) {
     if (item.node_kind === "link" && item.external_url) { window.open(item.external_url, "_blank", "noopener,noreferrer"); return; }
     if (!resourcesAvailable() || !item.storage_path) return;
-    // Open the tab during the click, before waiting for the link, so browsers
-    // that block pop-ups opened after a delay still allow it.
-    const tab = window.open("about:blank", "_blank");
-    if (tab) tab.opener = null;
-    const signed = await signResourceFile(item.storage_bucket || "club-resources", item.storage_path);
-    if (!signed) { tab?.close(); notify("This resource could not be opened"); return; }
-    if (tab) tab.location.replace(signed); else window.location.assign(signed);
+    setPreviewing(item);
+  }
+
+  /** What PreviewDialog needs for the file: a link that works for five minutes, its type and its name. Throws (with no message, so the dialog
+   *  says "The file could not be opened.") when no link could be made. */
+  async function previewFile(item: ResourceItem): Promise<PreviewFile> {
+    const url = await signResourceFile(item.storage_bucket || "club-resources", item.storage_path ?? "");
+    if (!url) throw new Error("");
+    return { url, mime: item.mime_type ?? "", name: item.original_filename || item.title };
   }
 
   // After an action on the selected item: read it again, then the lists.
@@ -77,5 +82,5 @@ export function useResourceSelection({ itemById, version, changeFolder, fetchOne
     if (fresh) { setSelected(fresh); replaceRow(id, () => fresh); }
   }
 
-  return { selected, setSelected, selectedCurrent, selectedLocation, childCountState, openItem, openFile, afterChange };
+  return { selected, setSelected, selectedCurrent, selectedLocation, childCountState, previewing, setPreviewing, previewFile, openItem, openFile, afterChange };
 }

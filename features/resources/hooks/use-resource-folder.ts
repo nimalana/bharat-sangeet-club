@@ -28,10 +28,14 @@ export function useResourceFolder(initialScope: ScopeFilter) {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  function changeFolder(next: number | null) {
+  // Opening a folder or going up a level is a step the person can go Back from. A folder that opens nothing (a link to one that is gone or
+  // that belongs to someone else) is taken out of the address without a step, so Back does not land on the same dead link again.
+  function changeFolder(next: number | null, { replace = false }: { replace?: boolean } = {}) {
     setFolderId(next);
     const url = folderUrl(window.location.pathname, window.location.search, next);
-    if (url !== `${window.location.pathname}${window.location.search}`) window.history.pushState({ section: "documents" }, "", url);
+    if (url === `${window.location.pathname}${window.location.search}`) return;
+    if (replace) window.history.replaceState({ section: "documents" }, "", url);
+    else window.history.pushState({ section: "documents" }, "", url);
   }
 
   return { scope, setScope, folderId, changeFolder };

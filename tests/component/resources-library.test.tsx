@@ -335,31 +335,51 @@ describe("managing the selected item", () => {
     expect(screen.queryByText("Manage this file")).not.toBeInTheDocument();
   });
 
-  it("opening a file opens the tab first, then signs the file for five minutes from its bucket, and shows it there", async () => {
+  // Phase 3.3: a file is shown in PreviewDialog over the page (a tab opened for it, and the toast of a file that could not be signed, are gone).
+  it("opening a file shows it in a preview over the page, signed for five minutes from its bucket, and opens no tab", async () => {
     scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
-    const tab = { opener: "x" as unknown, location: { replace: vi.fn() }, close: vi.fn() };
-    vi.mocked(window.open).mockReturnValue(tab as unknown as Window);
     renderLibrary({ role: "member" });
     fireEvent.click(await rowButton("Syllabus.pdf"));
     fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
-    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledTimes(1));
-    expect(window.open).toHaveBeenCalledWith("about:blank", "_blank");
-    expect(tab.opener).toBeNull();
+    const frame = await screen.findByTitle("Syllabus.pdf (PDF)");
+    expect(frame).toHaveAttribute("src", expect.stringContaining("files.test"));
     expect(fake.storage("club-resources", "createSignedUrl").calls[0].args).toEqual(["u-1/5-Syllabus.pdf", 300]);
-    expect(tab.location.replace).toHaveBeenCalledWith(expect.stringContaining("files.test"));
+    expect(screen.getByRole("link", { name: "Open in a new tab" })).toHaveAttribute("href", expect.stringContaining("files.test"));
+    expect(window.open).not.toHaveBeenCalled();
   });
 
-  it("a file that cannot be signed closes the empty tab and says so", async () => {
+  it("a file that cannot be signed says so in the preview, with Try again, which signs it again", async () => {
     scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
-    fake.storage("club-resources", "createSignedUrl").reply(fail("Object not found"));
-    const tab = { opener: "x" as unknown, location: { replace: vi.fn() }, close: vi.fn() };
-    vi.mocked(window.open).mockReturnValue(tab as unknown as Window);
-    const { notify } = renderLibrary({ role: "member" });
+    fake.storage("club-resources", "createSignedUrl").replyOnce(fail("Object not found"));
+    renderLibrary({ role: "member" });
     fireEvent.click(await rowButton("Syllabus.pdf"));
     fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
-    await waitFor(() => expect(tab.close).toHaveBeenCalled());
-    expect(tab.location.replace).not.toHaveBeenCalled();
-    expect(notify.find("This resource could not be opened")).toBeTruthy();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The file could not be opened.");
+    expect(screen.queryByTitle("Syllabus.pdf (PDF)")).not.toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByTitle("Syllabus.pdf (PDF)")).toBeInTheDocument();
+    expect(fake.storage("club-resources", "createSignedUrl").count).toBe(2);
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("the preview shows an image as a picture and any other kind of file as a download, and closing it returns to the details", async () => {
+    scriptLibrary({ rows: [imageRow(6, "Poster.png"), res(7, "Score.sib", { mime_type: "application/octet-stream" })] });
+    renderLibrary({ role: "member" });
+    fireEvent.click(await rowButton("Poster.png"));
+    const opener = await screen.findByRole("button", { name: "Open file" });
+    opener.focus();
+    fireEvent.click(opener);
+    const shown = within(await screen.findByRole("link", { name: "Open in a new tab" }).then((link) => link.closest('[role="dialog"]') as HTMLElement));
+    expect(shown.getByRole("img", { name: "Poster.png" })).toHaveAttribute("src", expect.stringContaining("files.test"));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Open in a new tab" })).not.toBeInTheDocument());
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Open file" })).toHaveFocus());
+    fireEvent.click(screen.getByRole("button", { name: "Close resource details" }));
+    fireEvent.click(await rowButton("Score.sib"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
+    expect(await screen.findByRole("link", { name: "Download Score.sib" })).toHaveAttribute("href", expect.stringContaining("files.test"));
   });
 
   it("a link opens its address in a new tab without handing over the opener, and signs nothing", async () => {
@@ -690,7 +710,10 @@ describe("uploading a folder", () => {
     const failedRows = fake.from("resources", "update").calls.filter((call) => (call.payload as { status: string }).status === "failed");
     expect(failedRows).toHaveLength(1);
     expect(fake.from("resource_imports", "update").calls[0].payload).toMatchObject({ status: "partial", completed_files: 1, failed_files: 1 });
-    expect(screen.getByText("The object exceeded the maximum allowed size")).toBeInTheDocument();
+    // The row of the file says why (UploadProgress); the other file's row says it is uploaded.
+    const rows = within(screen.getByRole("list", { name: "Files being uploaded" }));
+    expect(rows.getByText("Failed: The object exceeded the maximum allowed size")).toBeInTheDocument();
+    expect(rows.getByText("Uploaded")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("1 file failed.");
     expect(screen.getByRole("button", { name: "Reset failed" })).toBeInTheDocument();
   });
@@ -748,7 +771,7 @@ describe("when a step of an upload fails", () => {
     await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
     startUpload();
     await waitFor(() => expect(notify.find("0 files uploaded; 1 failed").tone).toBe("error"));
-    expect(screen.getByText("Upload failed", { selector: "small" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Files being uploaded" })).getByText("Failed")).toBeInTheDocument();
     expect(screen.queryByText(/permission denied/)).not.toBeInTheDocument();
     expect(fake.storage("*", "upload").count).toBe(0);
     expect(fake.from("resource_imports", "update").calls[0].payload).toMatchObject({ status: "failed", completed_files: 0, failed_files: 1 });
@@ -765,7 +788,7 @@ describe("when a step of an upload fails", () => {
     expect(fake.storage("club-resources", "upload").count).toBe(1);
     const writes = fake.from("resources", "update").calls.map((call) => (call.payload as { status: string }).status);
     expect(writes).toEqual(["ready", "failed"]);
-    expect(screen.getByText("Upload failed", { selector: "small" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Files being uploaded" })).getByText("Failed")).toBeInTheDocument();
   });
 
   it("the row is created first, then the file is sent, then a failed upload marks the row failed, in that order", async () => {
@@ -783,7 +806,7 @@ describe("when a step of an upload fails", () => {
     expect(sent.seq).toBeLessThan(mark.seq);
     expect(mark.payload).toEqual({ status: "failed" });
     // A storage sentence is shown as it is.
-    expect(screen.getByText("Bucket not found", { selector: "small" })).toBeInTheDocument();
+    expect(screen.getByText("Failed: Bucket not found")).toBeInTheDocument();
   });
 
   it("a failure to mark the row failed changes nothing the person is told: the upload's own failure is shown", async () => {
@@ -795,7 +818,7 @@ describe("when a step of an upload fails", () => {
     await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
     startUpload();
     await waitFor(() => expect(notify.find("0 files uploaded; 1 failed")).toBeTruthy());
-    expect(screen.getByText("Bucket not found", { selector: "small" })).toBeInTheDocument();
+    expect(screen.getByText("Failed: Bucket not found")).toBeInTheDocument();
   });
 
   it("a folder of the selection that cannot be created stops the batch before any file, closes it as failed and says so", async () => {
@@ -1175,17 +1198,16 @@ describe("the selected item", () => {
 
   it("a file is signed from the bucket its row names, or the library's own when it names none", async () => {
     scriptLibrary({ rows: [res(5, "Scan.pdf", { storage_bucket: "club-archive", storage_path: "x/scan.pdf" }), res(6, "Plain.pdf", { storage_bucket: null })] });
-    const tab = { opener: "x" as unknown, location: { replace: vi.fn() }, close: vi.fn() };
-    vi.mocked(window.open).mockReturnValue(tab as unknown as Window);
     renderLibrary({ role: "member" });
     fireEvent.click(await rowButton("Scan.pdf"));
     fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
-    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledTimes(1));
+    await screen.findByTitle("Scan.pdf (PDF)");
     expect(fake.storage("club-archive", "createSignedUrl").calls[0].args).toEqual(["x/scan.pdf", 300]);
-    fireEvent.click(screen.getByRole("button", { name: "Close resource details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close resource details" }));
     fireEvent.click(await rowButton("Plain.pdf"));
     fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
-    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledTimes(2));
+    await screen.findByTitle("Plain.pdf (PDF)");
     expect(fake.storage("club-resources", "createSignedUrl").calls[0].args).toEqual(["u-1/6-Plain.pdf", 300]);
   });
 
@@ -1439,6 +1461,9 @@ describe("the lists: what stays, what is added, where the next page starts", () 
   });
 });
 
+// A press on the dimmed area around a dialog: the shared Dialog closes on the click that follows a press that began there.
+const pressBeside = (panel: HTMLElement) => { fireEvent.mouseDown(panel.parentElement!); fireEvent.click(panel.parentElement!); };
+
 describe("the screen around the lists", () => {
   it("Escape closes the details of the open item", async () => {
     scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
@@ -1456,13 +1481,13 @@ describe("the screen around the lists", () => {
     const composer = screen.getByRole("dialog");
     fireEvent.mouseDown(within(composer).getByRole("heading", { name: "Add resource" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.mouseDown(composer.parentElement!);
+    pressBeside(composer);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     fireEvent.click(await rowButton("Syllabus.pdf"));
     const detail = await screen.findByRole("dialog");
     fireEvent.mouseDown(within(detail).getByRole("heading", { name: "Syllabus.pdf" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.mouseDown(detail.parentElement!);
+    pressBeside(detail);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 

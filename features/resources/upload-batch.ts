@@ -52,8 +52,9 @@ export async function ensureFolderPath(batch: UploadBatch, sink: UploadSink, pat
   return parentId;
 }
 
-// Sends one file of the batch. Throws what went wrong; the row is left marked failed when it got as far as having one.
-export async function uploadOne(batch: UploadBatch, sink: UploadSink, entry: UploadEntry): Promise<void> {
+// Sends one file of the batch, reporting how many of its bytes have left. Throws what went wrong; the row is left marked failed when it
+// got as far as having one.
+export async function uploadOne(batch: UploadBatch, sink: UploadSink, entry: UploadEntry, onProgress?: (progress: { loaded: number; total: number }) => void): Promise<void> {
   if (!resourcesAvailable()) throw new Error("Resource storage is unavailable");
   const { folders, fileName: named } = splitRelativePath(entry.relativePath);
   const fileName = named || entry.file.name;
@@ -68,7 +69,7 @@ export async function uploadOne(batch: UploadBatch, sink: UploadSink, entry: Upl
     await markResourceFailed(pendingItem.id).catch(() => undefined);
     sink.replaceRow(pendingItem.id, (item) => ({ ...item, status: "failed" }));
   };
-  try { await uploadResourceFile(path, entry.file, mimeType); } catch (uploadError) {
+  try { await uploadResourceFile(path, entry.file, mimeType, onProgress); } catch (uploadError) {
     await markFailed();
     throw uploadError;
   }

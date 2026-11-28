@@ -1,11 +1,12 @@
 // Uploading files and folders from the add-resource panel: the chosen files and how far each got, and the batch itself. Up to three
 // files go at once; the folders a selection brings are made first so that two files never race to make the same one. The batch is
 // recorded before anything else is created, and closed with what came of it.
-import { useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
+import { useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { createResourceImport, failResourceImport, finishResourceImport, resourcesAvailable } from "../../../lib/api/resources";
 import type { ArchiveVisibility } from "../../../lib/db";
 import { ApiError, toApiError } from "../../../lib/errors";
 import { useToast } from "../../../components/ui/toast";
+import { uploadPercent } from "../../../components/ui/upload-progress";
 import { deepestFolderLevel, splitRelativePath, tooDeepMessage, uploadBatchName, uploadBatchStatus, uploadFailedSentence, uploadToastMessage } from "../model";
 import { ensureFolderPath, shownMessage, uploadOne, type UploadBatch } from "../upload-batch";
 import type { ComposerMode, ResourceItem, UploadEntry, Visibility } from "../types";
@@ -35,6 +36,8 @@ export function useResourceUploads({ userId, folderId, folderDepth, destinationS
   const [uploadDone, setUploadDone] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [failedUploadCount, setFailedUploadCount] = useState(0);
+  // A second press of Start upload that lands before the button is disabled starts nothing.
+  const starting = useRef(false);
 
   // A folder keeps the visibility it was made with; at the top it is the person's choice (only an executive may choose).
   const uploadDestinationVisibility = currentFolderVisibility || (canManageClub ? uploadVisibility : "members");
@@ -53,6 +56,12 @@ export function useResourceUploads({ userId, folderId, folderDepth, destinationS
   }
 
   async function startUploads(entriesToUpload = uploadEntries) {
+    if (starting.current) return;
+    starting.current = true;
+    try { await runUploads(entriesToUpload); } finally { starting.current = false; }
+  }
+
+  async function runUploads(entriesToUpload: UploadEntry[]) {
     if (!entriesToUpload.length || uploading || !canWriteScope(destinationScope)) return;
     const tooDeep = tooDeepMessage(folderDepth, deepestFolderLevel(entriesToUpload.map((entry) => entry.relativePath)));
     if (tooDeep) { setComposerError(tooDeep); return; }
@@ -80,9 +89,17 @@ export function useResourceUploads({ userId, folderId, folderDepth, destinationS
     const worker = async () => {
       while (next < entries.length) {
         const index = next++;
-        setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "uploading" } : entry));
-        try { await uploadOne(batch, sink, entries[index]); completed += 1; uploadedBytes += entries[index].file.size; setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "ready" } : entry)); }
-        catch (error) { failed += 1; const message = shownMessage(error, "Upload failed"); setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "failed", error: message } : entry)); }
+        setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "uploading", loaded: 0, total: entry.file.size } : entry));
+        // The browser reports many times a second; the screen only changes when the whole percent does.
+        let shownPercent = -1;
+        const reportBytes = ({ loaded, total }: { loaded: number; total: number }) => {
+          const percent = uploadPercent({ loaded, total });
+          if (percent === shownPercent && loaded < total) return;
+          shownPercent = percent;
+          setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, loaded, total } : entry));
+        };
+        try { await uploadOne(batch, sink, entries[index], reportBytes); completed += 1; uploadedBytes += entries[index].file.size; setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "ready" } : entry)); }
+        catch (error) { failed += 1; const message = shownMessage(error, ""); setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "failed", error: message || undefined } : entry)); }
         processed += 1; setUploadDone(processed); setFailedUploadCount(failed);
       }
     };

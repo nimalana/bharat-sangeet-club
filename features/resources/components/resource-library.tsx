@@ -1,8 +1,9 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ClubRole, Tables } from "../../../lib/db";
+import { PreviewDialog } from "../../../components/ui/preview-dialog";
 import { canManageGroupResources, isExecutive } from "../../../lib/permissions";
 import { useResourceForms } from "../hooks/use-resource-forms";
 import { useResourceList } from "../hooks/use-resource-list";
@@ -33,7 +34,6 @@ export function ResourceLibrary({ user, role, groups, memberships, events, onRes
   const [display, setDisplay] = useState<"list" | "grid">("list");
   const [composer, setComposer] = useState<ComposerMode>(null);
   const [composerError, setComposerError] = useState("");
-  const composerRef = useRef<HTMLDivElement>(null);
 
   const activeMemberships = useMemo(() => new Set(memberships.filter((membership) => membership.status === "active").map((membership) => membership.subgroup_id)), [memberships]);
   const canManageClub = isExecutive(role);
@@ -44,26 +44,13 @@ export function ResourceLibrary({ user, role, groups, memberships, events, onRes
   const canManageItem = (item: ResourceItem) => canManageClub || (item.visibility === "members" && canManageSubgroup(item.subgroup_id));
 
   const selection = useResourceSelection({ itemById: list.itemById, version: list.version, changeFolder, fetchOneFolder: list.fetchOneFolder, refreshAll, replaceRow });
-  const { selected, setSelected, selectedCurrent } = selection;
+  const { setSelected, selectedCurrent, previewing } = selection;
 
   const destinationScope = currentFolder ? currentFolder.subgroup_id : scope === "club" || scope === "all" ? null : scope;
   const canAdd = canWriteScope(destinationScope) && (folderId === null || currentFolder !== null);
   const destination = { userId: user.id, folderId, destinationScope, currentFolderVisibility: currentFolder?.visibility, canManageClub, canWriteScope, addRow, refreshAll, setComposer, setComposerError };
   const forms = useResourceForms(destination);
   const uploads = useResourceUploads({ ...destination, folderDepth: crumbs.length, replaceRow });
-
-  useEffect(() => {
-    if (!composer && !selected) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setComposer(null); setSelected(null); }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [composer, selected, setSelected]);
-
-  useEffect(() => {
-    if (composer) window.setTimeout(() => composerRef.current?.querySelector<HTMLElement>("input,select,textarea,button")?.focus(), 0);
-  }, [composer]);
 
   function openComposer(mode: Exclude<ComposerMode, null>) {
     setComposerError("");
@@ -91,10 +78,11 @@ export function ResourceLibrary({ user, role, groups, memberships, events, onRes
     <ResourceList items={list.visibleItems} loading={list.loading} loadError={list.loadError} hasMore={list.hasMore} loadingMore={list.loadingMore} search={list.search} showArchived={showArchived}
       folderId={folderId} canAdd={canAdd} display={display} tab={list.tab} onOpenItem={selection.openItem} onRetry={() => refreshAll()}
       onClearSearch={() => { list.setQuery(""); list.setSearch(""); }} onAddFirst={() => openComposer("menu")} onShowMore={() => void list.loadPage(true)} />
-    {composer ? <ResourceComposer mode={composer} panelRef={composerRef} currentFolder={currentFolder} destinationScope={destinationScope} groupById={groupById} canManageClub={canManageClub}
-      error={composerError} forms={forms} uploads={uploads} onOpen={openComposer} onClose={closeComposer} /> : null}
+    {composer ? <ResourceComposer mode={composer} currentFolder={currentFolder} destinationScope={destinationScope} groupById={groupById} canManageClub={canManageClub}
+      busy={forms.saving || uploads.uploading} error={composerError} forms={forms} uploads={uploads} onOpen={openComposer} onClose={closeComposer} /> : null}
     {selectedCurrent ? <ResourceDetailPanel item={selectedCurrent} location={selection.selectedLocation} groupById={groupById} events={events} canManage={canManageItem(selectedCurrent)} canManageClub={canManageClub}
       childCountState={selection.childCountState} onClose={() => setSelected(null)} onOpenFile={selection.openFile} onChanged={selection.afterChange}
       onRemoved={() => { const removedId = selectedCurrent.id; setSelected(null); if (folderId === removedId) changeFolder(selectedCurrent.parent_id); refreshAll(); }} /> : null}
+    <PreviewDialog open={previewing !== null} onClose={() => selection.setPreviewing(null)} title={previewing?.title ?? ""} load={() => (previewing ? selection.previewFile(previewing) : Promise.reject(new Error("")))} />
   </section>;
 }
