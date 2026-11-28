@@ -121,13 +121,19 @@ describe("a member's own contact details", () => {
     expect(fake.from("profiles", "select").calls.filter((read) => read.used("limit", 2000))).toHaveLength(1);
   });
 
-  it("the close button and a press outside the form close it without saving", async () => {
+  // Phase 3.4: the form is the portal's Dialog now. Its close button is named (it was a bare ×), Escape closes it, and a click beside it does not:
+  // a stray click must not lose what was typed (it used to close the form, with the typing).
+  it("the Close button and Escape close it without saving; a click beside it keeps it open and as typed", async () => {
     await openMembers();
     openForm();
-    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("heading", { name: "Contact information" })).not.toBeInTheDocument();
-    openForm();
-    fireEvent.mouseDown(document.querySelector(".modal-backdrop") as HTMLElement);
+    const form = openForm();
+    fireEvent.change(within(form).getByLabelText("Phone number"), { target: { value: "919-555-0199" } });
+    fireEvent.click(document.querySelector('[role="presentation"]') as HTMLElement);
+    expect(screen.getByRole("heading", { name: "Contact information" })).toBeInTheDocument();
+    expect(within(form).getByLabelText("Phone number")).toHaveValue("919-555-0199");
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("heading", { name: "Contact information" })).not.toBeInTheDocument();
     expect(fake.from("profiles", "update").calls).toHaveLength(0);
   });

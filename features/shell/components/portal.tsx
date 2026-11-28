@@ -14,7 +14,6 @@ import { CalendarPage } from "../../calendar/components/calendar-page";
 import { useCalendarPage } from "../../calendar/hooks/use-calendar-page";
 import { ClubDashboard } from "../../dashboard/components/club-dashboard";
 import { SubgroupSpaces } from "../../groups/components/subgroup-spaces";
-import { MembersPage } from "../../members/components/members-page";
 import { LoginScreen } from "../../public/components/login-screen";
 import { PublicSite } from "../../public/components/public-site";
 import { ArchiveModal } from "../../recordings/components/archive-modal";
@@ -23,7 +22,7 @@ import { attendanceTabFromUrl, usePortalNavigation } from "../hooks/use-portal-n
 import { usePortalSession } from "../hooks/use-portal-session";
 import { SignupRequestsPage } from "../../admin/components/signup-requests-page";
 import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
-import { AttendancePage, ClubArchiveManager, FinancePage, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
+import { AttendancePage, ClubArchiveManager, FinancePage, MembersPage, OwnProfileDialog, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
 import { LoadingScreen } from "./loading-screen";
 import { PendingScreen, RejectedScreen } from "./membership-screens";
 import { PortalFooter } from "./portal-footer";
@@ -36,11 +35,12 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const { notify } = useToast();
   const data = usePortalData();
   const { archive, events, announcements, groups, memberships, resourceCount, dataLoading, setResourceCount, loadData } = data;
-  const { savedSession, authLoading, user, shellState, role, name, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
+  const { savedSession, authLoading, user, shellState, role, name, setName, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
   const nav = usePortalNavigation({ user, loadData });
   const { section, navigate } = nav;
   const calendar = useCalendarPage({ onChanged: loadData });
   const [showUpload, setShowUpload] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   const canManage = canManageClub(role);
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
@@ -62,7 +62,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
   return (
     <main className="portal-shell">
-      <PortalHeader section={section} role={role} name={name} pendingSignups={pendingSignups} onNavigate={navigate} onSignOut={signOutQuietly} />
+      <PortalHeader section={section} role={role} name={name} pendingSignups={pendingSignups} onNavigate={navigate} onSignOut={signOutQuietly} onOpenProfile={() => setShowProfile(true)} />
 
       <SectionBoundary key={section}>
         {shown === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData } : undefined} />}
@@ -90,6 +90,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
       <PortalFooter />
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} />}
+      {showProfile && <SectionBoundary key="own-profile"><OwnProfileDialog user={user} onClose={() => setShowProfile(false)} onSaved={(fullName) => { if (fullName) setName(fullName); }} /></SectionBoundary>}
       <CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} />
       <ToastViewport />
     </main>

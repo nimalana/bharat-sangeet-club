@@ -84,5 +84,5 @@ export function usePortalSession(data: PortalData) {
   // A failed sign-out is silent, as it always was: the person is still signed in and presses it again.
   const signOutQuietly = useCallback(() => { if (isSupabaseConfigured()) void signOut().catch(() => {}); }, []);
 
-  return { savedSession, authLoading, user, shellState, role, name, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly };
+  return { savedSession, authLoading, user, shellState, role, name, setName, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly };
 }

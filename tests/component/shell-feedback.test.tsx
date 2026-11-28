@@ -137,7 +137,7 @@ describe("a screen that fails to render does not take the portal with it", () =>
     expect(screen.getByRole("alert")).toHaveTextContent("Nothing has been changed");
     // The shell around the screen is intact.
     expect(screen.getByRole("navigation", { name: "Portal navigation" })).toBeInTheDocument();
-    expect(screen.getByText("Member · Sign out")).toBeInTheDocument();
+    expect(screen.getByText("Member · Account")).toBeInTheDocument();
     const reported = errors.mock.calls.filter(([message]) => message === "A portal screen failed").length;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     // The screen was drawn again; this data still cannot be drawn, so it fails again, in place (and is reported again).

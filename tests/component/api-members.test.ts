@@ -1,7 +1,7 @@
 // lib/api/members.ts: the member directory (three reads asked together), a member's own contact update, and the picker list a group
 // adds from. Each sends exactly the call the screens used to send; a failure is an ApiError that keeps the database's words.
 import { describe, expect, it } from "vitest";
-import { getMemberDirectory, listAddableMembers, updateOwnContact } from "../../lib/api/members";
+import { getMemberDirectory, getOwnProfile, listAddableMembers, updateOwnContact } from "../../lib/api/members";
 import { ApiError } from "../../lib/errors";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
 
@@ -43,6 +43,24 @@ describe("getMemberDirectory", () => {
     expect(settled).toBe(false);
     slow.resolve(ok([]));
     expect(await outcome).toMatchObject({ message: "first read failed" });
+  });
+});
+
+describe("getOwnProfile", () => {
+  it("reads the member's own row, the seven columns of the directory, as one row or none", async () => {
+    fake.from("profiles", "select").reply(ok({ id: "u-me", full_name: "Asha Rao", email: "a@x.test", role: "member", phone: "919-555-0100", class_year: "2028", specialty: "Veena", joined_at: "2026-01-01" }));
+    expect(await getOwnProfile("u-me")).toMatchObject({ id: "u-me", phone: "919-555-0100" });
+    expect(chainOf(fake.calls[0])).toEqual([["select", "id,full_name,email,role,phone,class_year,specialty,joined_at"], ["eq", "id", "u-me"], ["maybeSingle"]]);
+  });
+
+  it("answers null when there is no such row", async () => {
+    fake.from("profiles", "select").reply(ok(null));
+    expect(await getOwnProfile("u-me")).toBeNull();
+  });
+
+  it("throws an ApiError when the read fails", async () => {
+    fake.from("profiles", "select").reply(fail("permission denied for table profiles", "42501"));
+    expect(await getOwnProfile("u-me").catch((caught) => caught)).toBeInstanceOf(ApiError);
   });
 });
 

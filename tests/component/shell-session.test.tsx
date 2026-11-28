@@ -123,7 +123,7 @@ describe("signing out and in again", () => {
 
     await act(async () => { slow.resolve(ok(bootstrapAnswer("member", "Bala Menon"))); });
     expect(await screen.findByText("Welcome back, Bala Menon.")).toBeInTheDocument();
-    expect(screen.getByText("Member · Sign out")).toBeInTheDocument();
+    expect(screen.getByText("Member · Account")).toBeInTheDocument();
   });
 });
 
@@ -145,7 +145,7 @@ describe("the name the shell shows", () => {
   it("is the name on the profile", async () => {
     openPortal({ name: "Asha Rao" });
     expect(await screen.findByText("Welcome back, Asha Rao.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Asha Rao/ })).toHaveAttribute("title", "Sign out");
+    expect(screen.getByRole("button", { name: /Asha Rao/ })).toHaveAttribute("aria-haspopup", "menu");
   });
 
   it("is the part of the email before the @ when the profile has no name", async () => {
@@ -203,22 +203,34 @@ describe("the page around the screens", () => {
   });
 });
 
+// Phase 3.2: the account button is a menu button. It used to sign out at once (title "Sign out", caption "Member · Sign out"); now it opens a menu with
+// "My profile" and "Sign out" (tests/component/shell-account-menu.test.tsx has the menu itself), and signing out is the menu's second item.
+const accountButton = () => screen.getByRole("button", { name: /^Account menu for / });
+const signOutFromMenu = () => { fireEvent.click(accountButton()); fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" })); };
+
 describe("the account button", () => {
   it.each([
-    ["admin", "AD", "Admin · Sign out"],
-    ["executive", "EX", "Executive · Sign out"],
-    ["member", "MB", "Member · Sign out"],
+    ["admin", "AD", "Admin · Account"],
+    ["executive", "EX", "Executive · Account"],
+    ["member", "MB", "Member · Account"],
   ] as const)("%s: badge %s, caption %s", async (role, badge, caption) => {
     openPortal({ role, name: "Asha Rao" });
     await screen.findByText("Welcome back, Asha Rao.");
-    const button = screen.getByTitle("Sign out");
-    expect(button).toHaveTextContent(`${badge}Asha Rao${caption}`);
+    expect(accountButton()).toHaveTextContent(`${badge}Asha Rao${caption}`);
   });
 
-  it("signs out when pressed, and the public page follows the sign-out", async () => {
+  it("pressing it signs nobody out: it opens the menu", async () => {
     openPortal({ name: "Asha Rao" });
     await screen.findByText("Welcome back, Asha Rao.");
-    fireEvent.click(screen.getByTitle("Sign out"));
+    fireEvent.click(accountButton());
+    expect(fake.auth("signOut").count).toBe(0);
+    expect(screen.getByRole("menu", { name: "Account" })).toBeInTheDocument();
+  });
+
+  it("signs out from the menu, and the public page follows the sign-out", async () => {
+    openPortal({ name: "Asha Rao" });
+    await screen.findByText("Welcome back, Asha Rao.");
+    signOutFromMenu();
     expect(fake.auth("signOut").count).toBe(1);
     await act(async () => { fake.emitAuth("SIGNED_OUT", null); });
     expect(await screen.findByText("Member sign in →")).toBeInTheDocument();
@@ -231,7 +243,7 @@ describe("the account button", () => {
     fake.auth("signOut").reply(reply);
     openPortal({ name: "Asha Rao" });
     await screen.findByText("Welcome back, Asha Rao.");
-    fireEvent.click(screen.getByTitle("Sign out"));
+    signOutFromMenu();
     await flush();
     expect(fake.auth("signOut").count).toBe(1);
     expect(toast()).toBeNull();
