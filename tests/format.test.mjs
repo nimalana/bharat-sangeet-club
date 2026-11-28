@@ -5,7 +5,7 @@
 // viewer time zones. Where the old copies differed (an unreadable value, an empty one), the difference is pinned too.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatDate, formatDateOrNone, formatMoney, initials } from "../lib/format.ts";
+import { formatDate, formatDateOrNone, formatMoney, initials, toLocalInputValue } from "../lib/format.ts";
 
 // ---- the old copies, unchanged -------------------------------------------------------------------------------------
 const oldPortalFormatDate = (value) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
@@ -15,6 +15,11 @@ const oldResourcesFormatDate = (value) => {
 };
 const oldRecordingsFormatDate = (value) => new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const oldMoney = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+// The two copies of toLocalInputValue (attendance-corrections.tsx: toLocalInput, event-modal.tsx: toLocalInputValue), written out the same way.
+const oldToLocalInput = (value) => {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
 const oldInitials = (value) => value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "BS";
 
 // What the call sites pass: published_at / created_at / updated_at columns (timestamptz as PostgREST writes them).
@@ -84,4 +89,20 @@ test("initials gives exactly the old output: two capitals, 'BS' when there is no
   assert.equal(initials("  asha   rao devi "), "AR");
   assert.equal(initials(""), "BS");
   assert.equal(initials("   "), "BS");
+});
+
+test("toLocalInputValue gives exactly the old output of both copies (the meeting editor's and the calendar's), in every zone", () => {
+  for (const zone of ZONES) inZone(zone, () => {
+    for (const value of TIMESTAMPS) assert.equal(toLocalInputValue(value), oldToLocalInput(value), `${zone} ${value}`);
+  });
+});
+
+test("toLocalInputValue is the wall-clock time of the viewer's zone, to the minute, in the shape a datetime-local input takes", () => {
+  inZone("UTC", () => assert.equal(toLocalInputValue("2026-09-05T23:30:45.678Z"), "2026-09-05T23:30"));
+  inZone("America/New_York", () => {
+    assert.equal(toLocalInputValue("2026-09-05T23:30:00Z"), "2026-09-05T19:30"); // summer time: UTC-4
+    assert.equal(toLocalInputValue("2026-12-05T23:30:00Z"), "2026-12-05T18:30"); // winter time: UTC-5
+  });
+  inZone("Asia/Kolkata", () => assert.equal(toLocalInputValue("2026-09-05T23:30:00Z"), "2026-09-06T05:00"));
+  assert.throws(() => toLocalInputValue("not a date"), RangeError);
 });

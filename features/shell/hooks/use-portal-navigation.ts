@@ -2,7 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
-import type { ScopeFilter } from "../../../lib/portal-types";
+import type { ScopeFilter } from "../../../lib/db";
 import { sectionFromSearch, sectionUrl, type Section } from "../../../lib/sections";
 
 export type AttendanceTab = "overview" | "meetings" | "excuses";

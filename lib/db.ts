@@ -11,6 +11,10 @@
 // Type-only: this file has no run-time code, so importing it adds nothing to a bundle and node's test runner can load
 // the lib modules that import it (they must `import type` from here).
 //
+// Row shapes (Subgroup, ClubEvent, Profile ...) are tables narrowed with Pick to the columns the screens read, written once here.
+// A screen that needs fewer columns narrows one of these again (GroupOption, EventOption) instead of declaring its own copy, so a
+// column that changes in a migration changes in one place and a caller is never asked for a column the screen does not read.
+//
 // Union types for the values the UI switches on (roles, statuses, scopes) are DERIVED from the enums below, so a
 // migration that adds an enum value reaches the UI as a compile error instead of a screen that mislabels it. Values the
 // database does not have but the UI needs (for example "no mark yet" next to the attendance statuses) are added where
@@ -61,3 +65,32 @@ export type MarkSource = Enums<"attendance_mark_source">;
 export type ExcuseStatus = Enums<"attendance_excuse_status">;
 export type RemediationStatus = Enums<"attendance_remediation_status">;
 export type EligibilityStatus = Enums<"attendance_eligibility_status">;
+
+// ---------------------------------------------------------------- row shapes the screens share
+// Rows are the generated table types, narrowed to the columns the screens read; what only the UI knows is added next to them.
+// The club archive: `ClubArchiveItem` is the row, `ArchiveItem` is how the shell holds it (marked as a recording, with the signed
+// address once one has been asked for).
+export type ClubArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
+  & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">>;
+export type ArchiveItem = ClubArchiveItem & { type: "recording"; signedUrl?: string };
+
+export type ClubEvent = Pick<Tables<"events">, "id" | "title" | "description" | "starts_at" | "location" | "created_at" | "subgroup_id">;
+/** An event as a choice or a label: what a picker and a related-event line show. */
+export type EventOption = Pick<ClubEvent, "id" | "title" | "starts_at">;
+
+export type Announcement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "published_at" | "subgroup_id">;
+
+export type Subgroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode" | "archived_at">;
+/** A group as a choice or a label (an audience picker, "Posted to ..."): its id and name. */
+export type GroupOption = Pick<Subgroup, "id" | "name">;
+
+export type SubgroupMembership = Pick<Tables<"subgroup_memberships">, "subgroup_id" | "member_id" | "status" | "membership_role">;
+
+export type AccountStatus = "active" | "deactivated"; // profiles.status is text with a CHECK constraint
+
+export type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: AccountStatus };
+/** Who a row points at (a requester, a payee, a member in a roster): the columns a name line needs. */
+export type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
+
+/** The audience a screen is showing: everything, the club-wide items, or one subgroup's. A UI choice, not a column. */
+export type ScopeFilter = "all" | "club" | number;

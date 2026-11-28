@@ -3,7 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import type { FormEvent } from "react";
 import { formatDate } from "../../../lib/format";
-import type { Announcement, Subgroup } from "../../../lib/portal-types";
+import type { Announcement, Subgroup } from "../../../lib/db";
 import { ContentScopeLabel } from "../../../components/ui/content-scope-label";
 import { AnnouncementActions } from "../../announcements/components/announcement-actions";
 

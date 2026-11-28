@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useToast } from "../../../components/ui/toast";
 import { isSupabaseConfigured } from "../../../lib/api/auth";
 import { loadPortalLists, loadWorkspaceLists } from "../../../lib/api/portal";
-import type { Announcement, ArchiveItem, ClubEvent, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { Announcement, ArchiveItem, ClubEvent, Subgroup, SubgroupMembership } from "../../../lib/db";
 import { countOrKeep, listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
 

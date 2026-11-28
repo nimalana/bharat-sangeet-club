@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import type { ClubEvent } from "../../../lib/portal-types";
+import type { ClubEvent } from "../../../lib/db";
 import type { Section } from "../../../lib/sections";
 
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };

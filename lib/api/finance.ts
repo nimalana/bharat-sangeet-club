@@ -12,7 +12,7 @@
 // of every rpc call: each function builds its `{ p_x: ... }` object inline.
 import type { PostgrestError } from "@supabase/supabase-js";
 import { ApiError, toApiError } from "../errors";
-import type { Tables } from "../db";
+import type { Profile, Tables } from "../db";
 import { removeStoredFile } from "../storage";
 import { supabase } from "../supabase";
 import { must } from "./_core";
@@ -34,7 +34,6 @@ export type FinanceDocument = Pick<Tables<"finance_documents">, "id" | "document
 export type ExpenseDocument = Pick<Tables<"finance_expense_documents">, "expense_id" | "document_id">;
 export type ReimbursementDocument = Pick<Tables<"finance_reimbursement_documents">, "reimbursement_id" | "document_id">;
 export type ClaimDocument = Pick<Tables<"finance_claim_documents">, "claim_id" | "document_id">;
-export type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 
 // ---------------------------------------------------------------- the client
 

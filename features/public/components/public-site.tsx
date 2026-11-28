@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ArchiveItem } from "../../../lib/portal-types";
+import type { ArchiveItem } from "../../../lib/db";
 import type { PublicConcert } from "../../../lib/public-concerts";
 import { listPublicConcertRecordings, publicSiteAvailable, signPublicConcertUrl } from "../../../lib/api/public";
 import { EmptyState } from "../../../components/ui/empty-state";

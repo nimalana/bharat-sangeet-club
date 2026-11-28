@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listAdminAnnouncements, listAdminMembers, listAuditLog, type AuditEntry } from "../../../lib/api/admin";
 import { listAllMemberships } from "../../../lib/api/groups";
 import { settle } from "../../../lib/api/settle";
-import type { Announcement, MemberProfile, SubgroupMembership } from "../../../lib/portal-types";
+import type { Announcement, MemberProfile, SubgroupMembership } from "../../../lib/db";
 import { listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
 import { useToast } from "../../../components/ui/toast";

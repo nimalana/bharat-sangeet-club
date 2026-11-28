@@ -2,7 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
-import type { Tables } from "../../../lib/db";
+import type { GroupOption, Tables } from "../../../lib/db";
 import { announcementsAvailable, createAnnouncement, deleteAnnouncement, setAnnouncementPinned, updateAnnouncement } from "../../../lib/api/announcements";
 import { friendlyError, toApiError, type ApiError } from "../../../lib/errors";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
@@ -14,7 +14,6 @@ import { Textarea } from "../../../components/ui/textarea";
 import { useToast } from "../../../components/ui/toast";
 
 export type EditableAnnouncement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "subgroup_id">;
-type GroupOption = Pick<Tables<"subgroups">, "id" | "name">;
 
 // Create or edit an announcement. Row-level security allows executives and
 // admins to write announcements; nobody else is shown this dialog.

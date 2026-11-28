@@ -6,7 +6,8 @@
 //   use-attendance-dialogs.ts  the dialog that is open and the request behind it (a mark, a decision, a follow-up, close or cancel)
 //   use-absence-form.ts        the member's absence form and the proof link
 import type { User } from "@supabase/supabase-js";
-import type { AttendanceTab, GroupOption } from "../model";
+import type { GroupOption } from "../../../lib/db";
+import type { AttendanceTab } from "../model";
 import { useAbsenceForm } from "./use-absence-form";
 import { useAttendanceDialogs } from "./use-attendance-dialogs";
 import { useExclusive } from "./use-exclusive";

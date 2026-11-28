@@ -7,7 +7,7 @@
 import { ApiError, toApiError } from "../errors";
 import type { AttendanceStatus, EligibilityStatus, RemediationStatus, RpcArgs, RpcReturns } from "../db";
 import { supabase } from "../supabase";
-import { must } from "./_core";
+import { must, safeFileName } from "./_core";
 
 // What the screen is showing: the audience (all, club-wide, or one subgroup) and the term (null: every term).
 export type AttendanceViewArgs = Pick<RpcArgs<"get_attendance_overview">, "p_scope" | "p_subgroup_id" | "p_term_key">;
@@ -16,8 +16,6 @@ function db() {
   if (!supabase) throw new ApiError("The portal is not connected.");
   return supabase;
 }
-
-const safeFileName = (file: File) => file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
 
 // ---------------------------------------------------------------- reads
 

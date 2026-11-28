@@ -1,9 +1,10 @@
 // What the recordings screens share: the shapes of a recording and its group, the tonics of the sruthi companion, and how a
 // length is written. Pure (type-only imports): node loads this file in tests/recordings-model.test.mjs.
-import type { Tables } from "../../lib/db";
+import type { Subgroup, Tables } from "../../lib/db";
 import type { ManagedNote } from "./components/recording-manage";
 
-export type Group = { id: number; name: string; description: string };
+export type Group = Pick<Subgroup, "id" | "name" | "description">;
+// Looser than SubgroupMembership on purpose: `status` is any string, so a screen can be given a list as a test or a caller writes it.
 export type Membership = { subgroup_id: number; status: string };
 export type RecordingAudience = "subgroup" | "club" | "public";
 // media_kind and audience are text columns with a CHECK constraint, so the generated type is `string`; the UI knows the values.

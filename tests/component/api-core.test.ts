@@ -1,7 +1,8 @@
-// must() in lib/api/_core.ts: the one place a Supabase answer becomes its data or an ApiError.
+// must() and safeFileName() in lib/api/_core.ts: the one place a Supabase answer becomes its data or an ApiError, and the one rule for a
+// file's name inside a storage path (recordings, attendance proofs and finance documents all use it).
 // (Here and not under node --test because _core.ts imports ../errors without an extension, as the app's code does.)
 import { describe, expect, it } from "vitest";
-import { must } from "../../lib/api/_core";
+import { must, safeFileName } from "../../lib/api/_core";
 import { ApiError } from "../../lib/errors";
 
 const postgrest = (fields: { message: string; code?: string; details?: string; hint?: string }) =>
@@ -38,5 +39,15 @@ describe("must", () => {
 
   it("throws even when the failed answer also carries data", () => {
     expect(() => must(failed({ message: "x" }, 500, [{ id: 1 }]))).toThrow(ApiError);
+  });
+});
+
+describe("safeFileName", () => {
+  it("keeps letters, digits, dot, underscore and hyphen and turns every other character into a hyphen, one for one", () => {
+    expect(safeFileName({ name: "Raga Bhairavi (take 2).mp3" })).toBe("Raga-Bhairavi--take-2-.mp3");
+    expect(safeFileName({ name: "plain_name-1.PDF" })).toBe("plain_name-1.PDF");
+    expect(safeFileName({ name: "résumé ñ 日本.png" })).toBe("r-sum------.png");
+    expect(safeFileName({ name: "a/b\\c:d.txt" })).toBe("a-b-c-d.txt");
+    expect(safeFileName({ name: "" })).toBe("");
   });
 });

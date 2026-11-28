@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
 import { updateOwnContact } from "../../../lib/api/members";
 import { settle } from "../../../lib/api/settle";
-import type { ScopeFilter } from "../../../lib/portal-types";
+import type { ScopeFilter } from "../../../lib/db";
 import { Button } from "../../../components/ui/button";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { LoadErrorBanner } from "../../../components/ui/load-error";

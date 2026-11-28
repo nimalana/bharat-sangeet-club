@@ -1,10 +1,7 @@
 // Types the finance screen's pieces share. The rows of the finance tables are in lib/api/finance.ts.
-import type { Tables } from "../../lib/db";
-import type { ClaimDocument, ClaimExpense, ExpenseDocument, Expense, FinanceDocument, FundingClaim, Payment, Profile, Reimbursement, ReimbursementDocument } from "../../lib/api/finance";
+import type { Profile } from "../../lib/db";
+import type { ClaimDocument, ClaimExpense, ExpenseDocument, Expense, FinanceDocument, FundingClaim, Payment, Reimbursement, ReimbursementDocument } from "../../lib/api/finance";
 import type { FormField } from "../../components/ui/form-dialog";
-
-export type Subgroup = Pick<Tables<"subgroups">, "id" | "name">;
-export type ClubEvent = Pick<Tables<"events">, "id" | "title" | "starts_at">;
 
 export type FinanceView = "overview" | "expenses" | "reimbursements" | "claims";
 export type FinanceModal = "reimbursement" | "expense" | "income" | "claim" | null;

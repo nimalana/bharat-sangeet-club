@@ -1,4 +1,4 @@
-// How the portal writes dates, money and initials. One copy of each.
+// How the portal writes dates, money, initials and the value of a date-time input. One copy of each.
 //
 // Calendar days and instants in the CLUB's time zone are in lib/dates.ts (formatDay, formatDateTime). The date
 // helpers here show an instant in the VIEWER's own time zone, which is what the library, recordings and
@@ -19,6 +19,16 @@ export function formatDate(value: string): string {
 export function formatDateOrNone(value: string | null | undefined): string {
   if (!value) return "No date";
   return formatDate(value);
+}
+
+/**
+ * An instant as the value of an <input type="datetime-local">: "2026-09-05T19:30", in the viewer's own time zone (the zone the input
+ * shows and reads). The meeting editor and the calendar's date editor both fill their field with it. An unreadable value throws
+ * a RangeError, as both of the copies it replaces did.
+ */
+export function toLocalInputValue(value: string): string {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });

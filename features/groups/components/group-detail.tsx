@@ -1,10 +1,9 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import type { ClubRole, GroupRole } from "../../../lib/db";
+import type { ClubRole, GroupRole, Announcement, Subgroup } from "../../../lib/db";
 import { formatDate } from "../../../lib/format";
 import { canManageClub, canPostToGroup } from "../../../lib/permissions";
-import type { Announcement, Subgroup } from "../../../lib/portal-types";
 import { Button } from "../../../components/ui/button";
 import { AnnouncementActions } from "../../announcements/components/announcement-actions";
 import { GroupPeople } from "./group-people";

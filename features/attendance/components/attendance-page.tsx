@@ -2,12 +2,13 @@
 
 import type { User } from "@supabase/supabase-js";
 import { useMemo, useState } from "react";
+import type { GroupOption, ScopeFilter } from "../../../lib/db";
 import { canManageClub } from "../../../lib/permissions";
 import { ErrorBlock } from "../../../components/ui/error-block";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { useAttendanceActions } from "../hooks/use-attendance-actions";
 import { useAttendanceData } from "../hooks/use-attendance-data";
-import { flaggedSummaries, overallRate, termChoices, termLabel, type AttendanceTab, type ClubRole, type GroupOption, type ScopeFilter } from "../model";
+import { flaggedSummaries, overallRate, termChoices, termLabel, type AttendanceTab, type ClubRole } from "../model";
 import { AbsenceFormDialog } from "./absence-form-dialog";
 import { ActionDialogs } from "./action-dialogs";
 import { AttendanceHeader } from "./attendance-header";

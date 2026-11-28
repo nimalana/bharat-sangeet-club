@@ -1,6 +1,6 @@
 "use client";
 
-import type { MemberProfile } from "../../../lib/portal-types";
+import type { MemberProfile } from "../../../lib/db";
 
 /** The four numbers at the top of the Admin page, counted over the active members. */
 export function AdminStats({ activeMembers }: { activeMembers: MemberProfile[] }) {

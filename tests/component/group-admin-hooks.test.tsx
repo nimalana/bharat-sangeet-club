@@ -10,7 +10,7 @@ import { countRequestsByGroup, useGroupSpaces } from "../../features/groups/hook
 import { useGroupRoster } from "../../features/groups/hooks/use-group-roster";
 import { useMemberDirectory } from "../../features/members/hooks/use-member-directory";
 import { setCacheOwner } from "../../lib/cache";
-import type { SubgroupMembership } from "../../lib/portal-types";
+import type { SubgroupMembership } from "../../lib/db";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
 import { notifySpy, userOf } from "../support/helpers";
 

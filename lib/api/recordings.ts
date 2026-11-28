@@ -11,14 +11,12 @@ import type { ArchiveVisibility, Tables, TablesUpdate } from "../db";
 import { removeStoredFile } from "../storage";
 import type { RemoveOptions } from "../storage-remove";
 import { supabase } from "../supabase";
-import { must } from "./_core";
+import { must, safeFileName } from "./_core";
 
 function db() {
   if (!supabase) throw new ApiError("The portal is not connected.");
   return supabase;
 }
-
-const safeFileName = (file: File) => file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
 
 /** The bucket a recording's take is in: its own `storage_bucket` (a copy that still plays from the club archive) or `recordings`. */
 export const recordingBucket = (recording: { storage_bucket?: string }) => recording.storage_bucket || "recordings";

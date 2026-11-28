@@ -16,7 +16,7 @@ import { JoinRequestsPanel } from "../../features/groups/components/join-request
 import { RosterList } from "../../features/groups/components/roster-list";
 import type { Pending } from "../../features/groups/model";
 import type { RosterRow } from "../../lib/api/groups";
-import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../lib/portal-types";
+import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../lib/db";
 import { fake, ok } from "../support/fake-supabase";
 import { notifySpy, userOf } from "../support/helpers";
 

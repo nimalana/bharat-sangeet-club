@@ -2,7 +2,7 @@
 
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { PageTitle } from "../../../components/ui/page-title";
-import type { ClubEvent, ScopeFilter, Subgroup } from "../../../lib/portal-types";
+import type { ClubEvent, ScopeFilter, Subgroup } from "../../../lib/db";
 import { ScopeFilterBar } from "./scope-filter-bar";
 import { eventsInScope } from "../model";
 import { CalendarView } from "./calendar-view";

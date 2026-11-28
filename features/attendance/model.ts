@@ -2,18 +2,15 @@
 // Kept free of React and Supabase so they run under `node --test`.
 
 // Type-only import: this file is loaded by node's test runner, so it imports nothing at run time.
-import type { AttendanceStatus, ClubRole, EligibilityStatus, ExcuseStatus, RemediationStatus, SessionStatus, Tables } from "../../lib/db";
+import type { AttendanceStatus, ClubRole, EligibilityStatus, ExcuseStatus, Profile, RemediationStatus, SessionStatus, Tables } from "../../lib/db";
 
 // The values come from the database enums (lib/db.ts). Re-exported so the screens keep importing them from here.
 export type { ClubRole, EligibilityStatus, ExcuseStatus, RemediationStatus, SessionStatus };
 // A mark, or "pending": no mark yet. "pending" is the UI's own word; the database has no such status.
 export type RecordStatus = AttendanceStatus | "pending";
 export type AbsenceCategory = "class_exam" | "family_emergency" | "illness" | "other_club_event" | "other";
-// The audience the screen is showing (all activity, club-wide meetings, or one subgroup's rehearsals) and the tab an executive is on.
-export type ScopeFilter = "all" | "club" | number;
+// The tab an executive is on. (The audience, ScopeFilter, and a group as a choice, GroupOption, are in lib/db.ts.)
 export type AttendanceTab = "overview" | "meetings" | "excuses";
-// A subgroup the person can pick as an audience.
-export type GroupOption = { id: number; name: string };
 
 // What an executive sees about a meeting that is open right now. `version`
 // changes whenever the roster's content does: a participant joins (opening
@@ -26,7 +23,6 @@ export type SessionLive = { roster_count: number; checked_in_count: number; vers
 export type AttendanceSession = Pick<Tables<"attendance_sessions">, "id" | "scope" | "subgroup_id" | "title" | "starts_at" | "status" | "opened_at" | "closes_at" | "closed_at" | "canceled_at"
   | "code_expires_at" | "created_at" | "counts_toward_metrics"> & Partial<Pick<Tables<"attendance_sessions">, "cancel_reason">> & { subgroup_name?: string | null; live?: SessionLive | null };
 export type AttendanceRecord = Pick<Tables<"attendance_records">, "session_id" | "member_id" | "source" | "note" | "marked_at" | "minutes_late" | "unexcused_units"> & { status: RecordStatus };
-export type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 // reason_category is text with a CHECK constraint, so the generated type is `string`; the UI knows the values.
 export type Excuse = Pick<Tables<"attendance_excuses">, "id" | "session_id" | "member_id" | "reason" | "proof_path" | "notified_at" | "status" | "submitted_at" | "reviewed_at" | "review_note">
   & { reason_category: AbsenceCategory };

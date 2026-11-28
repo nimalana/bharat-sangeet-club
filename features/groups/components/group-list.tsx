@@ -1,9 +1,8 @@
 "use client";
 
-import type { ClubRole } from "../../../lib/db";
+import type { ClubRole, Announcement, ArchiveItem, Subgroup } from "../../../lib/db";
 import { initials } from "../../../lib/format";
 import { canManageClub } from "../../../lib/permissions";
-import type { Announcement, ArchiveItem, Subgroup } from "../../../lib/portal-types";
 import { Button } from "../../../components/ui/button";
 import { EmptyState } from "../../../components/ui/empty-state";
 

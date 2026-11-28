@@ -13,3 +13,8 @@ export function must<T>(answer: PostgrestSingleResponse<T>): T {
   if (answer.error) throw toApiError(answer.error, answer.status);
   return answer.data;
 }
+
+/** A file's name as it may appear in a storage path: every character outside letters, digits, dot, underscore and hyphen becomes a hyphen. */
+export function safeFileName(file: Pick<File, "name">): string {
+  return file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+}

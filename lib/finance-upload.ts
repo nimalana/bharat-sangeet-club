@@ -3,6 +3,8 @@
 // The sentences are the ones the person reads (the screen shows `error.message` after "Request saved; ..."), so they are
 // written here once and not reworded. The order of the checks is the order the person meets them.
 
+import { safeFileName } from "./api/_core";
+
 export const MAX_FINANCE_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 export type PreparedUpload = { mimeType: string; storagePath: string };
@@ -20,6 +22,5 @@ export function prepareFinanceUpload(file: File, documentType: string, userId: s
   if (["bank_statement", "card_statement"].includes(documentType) && mimeType !== "application/pdf") {
     throw new Error("Statements must be uploaded as PDF documents, not screenshots");
   }
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-  return { mimeType, storagePath: `${userId}/${crypto.randomUUID()}-${safeName}` };
+  return { mimeType, storagePath: `${userId}/${crypto.randomUUID()}-${safeFileName(file)}` };
 }

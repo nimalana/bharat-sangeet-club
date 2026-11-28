@@ -1,7 +1,6 @@
 "use client";
 
-import type { ClubRole } from "../../../lib/db";
-import type { Announcement, ClubEvent } from "../../../lib/portal-types";
+import type { ClubRole, Announcement, ClubEvent } from "../../../lib/db";
 import type { Section } from "../../../lib/sections";
 import { AnnouncementFeed, type AnnouncementManage } from "../../announcements/components/announcement-feed";
 import { TalamMeasure } from "./talam-measure";

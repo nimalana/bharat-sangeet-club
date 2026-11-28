@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { clearAttendanceStatus, deleteAttendanceSession, setAttendanceThresholds, updateAttendanceSession, voidAttendanceSession, withdrawAttendanceExcuse } from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
+import { toLocalInputValue } from "../../../lib/format";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
@@ -13,11 +14,6 @@ import { useToast } from "../../../components/ui/toast";
 
 type CorrectableSession = { id: number; title: string; starts_at: string; status: "draft" | "open" | "closed" | "canceled"; cancel_reason?: string | null };
 type Done = () => void | Promise<void>;
-
-function toLocalInput(value: string) {
-  const date = new Date(value);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
 
 // Edit or delete a meeting that has not opened, or void a closed one that
 // should never have counted.
@@ -65,7 +61,7 @@ export function SessionCorrections({ session, onChanged }: { session: Correctabl
       <h2 className="m-0 text-2xl">Edit meeting</h2>
       <form className="mt-4 grid gap-3" onSubmit={saveEdit}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="session-edit-title">Title<Input id="session-edit-title" name="title" defaultValue={session.title} required maxLength={160} /></label>
-        <label className="grid gap-1 text-sm font-semibold" htmlFor="session-edit-start">Starts<Input id="session-edit-start" name="starts_at" type="datetime-local" defaultValue={toLocalInput(session.starts_at)} required /></label>
+        <label className="grid gap-1 text-sm font-semibold" htmlFor="session-edit-start">Starts<Input id="session-edit-start" name="starts_at" type="datetime-local" defaultValue={toLocalInputValue(session.starts_at)} required /></label>
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button>
           <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>

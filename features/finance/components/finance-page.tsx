@@ -11,7 +11,7 @@ import type { User } from "@supabase/supabase-js";
 import { useMemo, useState } from "react";
 import { canManageClub } from "../../../lib/permissions";
 import { createSingleFlight } from "../../../lib/single-flight";
-import type { ClubRole } from "../../../lib/db";
+import type { ClubRole, EventOption, GroupOption } from "../../../lib/db";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { useFinanceCorrections } from "../hooks/use-finance-corrections";
@@ -21,7 +21,7 @@ import { useFinanceForms } from "../hooks/use-finance-forms";
 import { useActionRunner } from "../hooks/use-action-runner";
 import { useOneClickChanges } from "../hooks/use-one-click-changes";
 import { deriveFinance, filterPayments } from "../model";
-import type { ClubEvent, FinanceView, Subgroup } from "../types";
+import type { FinanceView } from "../types";
 import { FinanceChangeDialogs } from "./change-dialogs";
 import { ClaimPaymentDialog, NewClaimDialog } from "./claim-dialogs";
 import { ClaimDocumentDialog, ReceiptDialog } from "./document-dialogs";
@@ -37,8 +37,8 @@ import { FinanceSummaryCards } from "./summary-cards";
 export function FinancePage({ user, role, groups, events }: {
   user: User;
   role: ClubRole;
-  groups: Subgroup[];
-  events: ClubEvent[];
+  groups: GroupOption[];
+  events: EventOption[];
 }) {
   const canManage = canManageClub(role);
   const [view, setView] = useState<FinanceView>(canManage ? "overview" : "reimbursements");

@@ -3,7 +3,8 @@
 // The totals here are the FALLBACK of the cards: when the database's own totals (get_finance_summary) are missing, the cards show
 // sums of the loaded lists, which are capped at the latest 500 rows. The totals themselves are read in use-finance-data.ts.
 
-import type { Expense, FinanceDocument, FinanceWave, FundingClaim, Payment, Profile, Reimbursement } from "../../lib/api/finance";
+import type { Expense, FinanceDocument, FinanceWave, FundingClaim, Payment, Reimbursement } from "../../lib/api/finance";
+import type { Profile } from "../../lib/db";
 import type { FinanceSnapshot, FinanceSummary } from "./types";
 
 /** The snapshot of a screen opened again: the cached lists, an empty one for anything the cache does not hold. */

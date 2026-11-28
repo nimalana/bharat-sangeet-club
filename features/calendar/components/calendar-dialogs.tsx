@@ -2,7 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { useToast } from "../../../components/ui/toast";
-import type { Subgroup } from "../../../lib/portal-types";
+import type { Subgroup } from "../../../lib/db";
 import type { CalendarPageState } from "../hooks/use-calendar-page";
 import { EventModal } from "./event-modal";
 

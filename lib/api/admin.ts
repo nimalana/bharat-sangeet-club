@@ -1,9 +1,8 @@
 // What the Admin page asks of the database: the member list with every status, the announcements and audit log it shows, the
 // administrator-only changes to a member (permission, profile, deactivate, reactivate, delete), and its announcement form.
 // Plain async functions with literal table and RPC names; a failed call throws an ApiError (lib/errors.ts). No React, no toast.
-import type { ClubRole, Tables, TablesInsert } from "../db";
+import type { ClubRole, Tables, TablesInsert, Announcement, MemberProfile } from "../db";
 import { ApiError } from "../errors";
-import type { Announcement, MemberProfile } from "../portal-types";
 import { supabase } from "../supabase";
 import { must } from "./_core";
 

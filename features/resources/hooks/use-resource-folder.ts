@@ -2,7 +2,8 @@
 // so back and forward move between folders and a link opens one directly; the audience can also be set from outside (a group's
 // "Open resources" opens the library for that group).
 import { useEffect, useRef, useState } from "react";
-import { folderUrl, parseFolderParam, type ScopeFilter } from "../../../lib/resources-query";
+import type { ScopeFilter } from "../../../lib/db";
+import { folderUrl, parseFolderParam } from "../../../lib/resources-query";
 
 export function useResourceFolder(initialScope: ScopeFilter) {
   const [scope, setScope] = useState<ScopeFilter>(initialScope);

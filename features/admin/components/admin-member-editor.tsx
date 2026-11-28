@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import type { MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/db";
 import { Button } from "../../../components/ui/button";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";

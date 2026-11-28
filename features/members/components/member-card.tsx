@@ -1,7 +1,7 @@
 "use client";
 
 import { initials } from "../../../lib/format";
-import type { MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/db";
 import { Badge } from "../../../components/ui/badge";
 
 /** One member of the roster: initials, name and role, musical interests, the groups they are active in, and how to reach them. */

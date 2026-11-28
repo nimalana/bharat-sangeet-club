@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { isSupabaseConfigured } from "../../../lib/api/auth";
 import { deleteEvent } from "../../../lib/api/events";
-import type { ClubEvent, ScopeFilter } from "../../../lib/portal-types";
+import type { ClubEvent, ScopeFilter } from "../../../lib/db";
 import { useToast } from "../../../components/ui/toast";
 
 export type CalendarPageState = ReturnType<typeof useCalendarPage>;

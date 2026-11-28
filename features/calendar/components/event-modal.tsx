@@ -5,7 +5,8 @@ import { FormEvent, useState } from "react";
 import { isSupabaseConfigured } from "../../../lib/api/auth";
 import { createEvent, updateEvent } from "../../../lib/api/events";
 import { friendlyError } from "../../../lib/errors";
-import type { ClubEvent, Subgroup } from "../../../lib/portal-types";
+import { toLocalInputValue } from "../../../lib/format";
+import type { ClubEvent, Subgroup } from "../../../lib/db";
 import { Button } from "../../../components/ui/button";
 import { useToast } from "../../../components/ui/toast";
 
@@ -26,5 +27,3 @@ export function EventModal({ user, groups, editing, onClose, onSaved }: {
   }
   return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>{editing ? "Edit this date" : "Add an important date"}</h2><label>Audience<select name="subgroup_id" defaultValue={editing?.subgroup_id ?? ""}><option value="">Whole club</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>Title<input name="title" required defaultValue={editing?.title ?? ""} placeholder="Concert, rehearsal, meeting…" /></label><label>Date and time<input name="starts_at" type="datetime-local" required defaultValue={editing ? toLocalInputValue(editing.starts_at) : undefined} /></label><label>Location<input name="location" defaultValue={editing?.location ?? ""} placeholder="Room, venue, or online" /></label><label>Details<input name="description" defaultValue={editing?.description ?? ""} placeholder="Anything members should know" /></label><Button type="submit" disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Add to calendar"}</Button></form></div>;
 }
-
-function toLocalInputValue(value: string) { const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }

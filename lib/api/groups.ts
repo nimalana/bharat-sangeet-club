@@ -2,9 +2,8 @@
 // reviewing requests, the group settings, and the group's own announcements. Plain async functions with literal table and RPC
 // names (the contract check reads them); a failed call throws an ApiError (lib/errors.ts). No React, no toast, no sentences:
 // the screens (features/groups) decide what a failure says.
-import type { EnrollmentMode, GroupRole, RpcReturns, TablesInsert } from "../db";
+import type { EnrollmentMode, GroupRole, RpcReturns, TablesInsert, Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../db";
 import { ApiError } from "../errors";
-import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../portal-types";
 import { supabase } from "../supabase";
 import { must } from "./_core";
 

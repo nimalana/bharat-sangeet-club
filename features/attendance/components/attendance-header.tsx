@@ -1,7 +1,8 @@
 "use client";
 
 import { Button } from "../../../components/ui/button";
-import { termLabel, type GroupOption, type ScopeFilter } from "../model";
+import type { GroupOption, ScopeFilter } from "../../../lib/db";
+import { termLabel } from "../model";
 
 // The title and the two pickers: which audience (all activity, club-wide, one subgroup's rehearsals) and which term; an
 // executive also gets the button that creates a meeting.

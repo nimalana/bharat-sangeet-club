@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { createClubArchiveUrl, deleteClubArchiveItem, isInRecordingRoom, removeClubArchiveFile, updateClubArchiveItem } from "../../../lib/api/recordings";
 import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../../lib/archive-sharing";
-import type { Tables } from "../../../lib/db";
+import type { ClubArchiveItem } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -13,9 +13,6 @@ import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import { useToast } from "../../../components/ui/toast";
-
-export type ClubArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
-  & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">>;
 
 const accessLabel: Record<ArchiveAccess, string> = { public: "Public concert page", members: "All club members", executives: "Executives only" };
 

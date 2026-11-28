@@ -2,8 +2,9 @@
 // one folder, how the breadcrumb is rebuilt from parent_id, and how the open
 // folder is kept in the address bar.
 //
-// Nothing here imports React, Supabase or another local file, so the whole
+// Nothing here imports React, Supabase or another local file at run time (the one import is a type from ./db, erased), so the whole
 // module runs under `node --test` (see tests/resources-query.test.mjs).
+import type { ScopeFilter } from "./db";
 
 export const RESOURCE_PAGE_SIZE = 100;
 // validate_resource_hierarchy refuses a fourth folder level, so a folder's
@@ -17,7 +18,6 @@ export const THUMBNAIL_TTL_SECONDS = 3600;
 // A signed link is treated as expired this long before it really is.
 export const THUMBNAIL_REFRESH_MARGIN_SECONDS = 300;
 
-export type ScopeFilter = "all" | "club" | number;
 export type LibraryTab = "all" | "documents" | "links" | "photos";
 export type SortKey = "updated" | "created" | "name" | "event";
 

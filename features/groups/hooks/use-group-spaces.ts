@@ -8,7 +8,7 @@ import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
 import { listGroupAnnouncements, listGroupRecordings, listMyMemberships, listOthersWaitingRequests, listSubgroups } from "../../../lib/api/groups";
 import { settle } from "../../../lib/api/settle";
-import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../../lib/db";
 import { listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
 import { useToast } from "../../../components/ui/toast";

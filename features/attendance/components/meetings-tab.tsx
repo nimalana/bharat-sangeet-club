@@ -3,7 +3,8 @@
 import { Button } from "../../../components/ui/button";
 import type { ActionDialog } from "../action-dialog";
 import { formatDateTime, sessionAudience } from "../display";
-import type { AttendanceSession, GroupOption, Roster } from "../model";
+import type { GroupOption } from "../../../lib/db";
+import type { AttendanceSession, Roster } from "../model";
 import { SessionCorrections } from "./attendance-corrections";
 import { SessionRoster } from "./session-roster";
 

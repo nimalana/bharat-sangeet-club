@@ -3,7 +3,7 @@
 import type { FormEvent } from "react";
 import { Button } from "../../../components/ui/button";
 import { localDateTime } from "../display";
-import type { GroupOption, ScopeFilter } from "../model";
+import type { GroupOption, ScopeFilter } from "../../../lib/db";
 
 // Create a club-wide meeting or a subgroup rehearsal, and optionally open check-in at once.
 export function NewMeetingDialog({ scopeFilter, scopeInGroups, groups, saving, onSubmit, onClose }: {

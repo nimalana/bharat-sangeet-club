@@ -6,7 +6,7 @@
 // keep and what to tell the person when one of them fails (a list that failed keeps what is shown).
 import type { PostgrestError } from "@supabase/supabase-js";
 import { ApiError } from "../errors";
-import type { Announcement, ArchiveItem, ClubEvent, Subgroup, SubgroupMembership } from "../portal-types";
+import type { Announcement, ArchiveItem, ClubEvent, Subgroup, SubgroupMembership } from "../db";
 import { supabase } from "../supabase";
 import { upcomingEventsQuery } from "./events";
 

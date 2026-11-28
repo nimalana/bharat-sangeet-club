@@ -7,8 +7,8 @@ import { CalendarDialogs } from "../../features/calendar/components/calendar-dia
 import { CalendarPage } from "../../features/calendar/components/calendar-page";
 import { CalendarView } from "../../features/calendar/components/calendar-view";
 import { useCalendarPage } from "../../features/calendar/hooks/use-calendar-page";
-import { eventsInScope, matchesScope } from "../../features/calendar/model";
-import type { ClubEvent, Subgroup } from "../../lib/portal-types";
+import { eventsInScope, matchesScope, scopeName } from "../../features/calendar/model";
+import type { ClubEvent, Subgroup } from "../../lib/db";
 import { fail, fake, ok } from "../support/fake-supabase";
 import { userOf } from "../support/helpers";
 import type { ReactNode } from "react";
@@ -35,6 +35,15 @@ describe("matchesScope and eventsInScope", () => {
     expect(eventsInScope(events, 7).map((item) => item.id)).toEqual([2, 4]);
     expect(eventsInScope(events, 9)).toEqual([]);
     expect(events).toHaveLength(4);
+  });
+});
+
+describe("scopeName", () => {
+  it("is Club-wide with no group (null, undefined or 0), the group's name, and 'Group' when the group is not in the list", () => {
+    expect([null, undefined, 0].map((id) => scopeName(id, [vocal]))).toEqual(["Club-wide", "Club-wide", "Club-wide"]);
+    expect(scopeName(7, [vocal, violin])).toBe("Hindustani Vocal");
+    expect(scopeName(9, [vocal, violin])).toBe("Group");
+    expect(scopeName(7, [])).toBe("Group");
   });
 });
 

@@ -8,10 +8,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchResource, listArchivedAmong, listChildFolderIds, listResourcesPage, resourcesAvailable } from "../../../lib/api/resources";
 import { clearCachePrefix, readCache, writeCache } from "../../../lib/cache";
+import type { ScopeFilter } from "../../../lib/db";
 import { useDebounced } from "../../../lib/hooks/use-debounced";
 import { keepRowsOnFailure } from "../../../lib/refresh";
 import {
-  RESOURCE_PAGE_SIZE, buildListPlan, isFlatListing, listCacheKey, mergePage, orderForDisplay, resolveSubtreeFolderIds, subtreeCacheKey, type LibraryTab, type ScopeFilter, type SortKey,
+  RESOURCE_PAGE_SIZE, buildListPlan, isFlatListing, listCacheKey, mergePage, orderForDisplay, resolveSubtreeFolderIds, subtreeCacheKey, type LibraryTab, type SortKey,
 } from "../../../lib/resources-query";
 import { useToast } from "../../../components/ui/toast";
 import { attachThumbnails } from "../thumbnails";

@@ -6,7 +6,8 @@ import { attempt } from "../../../lib/api/attempt";
 import { checkInAttendance, createAttendanceSession, openAttendanceSession, rotateAttendanceCode } from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
 import { useToast } from "../../../components/ui/toast";
-import type { AttendanceTab, GroupOption } from "../model";
+import type { GroupOption } from "../../../lib/db";
+import type { AttendanceTab } from "../model";
 import type { Exclusive } from "./use-exclusive";
 
 export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }: {

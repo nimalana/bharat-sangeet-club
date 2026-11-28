@@ -13,10 +13,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { getAttendanceOverview, getAttendanceRoster } from "../../../lib/api/attendance";
 import { readCache, writeCache } from "../../../lib/cache";
+import type { ScopeFilter } from "../../../lib/db";
 import { useToast } from "../../../components/ui/toast";
 import {
   DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, createFailureGate, createSequencer, nextListLimit, normalizeOverview,
-  type AttendanceOverview, type AttendanceTab, type Roster, type ScopeFilter,
+  type AttendanceOverview, type AttendanceTab, type Roster,
 } from "../model";
 import { useAttendancePoll, type PollState } from "./use-attendance-poll";
 

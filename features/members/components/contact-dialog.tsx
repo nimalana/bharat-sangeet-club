@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import type { MemberProfile } from "../../../lib/portal-types";
+import type { MemberProfile } from "../../../lib/db";
 
 /** The form where a member edits their own contact details (name, phone, class year, voice or instrument). */
 export function ContactDialog({ ownProfile, email, saving, onClose, onSubmit }: { ownProfile: MemberProfile | undefined; email: string; saving: boolean; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {

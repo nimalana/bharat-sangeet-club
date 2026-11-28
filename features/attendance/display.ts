@@ -3,7 +3,8 @@
 // viewer's time zone, "Date unavailable" for a bad value); lib/format.ts and lib/dates.ts word dates differently on purpose.
 
 // Type-only import: this file is loaded by node's test runner, so it imports nothing at run time.
-import type { AbsenceCategory, AttendanceSession, GroupOption } from "./model";
+import type { GroupOption } from "../../lib/db";
+import type { AbsenceCategory, AttendanceSession } from "./model";
 
 export const categoryLabels: Record<AbsenceCategory, string> = {
   class_exam: "Class or exam conflict",

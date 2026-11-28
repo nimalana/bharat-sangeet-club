@@ -1,7 +1,8 @@
 "use client";
 
 import { resourcesAvailable } from "../../../lib/api/resources";
-import type { LibraryTab, ScopeFilter, SortKey } from "../../../lib/resources-query";
+import type { ScopeFilter } from "../../../lib/db";
+import type { LibraryTab, SortKey } from "../../../lib/resources-query";
 import type { ResourceItem } from "../types";
 import { ResourceIcon } from "./resource-icon";
 import styles from "./resources.module.css";

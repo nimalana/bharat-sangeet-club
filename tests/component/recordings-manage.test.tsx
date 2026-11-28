@@ -8,7 +8,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ArchiveModal } from "../../features/recordings/components/archive-modal";
-import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordings/components/club-archive-manager";
+import { ClubArchiveManager } from "../../features/recordings/components/club-archive-manager";
+import type { ClubArchiveItem } from "../../lib/db";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";

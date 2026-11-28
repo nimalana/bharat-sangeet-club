@@ -30,7 +30,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { MemberAccessActions } from "../../features/admin/components/member-access";
 import { AnnouncementActions } from "../../features/announcements/components/announcement-actions";
-import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordings/components/club-archive-manager";
+import { ClubArchiveManager } from "../../features/recordings/components/club-archive-manager";
+import type { ClubArchiveItem } from "../../lib/db";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { ResourceActions, type ManagedResource } from "../../features/resources/components/resource-actions";
 import { GroupPeople } from "../../features/groups/components/group-people";

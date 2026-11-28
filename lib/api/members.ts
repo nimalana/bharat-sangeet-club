@@ -1,8 +1,7 @@
 // The member directory: who is in the club, the groups, and who is in which group; a member's own contact details; and the list of
 // active members a group can add from. Plain async functions with literal table names; a failed call throws an ApiError
 // (lib/errors.ts). No React, no toast, no sentences.
-import type { MemberProfile, Subgroup, SubgroupMembership } from "../portal-types";
-import type { Tables } from "../db";
+import type { MemberProfile, Subgroup, SubgroupMembership, Tables } from "../db";
 import { ApiError } from "../errors";
 import { supabase } from "../supabase";
 import { must } from "./_core";

@@ -1,7 +1,7 @@
 "use client";
 
 import { initials } from "../../../lib/format";
-import type { Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { Subgroup, SubgroupMembership } from "../../../lib/db";
 import { Button } from "../../../components/ui/button";
 
 /** The groups the person is not in yet, each with what they can do about it: join, ask, wait, or be invited. */

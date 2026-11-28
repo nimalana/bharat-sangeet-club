@@ -1,10 +1,10 @@
 import type { FormEvent } from "react";
-import type { ClubEvent, Subgroup } from "../types";
+import type { EventOption, GroupOption } from "../../../lib/db";
 import { ModalShell } from "./modal-shell";
 import { PurchaseForm } from "./purchase-form";
 
 type PurchaseDialogProps = {
-  groups: Subgroup[]; events: ClubEvent[]; eventRelated: boolean; setEventRelated: (value: boolean) => void; saving: boolean;
+  groups: GroupOption[]; events: EventOption[]; eventRelated: boolean; setEventRelated: (value: boolean) => void; saving: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void; onClose: () => void;
 };
 

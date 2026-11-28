@@ -1,6 +1,6 @@
 "use client";
 
-import type { ScopeFilter, Subgroup } from "../../../lib/portal-types";
+import type { ScopeFilter, Subgroup } from "../../../lib/db";
 
 export function ScopeFilterBar({ value, onChange, groups }: { value: ScopeFilter; onChange: (scope: ScopeFilter) => void; groups: Subgroup[] }) {
   const selectedValue = typeof value === "number" ? `group:${value}` : value;

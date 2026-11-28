@@ -2,8 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { useState } from "react";
-import type { ClubRole } from "../../../lib/db";
-import type { MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { ClubRole, MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/db";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { MemberAccessActions } from "./member-access";

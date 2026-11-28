@@ -10,7 +10,7 @@ import { AdminStats } from "../../features/admin/components/admin-stats";
 import { ContactDialog } from "../../features/members/components/contact-dialog";
 import { MemberCard } from "../../features/members/components/member-card";
 import type { AuditEntry } from "../../lib/api/admin";
-import type { MemberProfile, Subgroup, SubgroupMembership } from "../../lib/portal-types";
+import type { MemberProfile, Subgroup, SubgroupMembership } from "../../lib/db";
 import { notifySpy, userOf } from "../support/helpers";
 
 const member = (id: string, name: string, over: Partial<MemberProfile> = {}): MemberProfile => ({ id, full_name: name, email: `${id}@x.test`, role: "member", status: "active", phone: "919", class_year: "2028", specialty: "Veena", joined_at: "2025-08-01", ...over });

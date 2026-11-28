@@ -33,7 +33,8 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordings/components/club-archive-manager";
+import { ClubArchiveManager } from "../../features/recordings/components/club-archive-manager";
+import type { ClubArchiveItem } from "../../lib/db";
 import { RecordingWorkspace } from "../../features/recordings/components/recording-workspace";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { ResourceActions, type ManagedResource } from "../../features/resources/components/resource-actions";
