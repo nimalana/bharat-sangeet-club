@@ -7,6 +7,11 @@ import { sectionFromSearch, sectionUrl, type Section } from "../../../lib/sectio
 
 export type AttendanceTab = "overview" | "meetings" | "excuses";
 
+/** A page change scrolls to the top smoothly, except for a person who asked for less motion: the CSS rule for that (styles/shared.css) does not stop a scroll started by script. */
+function scrollBehavior(): ScrollBehavior {
+  try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"; } catch { return "smooth"; }
+}
+
 function sectionFromUrl(): Section {
   if (typeof window === "undefined") return "home";
   return sectionFromSearch(window.location.search);
@@ -51,7 +56,7 @@ export function usePortalNavigation({ user, loadData }: { user: User | null; loa
     setSection(next);
     const nextUrl = sectionUrl(window.location.pathname, next);
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) window.history.pushState({ section: next }, "", nextUrl);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: scrollBehavior() });
   };
 
   const openLogin = () => {

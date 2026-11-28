@@ -1,17 +1,17 @@
 /* shell: Rules of the shell area.
    Imported by app/globals.css; the import order decides ties between rules of equal specificity (docs/ARCHITECTURE.md, "CSS"). */
 .topbar { height:82px; padding:0 4.5vw; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); background:rgba(251,248,241,.96); position:sticky; top:0; z-index:20; }
-.avatar { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:var(--maroon); color:white; font-size:10px; letter-spacing:.05em; }
+.avatar { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:var(--maroon); color:white; font-size:12px; letter-spacing:.05em; }
 .role-button b { display:block; font-size:12px; }
 .page-menu-shell{position:relative;margin:0 18px}
 .page-menu-trigger{height:48px;min-width:125px;display:flex;align-items:center;justify-content:space-between;gap:15px;border:1px solid var(--line);background:var(--paper);padding:7px 11px;text-align:left;cursor:pointer}
 .page-menu-trigger small,.page-menu-trigger b{display:block}
-.page-menu-trigger small{font-size:7px;letter-spacing:.13em;text-transform:uppercase;color:#7b8993}
+.page-menu-trigger small{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:#62717b}
 .page-menu-trigger b{margin-top:3px;font:400 13px Georgia,serif;color:var(--maroon)}
 .page-menu-trigger i{font-style:normal}
 .page-menu{position:absolute;z-index:44;top:54px;right:0;width:190px;border:1px solid var(--line);background:var(--paper);padding:8px;box-shadow:0 18px 45px rgba(7,26,51,.18)}
 .page-menu button{width:100%;display:flex;justify-content:space-between;border:0;border-left:3px solid transparent;background:transparent;padding:11px;text-align:left;cursor:pointer;font:400 13px Georgia,serif}
-.page-menu button:hover,.page-menu button:focus-visible,.page-menu button.selected{background:var(--carolina-pale);border-left-color:var(--carolina);outline:0}
+.page-menu button:hover,.page-menu button:focus-visible,.page-menu button.selected{background:var(--carolina-pale);border-left-color:var(--carolina)}
 .page-menu i{font-style:normal;color:var(--maroon)}
 @media (max-width:900px){
 .topbar{padding:0 20px}
@@ -22,7 +22,7 @@
 .page-menu-shell{margin:0}
 .page-menu-trigger{min-width:95px;height:46px}
 .page-menu{position:fixed;top:74px;right:12px;left:auto;width:190px}
-.topbar .brand b{font-size:10px}
+.topbar .brand b{font-size:12px}
 .topbar .brand-mark{width:36px;height:36px}
 .account .avatar{width:32px;height:32px}
 }
@@ -39,10 +39,10 @@
 .page-menu{width:310px;padding:8px;max-height:min(620px,78vh);overflow-y:auto}
 .page-menu-group{padding:5px 0}
 .page-menu-group+.page-menu-group{border-top:1px solid var(--line)}
-.page-menu-group>p{margin:8px 11px 5px;color:#73828e;font-size:7px;font-weight:800;letter-spacing:.15em}
+.page-menu-group>p{margin:8px 11px 5px;color:#62717b;font-size:12px;font-weight:800;letter-spacing:.15em}
 .page-menu-group button{position:relative;display:grid;grid-template-columns:1fr auto 16px;align-items:center;gap:9px}
-.page-menu-group button small{color:#74838f;font:700 7px Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase}
-.menu-count{display:block;border-top:1px solid var(--line);padding:10px 11px 3px;color:#89949c;font-size:8px}
+.page-menu-group button small{color:#62717b;font:700 12px Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.menu-count{display:block;border-top:1px solid var(--line);padding:10px 11px 3px;color:#67757e;font-size:12px}
 @media (max-width:1180px){
 .primary-navigation{display:none}
 .portal-navigation{margin-left:auto}
@@ -67,7 +67,7 @@
 .portal-shell>.topbar .brand{width:100%;padding:0 4px 22px;border-bottom:1px solid var(--line);gap:11px}
 .portal-shell>.topbar .brand-mark{width:42px;height:42px;border:1px solid var(--maroon);border-radius:0;color:var(--maroon);background:transparent;font-family:var(--display);font-style:normal;font-weight:600;text-transform:uppercase}
 .portal-shell>.topbar .brand b{font:600 24px/.9 var(--display);letter-spacing:.02em;text-transform:uppercase;color:var(--maroon)}
-.portal-shell>.topbar .brand small{font-size:9px;letter-spacing:.14em;color:#4d5c64}
+.portal-shell>.topbar .brand small{font-size:12px;letter-spacing:.14em;color:#4d5c64}
 .portal-shell>.topbar .portal-navigation{order:3;display:flex;flex:1;flex-direction:column;align-items:stretch;margin:0;min-height:0}
 .portal-shell>.topbar .primary-navigation{display:flex;flex:1;flex-direction:column;align-items:stretch;gap:0;overflow-y:auto;padding:4px 0}
 .portal-shell>.topbar .primary-navigation button{min-height:41px;border:0;border-bottom:1px solid transparent;background:transparent;padding:0 11px;text-align:left;color:#3f4d55;font-size:12px;letter-spacing:.025em}
@@ -78,13 +78,13 @@
 .portal-shell>.topbar .role-button{width:100%;padding:4px;text-align:left}
 .portal-shell>.topbar .avatar{border-radius:0;background:var(--ink)}
 .portal-shell>.topbar .role-button b{font-size:12px}
-.portal-shell>.topbar .role-button small{font-size:8px}
-.portal-shell>:not(.topbar):not(.modal-backdrop):not(.toast){margin-left:238px}
+.portal-shell>.topbar .role-button small{font-size:12px}
+.portal-shell>:not(.topbar):not(.modal-backdrop):not(.toast):not([role="presentation"]){margin-left:238px}
 .portal-shell>footer{width:calc(100% - 238px)}
 .portal-shell>footer{border-top:1px solid var(--ink);background:var(--ink);color:var(--paper)}
 @media (max-width:1100px){
 .portal-shell>.topbar{width:210px}
-.portal-shell>:not(.topbar):not(.modal-backdrop):not(.toast){margin-left:210px}
+.portal-shell>:not(.topbar):not(.modal-backdrop):not(.toast):not([role="presentation"]){margin-left:210px}
 .portal-shell>footer{width:calc(100% - 210px)}
 }
 @media (max-width:820px){
@@ -100,7 +100,7 @@
 .portal-shell>.topbar .page-menu{position:fixed;top:76px;left:10px;right:10px;width:auto}
 .portal-shell>.topbar .account{order:4;margin:0;padding:0;border:0}
 .portal-shell>.topbar .role-button>span:last-child{display:none}
-.portal-shell>:not(.topbar):not(.modal-backdrop):not(.toast){margin-left:0}
+.portal-shell>:not(.topbar):not(.modal-backdrop):not(.toast):not([role="presentation"]){margin-left:0}
 .portal-shell>footer{width:100%}
 }
 @media (max-width:520px){
@@ -120,4 +120,9 @@
 .portal-shell>.topbar .page-menu{top:calc(76px + 8px);width:min(360px,calc(100vw - 20px));padding:8px}
 }
 /* The count beside a menu entry (waiting sign-ups). */
-.nav-count{display:inline-block;min-width:18px;margin-left:4px;border-radius:9px;background:var(--maroon);padding:1px 6px;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+.nav-count{display:inline-block;min-width:18px;margin-left:4px;border-radius:9px;background:var(--maroon);padding:1px 6px;color:#fff;font-size:12px;font-weight:700;line-height:16px;text-align:center}
+/* Touch layout: the club mark and the account button are at least 44px (Phase 3.4). */
+@media (max-width:700px){
+.topbar .brand,.topbar .role-button{min-height:44px}
+.topbar .role-button{min-width:44px;justify-content:center}
+}

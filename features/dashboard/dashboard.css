@@ -8,12 +8,12 @@
 .dashboard-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:27px;border-bottom:1px solid var(--ink)}
 .dashboard-intro h1{margin:0;font:600 clamp(38px,4vw,58px)/.95 var(--display);letter-spacing:-.025em;text-transform:uppercase;color:var(--ink)}
 .dashboard-intro p{margin:10px 0 0;color:#53626a;max-width:65ch}
-.dashboard-intro>span{padding:5px 8px;background:var(--carolina-pale);color:var(--ink);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}
+.dashboard-intro>span{padding:5px 8px;background:var(--carolina-pale);color:var(--ink);font-size:12px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}
 .dashboard-measure{display:grid;grid-template-columns:96px 1fr;min-height:330px;border-bottom:1px solid var(--ink)}
 .measure-index{display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--ink);background:var(--carolina);color:var(--ink)}
 .measure-index strong{margin:10px 0;color:var(--ink);font:500 56px/1 var(--display)}
-.measure-index span{font:600 11px var(--display);letter-spacing:.12em;text-transform:uppercase}
-.measure-index small{max-width:84px;margin-top:6px;color:var(--ink);font:700 10px/1.1 var(--ui);letter-spacing:.08em;text-align:center;text-transform:uppercase}
+.measure-index span{font:600 12px var(--display);letter-spacing:.12em;text-transform:uppercase}
+.measure-index small{max-width:84px;margin-top:6px;color:var(--ink);font:700 12px/1.1 var(--ui);letter-spacing:.08em;text-align:center;text-transform:uppercase}
 .measure-main{position:relative;padding:48px 48px 38px}
 .measure-main:before,.measure-main:after{content:"";position:absolute;top:25px;bottom:25px;width:7px;border-block:1px solid var(--ink)}
 .measure-main:before{left:0;border-left:2px solid var(--ink)}
@@ -27,7 +27,7 @@
 .measure-actions button:hover,.dashboard-beats button:hover{color:var(--maroon);border-color:var(--maroon)}
 .measure-track{position:absolute;left:48px;right:48px;bottom:20px;height:1px;background:var(--line)}
 .measure-track i{position:absolute;left:0;top:-1px;width:42%;height:3px;background:var(--carolina)}
-.measure-track b{position:absolute;left:42%;top:-11px;transform:translateX(-50%);background:var(--ivory);padding:2px 9px;color:var(--brass);font:600 9px var(--ui);letter-spacing:.1em;text-transform:uppercase}
+.measure-track b{position:absolute;left:42%;top:-11px;transform:translateX(-50%);background:var(--ivory);padding:2px 9px;color:#2f6f9c;font:600 12px var(--ui);letter-spacing:.1em;text-transform:uppercase}
 .talam-track-beats{position:absolute;right:0;bottom:0;left:0;display:flex;align-items:flex-end;gap:8px;height:25px;pointer-events:none}
 .talam-division{display:flex;flex:1;align-items:flex-end;gap:4px;height:100%}
 .talam-track-beat{display:block;flex:1;min-width:3px;height:6px;transform-origin:bottom;background:var(--carolina);opacity:.28}
@@ -75,5 +75,9 @@
 .measure-track{left:24px;right:24px}
 .talam-track-beats{gap:5px}
 .talam-division{gap:2px}
-.measure-track b{font-size:8px;letter-spacing:.08em}
+.measure-track b{letter-spacing:.08em}
+}
+/* Touch layout: the links of the overview are at least 44px (Phase 3.4). */
+@media (max-width:700px){
+.measure-actions button,.dashboard-beats button{min-height:44px}
 }

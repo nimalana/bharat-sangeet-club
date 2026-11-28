@@ -6,23 +6,23 @@
 .calendar-controls h2{margin:0;font:400 31px Georgia,serif;color:var(--maroon)}
 .calendar-controls>button,.calendar-controls div button{border:1px solid var(--line);background:transparent;min-width:40px;height:38px;cursor:pointer}
 .calendar-controls div{display:flex;gap:8px}
-.calendar-controls .today-button{padding:0 15px;font-size:11px;font-weight:700}
+.calendar-controls .today-button{padding:0 15px;font-size:12px;font-weight:700}
 .weekday-row,.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr)}
 .weekday-row{min-height:38px;align-items:center;background:#eee6d9;border-bottom:1px solid var(--line)}
-.weekday-row span{text-align:center;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#756b61}
+.weekday-row span{text-align:center;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#655b52}
 .calendar-cell{min-width:0;min-height:138px;padding:9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
 .calendar-cell:nth-child(7n){border-right:0}
-.calendar-cell.outside{background:#f1eadf;color:#a79d93}
+.calendar-cell.outside{background:#f1eadf;color:#6f665e}
 .day-number{width:27px;height:27px;display:grid;place-items:center;font:14px Georgia,serif}
 .calendar-cell.today .day-number{border-radius:50%;background:var(--maroon);color:white}
 .day-events{display:grid;gap:5px;margin-top:4px}
 .calendar-event{position:relative;padding:7px 24px 7px 8px;border-left:3px solid var(--brass);background:#eadfd2;color:#4f443c;overflow:hidden}
 .calendar-event time,.calendar-event b,.calendar-event small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.calendar-event time{font-size:8px;color:#78695e}
+.calendar-event time{font-size:12px;color:#78695e}
 .calendar-event b{font:400 12px Georgia,serif;margin-top:2px}
-.calendar-event small{font-size:8px;margin-top:2px}
+.calendar-event small{font-size:12px;margin-top:2px}
 .calendar-event button{position:absolute;top:2px;right:4px;border:0;background:transparent;cursor:pointer;color:#80685f}
-.calendar-empty{text-align:center;color:#81776e;font:italic 13px Georgia,serif;padding:18px;margin:0}
+.calendar-empty{text-align:center;color:#766c64;font:italic 13px Georgia,serif;padding:18px;margin:0}
 @media (max-width:700px){
 .month-calendar{overflow-x:auto}
 .calendar-controls,.weekday-row,.calendar-grid{min-width:720px}
@@ -51,11 +51,11 @@
 .calendar-agenda-day>div{display:grid;gap:8px}
 .calendar-agenda-event{position:relative;min-width:0;padding:12px 52px 12px 13px;border:1px solid var(--line);border-top:3px solid var(--carolina);background:var(--carolina-pale);color:var(--ink)}
 .calendar-agenda-event time,.calendar-agenda-event b,.calendar-agenda-event small,.calendar-agenda-event p{display:block}
-.calendar-agenda-event time{color:#526f82;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.calendar-agenda-event time{color:#526f82;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .calendar-agenda-event b{margin-top:4px;color:var(--ink);font:600 17px/1.15 var(--display);overflow-wrap:anywhere}
-.calendar-agenda-event small{margin-top:5px;color:#526774;font-size:10px;overflow-wrap:anywhere}
+.calendar-agenda-event small{margin-top:5px;color:#526774;font-size:12px;overflow-wrap:anywhere}
 .calendar-agenda-event .calendar-scope{color:#1f6593;font-weight:750;letter-spacing:.05em;text-transform:uppercase}
-.calendar-agenda-event p{margin:8px 0 0;color:#526774;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.calendar-agenda-event p{margin:8px 0 0;color:#526774;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
 .calendar-agenda-event button{position:absolute;top:50%;right:5px;width:44px;height:44px;transform:translateY(-50%);border:1px solid transparent;background:transparent;color:var(--ink);font-size:20px;cursor:pointer}
 .calendar-agenda-event button:hover,.calendar-agenda-event button:focus-visible{border-color:var(--carolina);background:var(--paper)}
 .calendar-agenda-empty{margin:0;background:var(--paper);padding:32px 16px;text-align:center;color:#607785;font:italic 13px Georgia,serif}
@@ -66,3 +66,5 @@
 .calendar-event button.calendar-edit{right:22px}
 .calendar-agenda-event button.calendar-edit{right:51px;font-size:17px}
 .calendar-agenda-event{padding-right:104px}
+/* The "View" label of the audience filter: the shared rule for .scope-picker (styles/late.css) sets it at 8px; this is the calendar's own, a step more specific, at 12px. */
+.scope-picker.calendar-scope-filter>span{font-size:12px}
