@@ -31,18 +31,7 @@ import { FinancePage } from "../../features/finance/components/finance-page";
 import { REFRESH_WAIT_MS } from "../../lib/bounded-wait";
 import { setCacheOwner } from "../../lib/cache";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";
-import type { Notify } from "../../lib/toast";
 import { after, deferred, fail, fake, never, ok, rejects } from "../support/fake-supabase";
-
-// The screen reads its toast from useToast() (components/ui/toast.tsx), not from a prop. These tests watch what it asks the toast to say,
-// so useToast is replaced by a hook that hands the screen one stable function, and renderFinance points that function at the spy of the
-// test being run. (The real provider, and what it shows, are covered by toast-provider.test.tsx and the shell tests.)
-const toast = vi.hoisted(() => {
-  const target: { send: (message: string, tone?: "success" | "error") => void } = { send: () => {} };
-  const notify = (message: string, tone?: "success" | "error") => target.send(message, tone);
-  return { target, api: { notify } };
-});
-vi.mock("../../components/ui/toast", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../components/ui/toast")>()), useToast: () => toast.api }));
 
 const SLOW_SAVED = "Saved. The lists are slow to refresh and will update on their own.";
 const SLOW_UNSAVED = "The lists are slow to refresh and will update on their own.";
@@ -100,7 +89,6 @@ function scriptFinance(data: Partial<Data> = {}, summary: Record<string, number>
 
 function renderFinance(options: { role?: "member" | "executive" | "admin"; userId?: string } = {}) {
   const notify = notifySpy();
-  toast.target.send = notify as Notify;
   // The shell makes the signed-in account the cache owner before any screen mounts; without it a refresh would
   // replace the lists with "Loading..." (as a first visit does), which the real screen does not do on a second read.
   setCacheOwner(options.userId ?? "exec-1");
