@@ -19,6 +19,7 @@ import { ArchiveModal } from "../../recordings/components/archive-modal";
 import { usePortalData } from "../hooks/use-portal-data";
 import { attendanceTabFromUrl, usePortalNavigation } from "../hooks/use-portal-navigation";
 import { usePortalSession } from "../hooks/use-portal-session";
+import { useIdlePrefetch } from "../hooks/use-idle-prefetch";
 import { useProfilePrompt } from "../hooks/use-profile-prompt";
 import { SignupRequestsPage } from "../../admin/components/signup-requests-page";
 import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
@@ -46,6 +47,8 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const [showProfile, setShowProfile] = useState(false);
   // "Complete your profile", once, on the home page, for an approved member who has not filled in any contact detail (the pending and rejected screens come first).
   const profileStep = useProfilePrompt(user, shellState === "ready", section === "home");
+  // Once the portal is drawn and the browser is idle, the files of the lazy screens this role can open are fetched, so a first visit is as quick as a second.
+  useIdlePrefetch(shellState === "ready", role);
 
   const canManage = canManageClub(role);
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
