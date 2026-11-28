@@ -8,7 +8,7 @@
 //    name in the top bar.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PortalHeader } from "../../features/shell/components/portal-header";
 import { expectNoSeriousViolations } from "../support/a11y";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
@@ -22,6 +22,9 @@ const ownReads = () => fake.from("profiles", "select").calls.filter((call) => ca
 // The props go in as an object, so that the linter does not take the club role of PortalHeader for an ARIA role.
 const headerProps = (over: Partial<ComponentProps<typeof PortalHeader>> = {}): ComponentProps<typeof PortalHeader> => ({ section: "home", role: "member", name: "Asha Rao", onNavigate: vi.fn(), onSignOut: vi.fn(), ...over });
 const toasts = () => Array.from(document.querySelectorAll(".toast")).map((node) => node.textContent);
+
+// This person has answered the "Complete your profile" step before (shell-profile-step.test.tsx), so the reads of their row below are My profile's own.
+beforeEach(() => window.localStorage.setItem("bharat-sangeet-profile-step:u-me", "done"));
 
 async function openedPortal(name = "Asha Rao") {
   fake.from("profiles", "select").reply(ok(ownRow));

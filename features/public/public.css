@@ -37,9 +37,6 @@
 .google-button:disabled{opacity:.58;cursor:wait}
 .google-button span{width:25px;height:25px;border:1px solid #d9d4cc;border-radius:50%;display:grid;place-items:center;color:#4285f4;font-weight:800;background:white}
 .login-error{margin:0 0 16px!important;padding:11px 13px;border-left:3px solid var(--maroon);background:#f6e9e9;color:#7c2633!important;font:12px/1.5 sans-serif!important}
-.signup-name{display:block;margin-top:25px;color:#405365}
-.signup-name input{margin-bottom:0}
-.signup-name+.google-button{margin-top:20px}
 @media (max-width:900px){
 .login-page{grid-template-columns:1fr}
 .login-art{min-height:42vh}

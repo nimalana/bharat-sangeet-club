@@ -16,3 +16,5 @@ export const ClubArchiveManager = dynamic(() => import("../../recordings/compone
 // "My profile" of the account menu: its own bundle, fetched the first time it is opened (and on idle, see use-idle-prefetch), so it is not in the first load.
 // It draws nothing while its file arrives: the person pressed a menu item, and the dialog follows at once.
 export const OwnProfileDialog = dynamic(() => import("../../members/components/own-profile-dialog").then((module) => module.OwnProfileDialog), { ssr: false, loading: () => null });
+// "Complete your profile": the step after a first sign-in. Also its own bundle: most sign-ins never show it.
+export const CompleteProfileDialog = dynamic(() => import("../../members/components/complete-profile-dialog").then((module) => module.CompleteProfileDialog), { ssr: false, loading: () => null });

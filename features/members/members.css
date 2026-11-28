@@ -30,3 +30,5 @@
 }
 /* The "Group" label of the roster filter: the shared rule for .scope-picker (styles/late.css) sets it at 8px; this is the roster's own, a step more specific, at 12px. */
 .scope-picker.roster-filter>span{font-size:12px}
+/* The sentence under the heading of the "Complete your profile" step. */
+.profile-intro{margin:-12px 0 8px;color:#4f5f6b;font-size:13px;line-height:1.55}

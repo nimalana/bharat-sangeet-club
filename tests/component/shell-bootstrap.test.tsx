@@ -69,20 +69,12 @@ describe("the shell waits for get_portal_bootstrap before showing anything on a 
   it("opens the shell with the role the database returned, and the profile is loaded once", async () => {
     openPortal({ role: "executive" });
     expect(await screen.findByText("Executive view")).toBeInTheDocument();
-    // One request carries the profile and everything the first screen needs; nothing asks for the profile again.
+    // One request carries the profile and everything the first screen needs; nothing asks for the bootstrap again. The one read of the
+    // person's own row is the "Complete your profile" check (phone, class year, voice or instrument are not in the bootstrap), made once.
     expect(fake.rpc("get_portal_bootstrap").count).toBe(1);
-    expect(fake.from("profiles").calls).toHaveLength(0);
-  });
-
-  it("a name chosen at sign-up is saved once, after the shell is ready, and forgotten when it was saved", async () => {
-    window.sessionStorage.setItem("bharat-sangeet-pending-signup-name", "Asha R.");
-    fake.from("profiles", "update").reply(ok(null));
-    openPortal({ name: "" });
-    await waitFor(() => expect(fake.from("profiles", "update").calls).toHaveLength(1));
-    expect(fake.from("profiles", "update").calls[0].payload).toEqual({ full_name: "Asha R." });
-    expect(fake.from("profiles", "update").calls[0].used("eq", "id", "u-me")).toBe(true);
-    await waitFor(() => expect(window.sessionStorage.getItem("bharat-sangeet-pending-signup-name")).toBeNull());
-    expect(await screen.findByText(/Welcome back, Asha R\./)).toBeInTheDocument();
+    await waitFor(() => expect(fake.from("profiles").calls).toHaveLength(1));
+    expect(fake.from("profiles").calls[0].op).toBe("select");
+    expect(fake.from("profiles").calls[0].used("eq", "id", "u-me")).toBe(true);
   });
 });
 

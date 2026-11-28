@@ -20,9 +20,10 @@ import { ArchiveModal } from "../../recordings/components/archive-modal";
 import { usePortalData } from "../hooks/use-portal-data";
 import { attendanceTabFromUrl, usePortalNavigation } from "../hooks/use-portal-navigation";
 import { usePortalSession } from "../hooks/use-portal-session";
+import { useProfilePrompt } from "../hooks/use-profile-prompt";
 import { SignupRequestsPage } from "../../admin/components/signup-requests-page";
 import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
-import { AttendancePage, ClubArchiveManager, FinancePage, MembersPage, OwnProfileDialog, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
+import { AttendancePage, ClubArchiveManager, CompleteProfileDialog, FinancePage, MembersPage, OwnProfileDialog, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
 import { LoadingScreen } from "./loading-screen";
 import { PendingScreen, RejectedScreen } from "./membership-screens";
 import { PortalFooter } from "./portal-footer";
@@ -41,6 +42,8 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const calendar = useCalendarPage({ onChanged: loadData });
   const [showUpload, setShowUpload] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  // "Complete your profile", once, on the home page, for an approved member who has not filled in any contact detail (the pending and rejected screens come first).
+  const profileStep = useProfilePrompt(user, shellState === "ready", section === "home");
 
   const canManage = canManageClub(role);
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
@@ -90,6 +93,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
       <PortalFooter />
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} />}
+      {profileStep.profile && <SectionBoundary key="profile-step"><CompleteProfileDialog user={user} profile={profileStep.profile} onSkip={profileStep.skip} onSaved={(fullName) => { if (fullName) setName(fullName); profileStep.saved(); }} /></SectionBoundary>}
       {showProfile && <SectionBoundary key="own-profile"><OwnProfileDialog user={user} onClose={() => setShowProfile(false)} onSaved={(fullName) => { if (fullName) setName(fullName); }} /></SectionBoundary>}
       <CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} />
       <ToastViewport />

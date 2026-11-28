@@ -7,7 +7,7 @@
 //  - the editor: what it sends for a new and for an edited announcement, the wait, the toast, what the parent is told, and the
 //    failure shown in the dialog (a database sentence, and the sentence for an update that changed nothing)
 //  - the feed: the empty state, the pinned mark, the controls only for a person who manages
-//  - the login screen: the Google sign-in request and its redirect, the name a new member must give, the error shown
+//  - the login screen: the Google sign-in request and its redirect (no name is asked for or kept: the shell asks after sign-in), the error shown
 //  - the public site: the browser's own read of the concerts when the server could not make it, and the Watch link
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -15,7 +15,6 @@ import { AnnouncementEditor } from "../../features/announcements/components/anno
 import { AnnouncementFeed } from "../../features/announcements/components/announcement-feed";
 import { ClubDashboard } from "../../features/dashboard/components/club-dashboard";
 import { LoginScreen } from "../../features/public/components/login-screen";
-import { pendingSignupNameKey } from "../../features/public/constants";
 import { PublicSite } from "../../features/public/components/public-site";
 import type { PublicConcert } from "../../lib/public-concerts";
 import { notifySpy, userOf } from "../support/helpers";
@@ -229,38 +228,29 @@ describe("the login screen", () => {
     await waitFor(() => expect(fake.auth("signInWithOAuth").count).toBe(1));
     expect(fake.auth("signInWithOAuth").calls[0].payload).toEqual({ provider: "google", options: { redirectTo: window.location.origin } });
     expect(screen.getByRole("button", { name: /Opening Google…/ })).toBeDisabled();
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBeNull();
     await act(async () => { slow.resolve(ok(null)); });
   });
 
-  it("joining needs a name first, and keeps it for after the redirect", async () => {
+  // Phase 3.2 (P3-06): the form no longer asks for a name or keeps one across the redirect; the shell asks after sign-in ("Complete your profile").
+  it("joining asks for no name: there is no field, one press goes to Google, and nothing is kept in the tab's storage", async () => {
     fake.auth("signInWithOAuth").reply(ok(null));
     render(<LoginScreen onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Join the club" }));
-    start();
-    expect(screen.getByRole("alert")).toHaveTextContent("Please enter the name you would like the club to call you.");
-    expect(fake.auth("signInWithOAuth").count).toBe(0);
-    fireEvent.change(screen.getByLabelText(/Preferred name/), { target: { value: "  Asha  " } });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Preferred name/)).not.toBeInTheDocument();
     start();
     await waitFor(() => expect(fake.auth("signInWithOAuth").count).toBe(1));
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBe("Asha");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
+    expect(window.localStorage.length).toBe(0);
   });
 
-  it("going back to signing in forgets a name kept for joining", () => {
-    window.sessionStorage.setItem(pendingSignupNameKey, "Asha");
-    render(<LoginScreen onBack={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Member sign in" }));
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBeNull();
-  });
-
-  it("an error from Google's sign-in is shown, the kept name is dropped and the button works again", async () => {
+  it("an error from Google's sign-in is shown and the button works again", async () => {
     fake.auth("signInWithOAuth").reply(fail("Unsupported provider: provider is not enabled"));
     render(<LoginScreen onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Join the club" }));
-    fireEvent.change(screen.getByLabelText(/Preferred name/), { target: { value: "Asha" } });
     start();
     expect(await screen.findByRole("alert")).toHaveTextContent("Unsupported provider: provider is not enabled");
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBeNull();
     expect(screen.getByRole("button", { name: /Sign up with Google/ })).toBeEnabled();
   });
 
