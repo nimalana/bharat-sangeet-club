@@ -5,7 +5,7 @@
     "tables": 40,
     "storage": 10
   },
-  "maxUnresolved": 6,
+  "maxUnresolved": 5,
   "rowTypes": {
     "MemberProfile": {
       "table": "profiles"

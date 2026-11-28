@@ -2,12 +2,17 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { attempt } from "../../../lib/api/attempt";
+import {
+  cancelAttendanceSession, checkInAttendance, closeAttendanceSession, createAttendanceSession, createExcuseProofUrl, getAttendanceOverview, getAttendancePulse, getAttendanceRoster,
+  openAttendanceSession, removeExcuseProof, reviewAttendanceExcuse, rotateAttendanceCode, setAttendanceEligibility, setAttendanceRemediation, setAttendanceStatus, submitAttendanceExcuse,
+  uploadExcuseProof,
+} from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
 import type { AttendanceStatus } from "../../../lib/db";
 import { canManageClub } from "../../../lib/permissions";
 import { readCache, writeCache } from "../../../lib/cache";
 import { usePolling } from "../../../lib/hooks/use-polling";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -133,8 +138,6 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   }, [failures, notify]);
 
   const load = useCallback(async (silent = false, limit: number = listLimit.current) => {
-    const client = supabase;
-    if (!client) return;
     const id = loadSeq.next();
     const key = cacheKey;
     if (!silent) {
@@ -147,7 +150,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       // One request for the whole screen. It carries totals and the open
       // review queues, never every mark.
       // The overview alone takes the queue cap; the poll takes the audience only.
-      const { data: result, error } = await client.rpc("get_attendance_overview", { ...scopeArgs, p_list_limit: limit });
+      const { data: result, error } = await attempt(() => getAttendanceOverview(scopeArgs, limit));
       if (!loadSeq.isLatest(id)) return;
       if (error || !result) { reportFailure(silent, "Attendance could not be loaded. Try again in a moment."); setFailedKey(key); return; }
       failures.succeeded();
@@ -169,11 +172,9 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   useEffect(() => { load(); }, [load]);
 
   const loadRoster = useCallback(async (sessionId: number, background = false) => {
-    const client = supabase;
-    if (!client) return;
     const id = rosterSeq.next();
     try {
-      const { data: result, error } = await client.rpc("get_attendance_roster", { p_session_id: sessionId });
+      const { data: result, error } = await attempt(() => getAttendanceRoster(sessionId));
       if (!rosterSeq.isLatest(id)) return;
       if (error || !result) { setRosterFailed(true); reportFailure(background, "The roster could not be loaded. Try again in a moment."); return; }
       failures.succeeded();
@@ -205,13 +206,11 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   // cannot patch changed.
   const hasOpenSession = sessions.some((session) => session.status === "open");
   const pulse = useCallback(async () => {
-    const client = supabase;
-    if (!client) return;
     const key = cacheKey;
     const generation = loadSeq.current();
     const id = pulseSeq.next();
     try {
-      const { data: result, error } = await client.rpc("get_attendance_pulse", scopeArgs);
+      const { data: result, error } = await attempt(() => getAttendancePulse(scopeArgs));
       const state = latest.current;
       if (!pulseSeq.isLatest(id) || !loadSeq.isLatest(generation) || state.key !== key || !state.data) return;
       if (error || !result) { reportFailure(true, "Attendance could not be refreshed. Try again in a moment."); return; }
@@ -280,20 +279,18 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   async function checkIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const client = supabase;
-    if (!client) return;
     await exclusive(async () => {
       setFeedback("");
-      const { error } = await client.rpc("check_in_attendance", { p_code: checkInCode.replace(/\s/g, "").toUpperCase() });
+      const { error } = await attempt(() => checkInAttendance(checkInCode.replace(/\s/g, "").toUpperCase()));
       if (error) setFeedback(error.message);
       else { setFeedback("You are checked in. Your attendance is confirmed."); setCheckInCode(""); notify("Attendance confirmed"); load(); }
     });
   }
 
   // Opens check-in for a meeting; returns whether it opened.
-  async function openCheckIn(client: NonNullable<typeof supabase>, sessionId: number, duration: number) {
+  async function openCheckIn(sessionId: number, duration: number) {
     setFeedback("");
-    const { data: opened, error } = await client.rpc("open_attendance_session", { p_session_id: sessionId, p_duration_minutes: duration });
+    const { data: opened, error } = await attempt(() => openAttendanceSession(sessionId, duration));
     if (error) {
       const message = `Could not open check-in: ${error.message}`;
       setFeedback(message);
@@ -322,22 +319,20 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   async function createSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const client = supabase;
-    if (!client) return;
     const form = new FormData(event.currentTarget);
     await exclusive(async () => {
       const audience = String(form.get("audience") || "club");
       const subgroupId = audience.startsWith("subgroup:") ? Number(audience.slice("subgroup:".length)) : null;
       const groupName = groups.find((group) => group.id === subgroupId)?.name;
-      const { data: created, error } = await client.rpc("create_attendance_session", {
-        p_scope: subgroupId === null ? "club" : "subgroup",
-        p_subgroup_id: subgroupId as number, // NULL for a club-wide meeting: the function takes it, the generated type cannot say so for a required argument
-        p_title: subgroupId === null ? "General Body Meeting" : `${groupName || "Subgroup"} rehearsal`,
-        p_starts_at: new Date(String(form.get("starts_at"))).toISOString(),
-      });
+      const { data: created, error } = await attempt(() => createAttendanceSession({
+        scope: subgroupId === null ? "club" : "subgroup",
+        subgroupId,
+        title: subgroupId === null ? "General Body Meeting" : `${groupName || "Subgroup"} rehearsal`,
+        startsAt: new Date(String(form.get("starts_at"))).toISOString(),
+      }));
       if (error) { notify(friendlyError(error, "The meeting could not be created."), "error"); return; }
       const session = Array.isArray(created) ? created[0] : created;
-      if (form.get("open_now") === "on" && session?.id) await openCheckIn(client, session.id, Number(form.get("duration") || 60));
+      if (form.get("open_now") === "on" && session?.id) await openCheckIn(session.id, Number(form.get("duration") || 60));
       setShowNewSession(false);
       notify("Meeting created");
       load();
@@ -345,16 +340,12 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   }
 
   async function openAttendance(sessionId: number) {
-    const client = supabase;
-    if (!client) return;
-    await exclusive(() => openCheckIn(client, sessionId, 60));
+    await exclusive(() => openCheckIn(sessionId, 60));
   }
 
   async function rotateCode(sessionId: number) {
-    const client = supabase;
-    if (!client) return;
     await exclusive(async () => {
-      const { data: rotated, error } = await client.rpc("rotate_attendance_code", { p_session_id: sessionId });
+      const { data: rotated, error } = await attempt(() => rotateAttendanceCode(sessionId));
       if (error) notify(friendlyError(error, "The code could not be changed."), "error");
       else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLiveCode(result?.check_in_code || /* `code` is never returned: see openCheckIn */ (result as { code?: string } | undefined)?.code || ""); notify("A new code is active"); load(); }
     });
@@ -362,11 +353,9 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   // Runs the request behind an open dialog. A failure keeps the dialog open;
   // cancelling a dialog never sends anything.
-  async function runDialog(call: (client: NonNullable<typeof supabase>) => PromiseLike<{ error: { message?: string; code?: string } | null }>, success: string, fallback: string, onDone?: () => void) {
-    const client = supabase;
-    if (!client) return;
+  async function runDialog(call: () => Promise<unknown>, success: string, fallback: string, onDone?: () => void) {
     await exclusive(async () => {
-      const { error } = await call(client);
+      const { error } = await attempt(call);
       if (error) { notify(friendlyError(error, fallback), "error"); return; }
       setDialog(null);
       onDone?.();
@@ -385,16 +374,16 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
         if (minutes === null) { notify("Enter a whole number of minutes, from 0 to 1440.", "error"); return; }
         minutesLate = minutes;
       }
-      runDialog((client) => client.rpc("set_attendance_status", { p_session_id: sessionId, p_member_id: memberId, p_status: status, p_note: values.note ?? "", p_minutes_late: minutesLate }), "Attendance updated", "The mark could not be saved.");
+      runDialog(() => setAttendanceStatus({ sessionId, memberId, status, note: values.note ?? "", minutesLate }), "Attendance updated", "The mark could not be saved.");
     } else if (dialog.kind === "review") {
       const { excuse, decision } = dialog;
-      runDialog((client) => client.rpc("review_attendance_excuse", { p_excuse_id: excuse.id, p_decision: decision, p_note: values.note ?? "" }), `Absence form ${decision}`, "The form could not be reviewed.");
+      runDialog(() => reviewAttendanceExcuse({ excuseId: excuse.id, decision, note: values.note ?? "" }), `Absence form ${decision}`, "The form could not be reviewed.");
     } else if (dialog.kind === "remediation") {
       const { item } = dialog;
-      runDialog((client) => client.rpc("set_attendance_remediation", { p_remediation_id: item.id, p_status: "complete", p_assignment: values.assignment ?? item.assignment, p_due_at: item.due_at, p_note: null }), "Remediation updated", "The follow-up could not be updated.");
+      runDialog(() => setAttendanceRemediation({ remediationId: item.id, status: "complete", assignment: values.assignment ?? item.assignment, dueAt: item.due_at, note: null }), "Remediation updated", "The follow-up could not be updated.");
     } else {
       const { memberId, status } = dialog;
-      runDialog((client) => client.rpc("set_attendance_eligibility", { p_term_key: view.summary_term, p_member_id: memberId, p_status: status, p_reason: values.reason ?? "" }), "Eligibility updated", "Eligibility could not be updated.");
+      runDialog(() => setAttendanceEligibility({ termKey: view.summary_term, memberId, status, reason: values.reason ?? "" }), "Eligibility updated", "Eligibility could not be updated.");
     }
   }
 
@@ -402,7 +391,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     if (!dialog || dialog.kind !== "session") return;
     const { sessionId, action } = dialog;
     runDialog(
-      (client) => client.rpc(action === "close" ? "close_attendance_session" : "cancel_attendance_session", { p_session_id: sessionId }),
+      () => action === "close" ? closeAttendanceSession(sessionId) : cancelAttendanceSession(sessionId),
       action === "close" ? "Attendance closed" : "Meeting canceled",
       action === "close" ? "Attendance could not be closed." : "The meeting could not be canceled.",
       () => setLiveCode(""),
@@ -411,8 +400,6 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
   async function submitExcuse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const client = supabase;
-    if (!client) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const file = form.get("proof") as File;
@@ -422,20 +409,19 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       const sessionId = Number(form.get("session_id"));
       let proofPath: string | null = null;
       if (file?.size) {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-        proofPath = `${user.id}/${sessionId}/${crypto.randomUUID()}-${safeName}`;
-        const upload = await client.storage.from("attendance-excuses").upload(proofPath, file, { upsert: false });
+        const upload = await attempt(() => uploadExcuseProof(user.id, sessionId, file));
         if (upload.error) { notify(upload.error.message, "error"); return; }
+        proofPath = upload.data;
       }
-      const { error } = await client.rpc("submit_attendance_excuse", {
-        p_session_id: sessionId,
-        p_reason: String(form.get("reason") || ""),
-        p_proof_path: proofPath,
-        p_reason_category: String(form.get("reason_category") || "other"),
-        p_notified_at: form.get("notified") === "on" ? new Date().toISOString() : null,
-      });
+      const { error } = await attempt(() => submitAttendanceExcuse({
+        sessionId,
+        reason: String(form.get("reason") || ""),
+        proofPath,
+        reasonCategory: String(form.get("reason_category") || "other"),
+        notifiedAt: form.get("notified") === "on" ? new Date().toISOString() : null,
+      }));
       if (error) {
-        if (proofPath) await client.storage.from("attendance-excuses").remove([proofPath]);
+        if (proofPath) await removeExcuseProof(proofPath);
         notify(error.message, "error");
         return;
       }
@@ -447,9 +433,10 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   }
 
   async function openProof(excuse: Excuse) {
-    if (!supabase || !excuse.proof_path) return;
-    const { data: signed, error } = await supabase.storage.from("attendance-excuses").createSignedUrl(excuse.proof_path, 300);
-    if (error || !signed) notify("Proof could not be opened", "error"); else window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
+    const path = excuse.proof_path;
+    if (!path) return;
+    const { data: signedUrl, error } = await attempt(() => createExcuseProofUrl(path));
+    if (error || !signedUrl) notify("Proof could not be opened", "error"); else window.open(signedUrl, "_blank", "noopener,noreferrer");
   }
 
   function changeScope(value: ScopeFilter) {

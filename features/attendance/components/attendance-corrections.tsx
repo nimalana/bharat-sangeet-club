@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { attempt } from "../../../lib/api/attempt";
+import { clearAttendanceStatus, deleteAttendanceSession, setAttendanceThresholds, updateAttendanceSession, voidAttendanceSession, withdrawAttendanceExcuse } from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -33,25 +34,22 @@ export function SessionCorrections({ session, notify, onChanged }: { session: Co
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     const form = new FormData(event.currentTarget);
     const startsAt = new Date(String(form.get("starts_at") || ""));
     if (Number.isNaN(startsAt.getTime())) { notify("Choose when the meeting starts."); return; }
     setBusy(true);
-    const { error } = await supabase.rpc("update_attendance_session", { p_session_id: session.id, p_title: String(form.get("title") || "").trim(), p_starts_at: startsAt.toISOString() });
+    const { error } = await attempt(() => updateAttendanceSession({ sessionId: session.id, title: String(form.get("title") || "").trim(), startsAt: startsAt.toISOString() }));
     await finish(error, "Meeting updated");
   }
   async function remove() {
-    if (!supabase) return;
     setBusy(true);
-    const { error } = await supabase.rpc("delete_attendance_session", { p_session_id: session.id });
+    const { error } = await attempt(() => deleteAttendanceSession(session.id));
     await finish(error, "Meeting deleted");
   }
   async function voidSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     setBusy(true);
-    const { error } = await supabase.rpc("void_attendance_session", { p_session_id: session.id, p_reason: reason.trim() });
+    const { error } = await attempt(() => voidAttendanceSession(session.id, reason.trim()));
     await finish(error, "Meeting voided. It no longer counts toward attendance.");
   }
 
@@ -97,9 +95,8 @@ export function ClearMarkButton({ sessionId, memberId, memberName, notify, onCha
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function clear() {
-    if (!supabase) return;
     setBusy(true);
-    const { error } = await supabase.rpc("clear_attendance_status", { p_session_id: sessionId, p_member_id: memberId });
+    const { error } = await attempt(() => clearAttendanceStatus(sessionId, memberId));
     setBusy(false);
     if (error) { notify(friendlyError(error, "The mark could not be cleared."), "error"); return; }
     setOpen(false); notify("Mark cleared"); await onChanged();
@@ -117,13 +114,12 @@ export function ThresholdSettings({ warning, critical, notify, onChanged }: { wa
   const [busy, setBusy] = useState(false);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     const form = new FormData(event.currentTarget);
     const nextWarning = Number(form.get("warning"));
     const nextCritical = Number(form.get("critical"));
     if (!Number.isInteger(nextWarning) || !Number.isInteger(nextCritical) || nextWarning < 1 || nextCritical <= nextWarning) { notify("The review level must be higher than the warning level."); return; }
     setBusy(true);
-    const { error } = await supabase.rpc("set_attendance_thresholds", { p_warning: nextWarning, p_critical: nextCritical });
+    const { error } = await attempt(() => setAttendanceThresholds(nextWarning, nextCritical));
     setBusy(false);
     if (error) { notify(friendlyError(error, "Thresholds could not be saved."), "error"); return; }
     setOpen(false); notify("Attendance thresholds updated"); await onChanged();
@@ -149,9 +145,8 @@ export function WithdrawExcuseButton({ excuseId, notify, onChanged }: { excuseId
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function withdraw() {
-    if (!supabase) return;
     setBusy(true);
-    const { error } = await supabase.rpc("withdraw_attendance_excuse", { p_excuse_id: excuseId });
+    const { error } = await attempt(() => withdrawAttendanceExcuse(excuseId));
     setBusy(false);
     if (error) { notify(friendlyError(error, "The form could not be withdrawn."), "error"); return; }
     setOpen(false); notify("Absence form withdrawn"); await onChanged();

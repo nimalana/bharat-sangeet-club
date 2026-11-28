@@ -2,10 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
-import type { Tables, TablesUpdate } from "../../../lib/db";
+import { attempt } from "../../../lib/api/attempt";
+import { deleteRecordingNote, deleteRecordingRow, recordingBucket, removeNotationFile, removeRecordingTake, setRecordingStatus, updateRecordingDetails, updateRecordingNote } from "../../../lib/api/recordings";
+import type { Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
-import { removeStoredFile } from "../../../lib/storage";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -19,13 +19,11 @@ export type ManagedRecording = Pick<Tables<"recordings">, "id" | "title" | "desc
 export type ManagedNote = Pick<Tables<"recording_notes">, "id" | "recording_id" | "title" | "body" | "storage_path" | "mime_type">
   & Partial<Pick<Tables<"recording_notes">, "uploaded_by">> & { note_type: "text" | "file" };
 
-export const recordingBucket = (recording: { storage_bucket?: string }) => recording.storage_bucket || "recordings";
-
 // Storage only lets a file be deleted while its database row still exists, so
 // files always go first. remove() answers a refused delete with an empty list
 // and no error, so an empty answer counts as a failure unless the file can no
 // longer be signed (it is gone: a retry after a partly finished delete).
-const removeFile = (bucket: string, path: string) => removeStoredFile(bucket, path, { confirmGone: true });
+// (lib/api/recordings.ts: removeRecordingTake and removeNotationFile.)
 
 export function RecordingManageBar({ recording, user, canManage, notes, notify, onChanged, onRemoved }: {
   recording: ManagedRecording; user: User; canManage: boolean; notes: ManagedNote[];
@@ -39,40 +37,37 @@ export function RecordingManageBar({ recording, user, canManage, notes, notify, 
 
   async function saveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     const form = new FormData(event.currentTarget);
     const text = (name: string) => String(form.get(name) || "").trim();
     setBusy(true);
-    const { data, error } = await supabase.from("recordings").update({
+    const { data, error } = await attempt(() => updateRecordingDetails(recording.id, {
       title: text("title"), description: text("description"), recording_kind: text("recording_kind") || recording.recording_kind,
       raga: text("raga") || null, tala: text("tala") || null, sruthi: text("sruthi") || null, tempo: text("tempo") || null,
-    }).eq("id", recording.id).select("id");
+    }));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
     setDialog(null); notify("Recording details saved"); await onChanged();
   }
 
   async function setStatus(status: "archived" | "published") {
-    if (!supabase) return;
     setBusy(true);
-    const { data, error } = await supabase.from("recordings").update({ status }).eq("id", recording.id).select("id");
+    const { data, error } = await attempt(() => setRecordingStatus(recording.id, status));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to change this recording."), "error"); return; }
     setDialog(null); notify(status === "archived" ? "Recording archived" : "Recording restored"); await onRemoved();
   }
 
   async function deleteRecording() {
-    if (!supabase) return;
     setBusy(true);
     // 1. notation files, 2. the take itself, 3. the row (notes go with it).
     for (const note of notes) {
       if (!note.storage_path) continue;
-      const problem = await removeFile("recording-notations", note.storage_path);
+      const problem = await removeNotationFile(note.storage_path);
       if (problem) { setBusy(false); notify(problem, "error"); return; }
     }
-    const problem = await removeFile("recordings", recording.storage_path);
+    const problem = await removeRecordingTake(recording.storage_path);
     if (problem) { setBusy(false); notify(problem, "error"); return; }
-    const { data, error } = await supabase.from("recordings").delete().eq("id", recording.id).select("id");
+    const { data, error } = await attempt(() => deleteRecordingRow(recording.id));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
     setDialog(null); notify("Recording deleted"); await onRemoved();
@@ -126,25 +121,23 @@ export function NoteActions({ note, user, canManage, notify, onChanged }: {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     const form = new FormData(event.currentTarget);
-    const changes: TablesUpdate<"recording_notes"> = { title: String(form.get("title") || "").trim() };
+    const changes: { title: string; body?: string } = { title: String(form.get("title") || "").trim() };
     if (note.note_type === "text") changes.body = String(form.get("body") || "").trim();
     setBusy(true);
-    const { data, error } = await supabase.from("recording_notes").update(changes).eq("id", note.id).select("id");
+    const { data, error } = await attempt(() => updateRecordingNote(note.id, changes));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this note."), "error"); return; }
     setDialog(null); notify("Notation saved"); await onChanged();
   }
 
   async function remove() {
-    if (!supabase) return;
     setBusy(true);
     if (note.storage_path) {
-      const problem = await removeFile("recording-notations", note.storage_path);
+      const problem = await removeNotationFile(note.storage_path);
       if (problem) { setBusy(false); notify(problem, "error"); return; }
     }
-    const { data, error } = await supabase.from("recording_notes").delete().eq("id", note.id).select("id");
+    const { data, error } = await attempt(() => deleteRecordingNote(note.id));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "The notation could not be deleted."), "error"); return; }
     setDialog(null); notify("Notation deleted"); await onChanged();

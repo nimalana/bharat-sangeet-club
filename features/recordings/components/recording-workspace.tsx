@@ -5,19 +5,22 @@ import type { User } from "@supabase/supabase-js";
 import { useDropzone, type DropzoneOptions } from "react-dropzone";
 import WaveSurfer from "wavesurfer.js";
 import * as Tone from "tone";
+import { attempt } from "../../../lib/api/attempt";
+import {
+  createNotationUrl, createRecordingUrl, insertRecording, insertRecordingNote, listRecordingNotes, listRecordings, recordingBucket, removeAbandonedNotationFile,
+  removeAbandonedTake, updateRecording, uploadNotationFile, uploadRecordingTake, type RecordingPayload,
+} from "../../../lib/api/recordings";
 import { readCache, writeCache } from "../../../lib/cache";
 import type { Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { formatDate } from "../../../lib/format";
 import { useDebounced } from "../../../lib/hooks/use-debounced";
 import { createRequestGate } from "../../../lib/request-gate";
-import { removeStoredFile } from "../../../lib/storage";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { Dialog } from "../../../components/ui/dialog";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
-import { NoteActions, RecordingManageBar, recordingBucket, type ManagedNote } from "./recording-manage";
+import { NoteActions, RecordingManageBar, type ManagedNote } from "./recording-manage";
 
 type Group = { id: number; name: string; description: string };
 type Membership = { subgroup_id: number; status: string };
@@ -36,8 +39,6 @@ const TONICS = [
   { label: "F♯ / G♭", frequency: 185 }, { label: "G", frequency: 196 }, { label: "G♯ / A♭", frequency: 207.65 },
   { label: "A", frequency: 220 }, { label: "A♯ / B♭", frequency: 233.08 }, { label: "B", frequency: 246.94 },
 ];
-
-const PAGE_SIZE = 24;
 
 function formatDuration(seconds: number | null | undefined) {
   if (!seconds || !Number.isFinite(seconds)) return "—";
@@ -66,28 +67,19 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
   const [loadGate] = useState(createRequestGate);
 
   const load = useCallback(async () => {
-    if (!supabase) return;
     const isCurrent = loadGate.begin();
     const cachedPage = readCache<{ rows: Recording[]; total: number }>(user.id, cacheKey);
     if (cachedPage && pages === 1) { setRecordings(cachedPage.rows); setTotal(cachedPage.total); setLoading(false); }
     else if (pages === 1) setLoading(true);
-    let request = supabase.from("recordings").select("*", { count: "exact" });
-    if (view === "drafts") request = request.eq("status", "draft").eq("uploaded_by", user.id);
-    else if (view === "archived") { request = request.eq("status", "archived"); if (!canManage) request = request.eq("uploaded_by", user.id); }
-    else request = request.eq("status", "published");
-    if (scope !== "all") request = request.eq("subgroup_id", scope);
-    // Characters with a meaning in the filter syntax are dropped from the search text.
-    const term = search.replace(/[,()%*\\]/g, " ").trim();
-    if (term) request = request.or(["title", "description", "raga", "tala", "recording_kind"].map((column) => `${column}.ilike.%${term}%`).join(","));
-    const { data, error, count } = await request.order("created_at", { ascending: false }).order("id", { ascending: false }).range(0, PAGE_SIZE * pages - 1);
+    const { data: list, error } = await attempt(() => listRecordings({ view, scope, search, pages, userId: user.id, canManage }));
     if (!isCurrent()) return;
     // A failed load keeps the list already shown (and its count) instead of emptying it.
     if (error) { setLoadFailed(true); setLoading(false); notify("The recordings workspace could not be loaded"); return; }
     setLoadFailed(false);
-    const rows = (data || []) as Recording[];
+    const rows = list.rows as Recording[];
     setRecordings(rows);
-    setTotal(count ?? rows.length);
-    if (pages === 1) writeCache(user.id, cacheKey, { rows, total: count ?? rows.length });
+    setTotal(list.total);
+    if (pages === 1) writeCache(user.id, cacheKey, { rows, total: list.total });
     setLoading(false);
   }, [cacheKey, canManage, loadGate, notify, pages, scope, search, user.id, view]);
 
@@ -222,8 +214,8 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
 
   useEffect(() => {
     let cancelled = false;
-    if (!draft || !supabase) return;
-    void supabase.storage.from(recordingBucket(draft)).createSignedUrl(draft.storage_path, 1800).then(({ data }) => { if (!cancelled) { setMediaUrl(data?.signedUrl || null); setExistingUrlLoading(false); } });
+    if (!draft) return;
+    void attempt(() => createRecordingUrl(recordingBucket(draft), draft.storage_path)).then(({ data }) => { if (!cancelled) { setMediaUrl(data || null); setExistingUrlLoading(false); } });
     return () => { cancelled = true; };
   }, [draft]);
 
@@ -275,7 +267,6 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
   }
 
   async function save(status: "draft" | "published") {
-    if (!supabase) return;
     if (!title.trim()) { notify("Give this recording a title first", "error"); return; }
     if (!groupId) { notify("Choose a subgroup for this recording", "error"); return; }
     if (!file && !draft) { notify("Upload a file or record something before saving", "error"); return; }
@@ -291,27 +282,20 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
     let noteSaved = false;
     try {
       if (file) {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-        storagePath = `${user.id}/subgroups/${groupId}/${crypto.randomUUID()}-${safeName}`;
-        const upload = await supabase.storage.from("recordings").upload(storagePath, file, { contentType: file.type, upsert: false });
-        if (upload.error) throw upload.error;
+        storagePath = await uploadRecordingTake(user.id, groupId, file);
         uploadedTake = true;
       }
-      const payload = { title: title.trim(), description: description.trim(), subgroup_id: groupId, storage_path: storagePath, mime_type: file?.type || draft?.mime_type || (mediaKind === "video" ? "video/webm" : "audio/webm"), media_kind: mediaKind, status, audience: "subgroup", recording_kind: recordingKind, raga: raga.trim() || null, tala: tala.trim() || null, sruthi: sruthi.trim() || null, tempo: tempo.trim() || null, duration_seconds: recordingSeconds || draft?.duration_seconds || null, published_at: status === "published" ? new Date().toISOString() : null, updated_at: new Date().toISOString() };
-      const result = draft ? await supabase.from("recordings").update(payload).eq("id", draft.id) : await supabase.from("recordings").insert({ ...payload, uploaded_by: user.id }).select("id").single();
-      if (result.error) throw result.error;
+      const payload: RecordingPayload = { title: title.trim(), description: description.trim(), subgroup_id: groupId, storage_path: storagePath, mime_type: file?.type || draft?.mime_type || (mediaKind === "video" ? "video/webm" : "audio/webm"), media_kind: mediaKind, status, audience: "subgroup", recording_kind: recordingKind, raga: raga.trim() || null, tala: tala.trim() || null, sruthi: sruthi.trim() || null, tempo: tempo.trim() || null, duration_seconds: recordingSeconds || draft?.duration_seconds || null, published_at: status === "published" ? new Date().toISOString() : null, updated_at: new Date().toISOString() };
+      let recordingId: number;
+      if (draft) { await updateRecording(draft.id, payload); recordingId = draft.id; }
+      else recordingId = await insertRecording(payload, user.id);
       recordSaved = true;
-      const recordingId = draft?.id || (result.data as { id: number } | null)?.id;
       if (recordingId && (notationText.trim() || notationFile)) {
         if (notationFile) {
-          const safeName = notationFile.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-          notationPath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
-          const notationUpload = await supabase.storage.from("recording-notations").upload(notationPath, notationFile, { contentType: notationFile.type, upsert: false });
-          if (notationUpload.error) throw notationUpload.error;
+          notationPath = await uploadNotationFile(user.id, notationFile);
           notationUploaded = true;
         }
-        const noteResult = await supabase.from("recording_notes").insert({ recording_id: recordingId, title: notationFile?.name || "Notation", note_type: notationFile ? "file" : "text", body: notationText.trim(), storage_path: notationPath, mime_type: notationFile?.type || null, uploaded_by: user.id });
-        if (noteResult.error) throw noteResult.error;
+        await insertRecordingNote({ recordingId, title: notationFile?.name || "Notation", noteType: notationFile ? "file" : "text", body: notationText.trim(), storagePath: notationPath, mimeType: notationFile?.type || null, uploadedBy: user.id });
         noteSaved = true;
       }
       notify(status === "published" ? "Published to your subgroup" : "Draft saved"); await onSaved();
@@ -319,8 +303,8 @@ function RecordingStudioDialog({ user, groups, draft, notify, onClose, onSaved }
       const reason = friendlyError(error as { message?: string; code?: string }, "This recording could not be saved");
       // Files that no row refers to are removed. Storage answers a refused delete with an empty list, so say when one stays.
       const leftovers: string[] = [];
-      if (uploadedTake && !recordSaved) { const problem = await removeStoredFile("recordings", storagePath); if (problem) leftovers.push("The uploaded take could not be removed from storage."); }
-      if (notationUploaded && !noteSaved && notationPath) { const problem = await removeStoredFile("recording-notations", notationPath); if (problem) leftovers.push("The uploaded notation file could not be removed from storage."); }
+      if (uploadedTake && !recordSaved) { const problem = await removeAbandonedTake(storagePath); if (problem) leftovers.push("The uploaded take could not be removed from storage."); }
+      if (notationUploaded && !noteSaved && notationPath) { const problem = await removeAbandonedNotationFile(notationPath); if (problem) leftovers.push("The uploaded notation file could not be removed from storage."); }
       const afterwards = leftovers.length ? ` ${leftovers.join(" ")} An administrator may need to clean up.` : "";
       if (recordSaved) {
         // The recording exists; closing the studio stops a second save from creating a duplicate.
@@ -351,9 +335,8 @@ function RecordingDetailDialog({ recording, user, canManage, groups, notify, onC
   const storagePath = recording.storage_path;
   const bucket = recordingBucket(recording);
   const loadNotes = useCallback(async () => {
-    if (!supabase) return;
     const isCurrent = notesGate.begin();
-    const { data, error } = await supabase.from("recording_notes").select("*").eq("recording_id", recordingId).order("created_at");
+    const { data, error } = await attempt(() => listRecordingNotes(recordingId));
     if (!isCurrent()) return;
     // A failed reload keeps the notation already shown.
     if (error) { notify("The notation could not be refreshed, so the list may be out of date.", "error"); return; }
@@ -361,17 +344,17 @@ function RecordingDetailDialog({ recording, user, canManage, groups, notify, onC
   }, [notesGate, notify, recordingId]);
   useEffect(() => {
     let cancelled = false;
-    if (!supabase) return;
-    void supabase.storage.from(bucket).createSignedUrl(storagePath, 1800).then((fileResult) => { if (cancelled) return; if (fileResult.error || !fileResult.data) notify("This recording could not be opened", "error"); else setUrl(fileResult.data.signedUrl); });
+    void attempt(() => createRecordingUrl(bucket, storagePath)).then((fileResult) => { if (cancelled) return; if (fileResult.error || !fileResult.data) notify("This recording could not be opened", "error"); else setUrl(fileResult.data); });
     return () => { cancelled = true; };
   }, [notify, bucket, storagePath]);
   // The loader synchronizes remote Supabase state into this client component.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadNotes(); }, [loadNotes]);
   async function openNote(note: RecordingNote) {
-    if (!note.storage_path || !supabase) return;
-    const { data, error } = await supabase.storage.from("recording-notations").createSignedUrl(note.storage_path, 900);
-    if (error || !data) notify("This notation file could not be opened", "error"); else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    const path = note.storage_path;
+    if (!path) return;
+    const { data: url, error } = await attempt(() => createNotationUrl(path));
+    if (error || !url) notify("This notation file could not be opened", "error"); else window.open(url, "_blank", "noopener,noreferrer");
   }
   return <Dialog open onClose={onClose} className="recording-detail-dialog"><div className="studio-heading"><div><p className="eyebrow">{group?.name || "SUBGROUP"} · {recording.recording_kind}</p><h2>{recording.title}</h2><p>{[recording.raga, recording.tala, recording.sruthi, recording.tempo].filter(Boolean).join(" · ") || recording.description || "No musical details added yet."}</p></div><Button variant="ghost" size="sm" onClick={onClose} aria-label="Close recording">×</Button></div>{url ? recording.media_kind === "video" ? <video className="recording-detail-video" src={url} controls playsInline><track kind="captions" srcLang="en" label="Recording captions" /></video> : <WaveformPlayer url={url} /> : <div className="recording-preview-loading">Loading the recording…</div>}<div className="recording-detail-meta"><span>{recording.description || "Shared with this subgroup"}</span><time>{formatDate(recording.published_at || recording.created_at)}</time></div><section className="notation-panel"><div className="notation-panel-heading"><div><p className="eyebrow">FOLLOW ALONG</p><h3>Notation and notes</h3></div><span>{notes.length}</span></div>{notes.length ? notes.map((note) => <article className="notation-item" key={note.id}>{note.note_type === "file" ? <button type="button" onClick={() => void openNote(note)}><span>▤</span>{note.title}<i>Open file →</i></button> : <><h4>{note.title}</h4><p>{note.body}</p></>}<NoteActions note={note} user={user} canManage={canManage} notify={notify} onChanged={loadNotes} /></article>) : <p className="notation-empty">No notation attached yet.</p>}</section><RecordingManageBar recording={recording} user={user} canManage={canManage} notes={notes} notify={notify} onChanged={onChanged} onRemoved={onRemoved} /></Dialog>;
 }

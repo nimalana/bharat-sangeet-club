@@ -2,26 +2,26 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
+import { attempt } from "../../../lib/api/attempt";
+import { insertClubArchiveItem, removeClubArchiveFile, uploadClubArchiveFile } from "../../../lib/api/recordings";
 import type { ArchiveVisibility } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
-import { removeStoredFile } from "../../../lib/storage";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 
 export function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: Notify }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return; setSaving(true);
+    event.preventDefault(); setSaving(true);
     const form = new FormData(event.currentTarget); const title = String(form.get("title") || "");
     const file = form.get("file") as File; if (!file?.size) { setSaving(false); notify("Choose a file to upload"); return; }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-"); const storagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
-    const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
+    const upload = await attempt(() => uploadClubArchiveFile(user.id, file));
     if (upload.error) { setSaving(false); notify(friendlyError(upload.error, "The file could not be uploaded."), "error"); return; }
+    const storagePath = upload.data;
     const access = String(form.get("visibility") || "members");
-    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type: "recording", storage_path: storagePath, visibility: (access === "public" ? "members" : access) as ArchiveVisibility, is_public: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploaded_by: user.id });
+    const saved = await attempt(() => insertClubArchiveItem({ title, description: String(form.get("description") || ""), storagePath, visibility: (access === "public" ? "members" : access) as ArchiveVisibility, isPublic: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploadedBy: user.id }));
     if (saved.error) {
       // The row was not saved, so the file just uploaded is an orphan: remove it, and say so if it stays.
-      const leftover = await removeStoredFile("club-archive", storagePath, { refusedMessage: "The recording could not be saved, and its uploaded file could not be removed. Ask an administrator to delete it." });
+      const leftover = await removeClubArchiveFile(storagePath, { refusedMessage: "The recording could not be saved, and its uploaded file could not be removed. Ask an administrator to delete it." });
       setSaving(false); notify(leftover ?? friendlyError(saved.error, "The recording could not be saved."), "error"); return;
     }
     setSaving(false); onSaved();
