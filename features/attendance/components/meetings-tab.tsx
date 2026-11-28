@@ -30,9 +30,9 @@ export function MeetingsTab({ sessions, groups, selectedSessionId, onSelect, ros
 }) {
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) || null;
   return <div className="attendance-meetings">
-    <aside>
+    <aside aria-label="Meetings">
       {sessions.length ? sessions.map((session) => (
-        <button type="button" className={selectedSessionId === session.id ? "active" : ""} key={session.id} onClick={() => onSelect(session.id)}>
+        <button type="button" className={selectedSessionId === session.id ? "active" : ""} aria-current={selectedSessionId === session.id ? "true" : undefined} key={session.id} onClick={() => onSelect(session.id)}>
           <span className={`attendance-status ${session.status}`}>{session.status}</span>
           <b>{session.title}</b>
           <small>{sessionAudience(session, groups)} · {formatDateTime(session.starts_at)}</small>

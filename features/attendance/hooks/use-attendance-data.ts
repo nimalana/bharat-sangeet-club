@@ -111,6 +111,9 @@ export function useAttendanceData({ user, canManage, initialScope, tab }: {
 
   const loadRoster = useCallback(async (sessionId: number, background = false) => {
     const id = rosterSeq.next();
+    // A read the person asked for (a meeting chosen, Try again) shows the loading rows while it runs; a read in the background
+    // (the poll) leaves what is on screen alone.
+    if (!background) setRosterFailed(false);
     try {
       const { data: result, error } = await attempt(() => getAttendanceRoster(sessionId));
       if (!rosterSeq.isLatest(id)) return;

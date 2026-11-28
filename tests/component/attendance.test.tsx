@@ -564,17 +564,24 @@ describe("what the screen shows when it cannot load", () => {
     expect(await screen.findByRole("heading", { name: "Attendance" })).toBeInTheDocument();
   });
 
-  it("while the first read is on the way, the screen shows the loading line and nothing else", async () => {
+  // Phase 3.1: the first read shows skeleton rows (announced as "Loading attendance…") under the title and the pickers, which stay on
+  // screen, instead of one line of text in place of the whole page. The old test pinned that line (a DIV.inline-loading) and the absence
+  // of the title.
+  it("while the first read is on the way, the screen shows the title and pickers, skeleton rows, and none of the content", async () => {
     const slow = deferred();
     fake.rpc("get_attendance_overview").reply(slow.reply);
     renderAttendance();
-    const line = await screen.findByText("Loading attendance…");
-    expect(line.tagName).toBe("DIV");
-    expect(line.className).toBe("inline-loading");
-    expect(screen.queryByRole("heading", { name: "Attendance" })).not.toBeInTheDocument();
+    const status = await screen.findByText("Loading attendance…");
+    expect(status).toHaveAttribute("role", "status");
+    expect(document.querySelectorAll(".skeleton-row").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Attendance" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter attendance by term")).toBeEnabled();
+    expect(screen.queryByLabelText("Attendance code")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "＋ New meeting" })).not.toBeInTheDocument();
     await act(async () => { slow.resolve(ok({ ...BASE, sessions: [] })); });
-    expect(await screen.findByRole("heading", { name: "Attendance" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Attendance code")).toBeInTheDocument();
     expect(screen.queryByText("Loading attendance…")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".skeleton-row")).toHaveLength(0);
   });
 
   it("the failed first read is one line in the loading style: the sentence, then Try again", async () => {
@@ -591,8 +598,9 @@ describe("what the screen shows when it cannot load", () => {
     const slow = deferred();
     fake.rpc("get_attendance_roster").replyOnce(slow.reply).replyOnce(fail("boom")).reply(ok(roster(3, "r1")));
     renderAttendance({ tab: "meetings" });
+    // Phase 3.1: skeleton rows announced as "Loading roster…" (the old test pinned a DIV.inline-loading line).
     const loading = await screen.findByText("Loading roster…");
-    expect(loading.className).toBe("inline-loading");
+    expect(loading).toHaveAttribute("role", "status");
     await act(async () => { slow.resolve(fail("boom")); });
     const block = (await screen.findByText(/The roster could not be loaded\./)).closest("div")!;
     expect(block.className).toBe("attendance-empty");

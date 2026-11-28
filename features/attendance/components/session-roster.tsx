@@ -1,7 +1,7 @@
 "use client";
 
 import { ErrorBlock } from "../../../components/ui/error-block";
-import { LoadingBlock } from "../../../components/ui/loading-block";
+import { SkeletonRows } from "../../../components/ui/skeleton";
 import type { AttendanceStatus } from "../../../lib/db";
 import type { ActionDialog } from "../action-dialog";
 import { formatUnits } from "../display";
@@ -36,6 +36,6 @@ export function SessionRoster({ session, roster, failed, saving, onDialog, onRef
           {row.status && session.status !== "canceled" && <ClearMarkButton sessionId={session.id} memberId={row.member_id} memberName={memberName} onChanged={onRefresh} />}
         </div>
       );
-    }) : failed ? <ErrorBlock className="attendance-empty" message="The roster could not be loaded." onRetry={onRetry} /> : <LoadingBlock>Loading roster…</LoadingBlock>}
+    }) : failed ? <ErrorBlock className="attendance-empty" message="The roster could not be loaded." onRetry={onRetry} role="alert" /> : <SkeletonRows rows={4} label="Loading roster…" />}
   </div>;
 }

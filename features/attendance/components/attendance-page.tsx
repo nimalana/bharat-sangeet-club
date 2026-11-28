@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 import type { GroupOption, ScopeFilter } from "../../../lib/db";
 import { canManageClub } from "../../../lib/permissions";
 import { ErrorBlock } from "../../../components/ui/error-block";
-import { LoadingBlock } from "../../../components/ui/loading-block";
+import { LoadErrorBanner } from "../../../components/ui/load-error";
+import { SkeletonRows } from "../../../components/ui/skeleton";
 import { useAttendanceActions } from "../hooks/use-attendance-actions";
 import { useAttendanceData } from "../hooks/use-attendance-data";
 import { flaggedSummaries, overallRate, termChoices, termLabel, type AttendanceTab, type ClubRole } from "../model";
@@ -13,7 +14,7 @@ import { AbsenceFormDialog } from "./absence-form-dialog";
 import { ActionDialogs } from "./action-dialogs";
 import { AttendanceHeader } from "./attendance-header";
 import { AttendanceSummary } from "./attendance-summary";
-import { AttendanceTabs } from "./attendance-tabs";
+import { ATTENDANCE_PANEL_ID, AttendanceTabs, attendanceTabId } from "./attendance-tabs";
 import { CheckInCard } from "./check-in-card";
 import { ExcusesTab } from "./excuses-tab";
 import { LiveSessionCard } from "./live-session-card";
@@ -68,16 +69,20 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     actions.resetLive();
   }
 
+  // The title and the two pickers stay on screen while the first read of a view is on the way or has failed: the person can pick another
+  // audience or term (and a keyboard user keeps their place in the picker they just used), and the page does not jump when the data comes.
   if (!data) {
-    return <section className="section-shell page-section">
+    return <section className="section-shell page-section attendance-page">
+      <AttendanceHeader scopeFilter={scopeFilter} termFilter={termFilter} groups={groups} scopeLabel={scopeLabel} scopeInGroups={scopeInGroups} termOptions={termOptions} canManage={false} onScope={changeScope} onTerm={changeTerm} onNewMeeting={() => {}} />
       {failedKey === cacheKey
-        ? <ErrorBlock message="Attendance could not be loaded." onRetry={() => load()} />
-        : <LoadingBlock>Loading attendance…</LoadingBlock>}
+        ? <ErrorBlock message="Attendance could not be loaded." onRetry={() => load()} role="alert" />
+        : <SkeletonRows rows={6} label="Loading attendance…" />}
     </section>;
   }
 
   return <section className="section-shell page-section attendance-page">
     <AttendanceHeader scopeFilter={scopeFilter} termFilter={termFilter} groups={groups} scopeLabel={scopeLabel} scopeInGroups={scopeInGroups} termOptions={termOptions} canManage={canManage} onScope={changeScope} onTerm={changeTerm} onNewMeeting={() => actions.setShowNewSession(true)} />
+    {failedKey === cacheKey && <LoadErrorBanner message="Attendance could not be refreshed. What you see may be out of date." onRetry={() => load()} />}
 
     <CheckInCard code={actions.checkInCode} onCodeChange={actions.setCheckInCode} saving={saving} pending={active === "check-in"} feedback={actions.feedback} onSubmit={actions.checkIn} />
 
@@ -87,11 +92,13 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
         onClose={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "close" })}
         onCancel={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "cancel" })} />}
       <AttendanceTabs tab={tab} onTab={setTab} pendingExcuseCount={view.excuses_pending} />
-      {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} profileName={profileName}
-        onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} />}
-      {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving} openingSessionId={active?.startsWith("open:") ? Number(active.slice(5)) : null}
-        onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} />}
-      {tab === "excuses" && <ExcusesTab view={view} sessions={sessions} viewLabel={viewLabel} saving={saving} profileName={profileName} onDialog={setDialog} onOpenProof={actions.openProof} showMore={showMore} loadingMore={loadingMore} />}
+      <div role="tabpanel" id={ATTENDANCE_PANEL_ID} aria-labelledby={attendanceTabId(tab)}>
+        {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} profileName={profileName}
+          onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} />}
+        {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving} openingSessionId={active?.startsWith("open:") ? Number(active.slice(5)) : null}
+          onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} />}
+        {tab === "excuses" && <ExcusesTab view={view} sessions={sessions} viewLabel={viewLabel} saving={saving} profileName={profileName} onDialog={setDialog} onOpenProof={actions.openProof} openingProofId={actions.openingProofId} showMore={showMore} loadingMore={loadingMore} />}
+      </div>
     </> : <MemberView view={view} sessions={sessions} user={user} scopeLabel={scopeLabel} termFilter={termFilter} onSubmitExcuse={() => actions.setShowExcuse(true)} onWithdrawn={() => load(true)} />}
 
     {actions.showNewSession && <NewMeetingDialog scopeFilter={scopeFilter} scopeInGroups={scopeInGroups} groups={groups} saving={saving} onSubmit={actions.createSession} onClose={() => actions.setShowNewSession(false)} />}

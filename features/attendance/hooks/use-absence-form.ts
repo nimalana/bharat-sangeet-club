@@ -15,6 +15,8 @@ export function useAbsenceForm({ user, load, exclusive }: {
 }) {
   const { notify } = useToast();
   const [showExcuse, setShowExcuse] = useState(false);
+  // The form whose proof link is being made (the button says so, and a second press waits for the first).
+  const [openingProofId, setOpeningProofId] = useState<number | null>(null);
 
   async function submitExcuse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,10 +54,15 @@ export function useAbsenceForm({ user, load, exclusive }: {
 
   async function openProof(excuse: Excuse) {
     const path = excuse.proof_path;
-    if (!path) return;
-    const { data: signedUrl, error } = await attempt(() => createExcuseProofUrl(path));
-    if (error || !signedUrl) notify("Proof could not be opened", "error"); else window.open(signedUrl, "_blank", "noopener,noreferrer");
+    if (!path || openingProofId !== null) return;
+    setOpeningProofId(excuse.id);
+    try {
+      const { data: signedUrl, error } = await attempt(() => createExcuseProofUrl(path));
+      if (error || !signedUrl) notify("Proof could not be opened", "error"); else window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } finally {
+      setOpeningProofId(null);
+    }
   }
 
-  return { showExcuse, setShowExcuse, submitExcuse, openProof };
+  return { showExcuse, setShowExcuse, submitExcuse, openProof, openingProofId };
 }
