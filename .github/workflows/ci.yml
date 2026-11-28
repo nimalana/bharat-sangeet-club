@@ -35,7 +35,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder
       # Fails when the number of lint errors or warnings is higher than lint-baseline.json; says so when it is lower.
-      # The existing errors are cleared in Phase 2.5 R5 and Phase 3; until then none may be added.
+      # What is left (jsx-a11y accessibility errors, <img> warnings) is cleared in Phase 3; until then none may be added.
       - name: Lint (ratchet)
         run: npm run lint:ratchet
       # Which folder may import which, and no import cycles (docs/ARCHITECTURE.md, "Dependency rules"). The ratchet runs the same

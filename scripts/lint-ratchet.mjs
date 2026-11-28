@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Lint ratchet: the number of ESLint errors and warnings may go down, never up.   npm run lint:ratchet
 //
-// Phase 1 and 2 left 26 errors and 14 warnings that Phase 2.5 (R5) and Phase 3 clear. Until then CI must not let a new
+// Phase 1 and 2 left 26 errors and 14 warnings. Phase 2.5 (R5) cleared the structural ones (effects that set state, dead code);
+// what is left is jsx-a11y accessibility errors and <img> warnings, which Phase 3 clears. Until then CI must not let a new
 // one in, and must say when the count dropped so that the baseline is lowered and the gain cannot be given back.
 //
 //   npm run lint:ratchet              run eslint, compare with lint-baseline.json, exit 1 on any increase
