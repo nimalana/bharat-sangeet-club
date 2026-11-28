@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
 import type { GroupOption, Tables } from "../../../lib/db";
 import { announcementsAvailable, createAnnouncement, deleteAnnouncement, setAnnouncementPinned, updateAnnouncement } from "../../../lib/api/announcements";
-import { friendlyError, toApiError, type ApiError } from "../../../lib/errors";
+import { ApiError } from "../../../lib/errors";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -15,20 +15,23 @@ import { useToast } from "../../../components/ui/toast";
 
 export type EditableAnnouncement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "subgroup_id">;
 
-// Create or edit an announcement. Row-level security allows executives and
-// admins to write announcements; nobody else is shown this dialog.
+const NOT_SAVED = "This announcement could not be saved. It may have been deleted.";
+
+// Create or edit an announcement. Row-level security allows executives and admins to write announcements; nobody else is shown this
+// dialog. While it is saved the button waits and the dialog cannot be closed, a second press sends nothing, and a failure leaves
+// everything that was typed where it is, with the reason written above the buttons (where the person is looking, and read out).
 export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupId, onClose, onSaved }: {
   user: User; groups: GroupOption[]; announcement?: EditableAnnouncement; lockedSubgroupId?: number;
   onClose: () => void; onSaved: () => void | Promise<void>;
 }) {
   const { notify } = useToast();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const save = useAsyncAction(undefined, { exclusive: true });
+  const saving = save.pending;
   const lockedGroup = lockedSubgroupId ? groups.find((group) => group.id === lockedSubgroupId) : undefined;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!announcementsAvailable() || saving) return;
+    if (!announcementsAvailable()) return;
     const form = new FormData(event.currentTarget);
     const subgroupValue = lockedSubgroupId ? String(lockedSubgroupId) : String(form.get("subgroup_id") || "");
     const fields = {
@@ -37,29 +40,27 @@ export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupI
       is_pinned: form.get("is_pinned") === "on",
       subgroup_id: subgroupValue ? Number(subgroupValue) : null,
     };
-    setSaving(true); setError("");
-    let written: Array<{ id: number }> = [];
-    let failure: ApiError | null = null;
-    try {
-      written = announcement ? await updateAnnouncement(announcement.id, fields) : await createAnnouncement(fields, user.id);
-    } catch (caught) { failure = toApiError(caught); }
-    setSaving(false);
-    // An update that matches no row returns no error, so check that something was written.
-    if (failure || !written.length) { setError(friendlyError(failure, "This announcement could not be saved. It may have been deleted.")); return; }
+    const outcome = await save.run(async () => {
+      const written = announcement ? await updateAnnouncement(announcement.id, fields) : await createAnnouncement(fields, user.id);
+      // An update that matches no row returns no error, so check that something was written.
+      if (!written.length) throw new ApiError("");
+      return written;
+    }, { fallback: NOT_SAVED });
+    if (!outcome.ok) return;
     notify(announcement ? "Announcement updated" : "Announcement published");
     await onSaved();
     onClose();
   }
 
-  return <Dialog open onClose={saving ? () => {} : onClose} className="max-w-[560px]">
+  return <Dialog open onClose={onClose} dismissible={!saving} closeOnBackdrop={false} className="max-w-[560px]">
     <form onSubmit={submit} className="grid gap-4">
       <h2 className="m-0 text-2xl">{announcement ? "Edit announcement" : "Post an announcement"}</h2>
-      {lockedGroup ? <p className="m-0 text-xs text-[#70818c]">For {lockedGroup.name}</p> : <label htmlFor="announcement-audience" className="grid gap-1 text-xs font-semibold">Audience<select id="announcement-audience" name="subgroup_id" defaultValue={announcement?.subgroup_id ?? ""} className="h-11 border border-[var(--line)] bg-[var(--paper)] px-3 text-sm"><option value="">Whole club</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
+      {lockedGroup ? <p className="m-0 text-xs text-[#5f6e79]">For {lockedGroup.name}</p> : <label htmlFor="announcement-audience" className="grid gap-1 text-xs font-semibold">Audience<select id="announcement-audience" name="subgroup_id" defaultValue={announcement?.subgroup_id ?? ""} className="h-11 border border-[var(--line)] bg-[var(--paper)] px-3 text-sm"><option value="">Whole club</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
       <label htmlFor="announcement-title" className="grid gap-1 text-xs font-semibold">Title<Input id="announcement-title" name="title" required maxLength={140} defaultValue={announcement?.title ?? ""} /></label>
       <label htmlFor="announcement-body" className="grid gap-1 text-xs font-semibold">Message<Textarea id="announcement-body" name="body" required rows={6} maxLength={5000} defaultValue={announcement?.body ?? ""} /></label>
       <label htmlFor="announcement-pinned" className="flex items-center gap-2 text-sm"><input id="announcement-pinned" name="is_pinned" type="checkbox" defaultChecked={announcement?.is_pinned ?? false} /> Pin to the top</label>
-      {error && <p className="action-feedback error m-0" role="alert">{error}</p>}
-      <div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Saving…" : announcement ? "Save changes" : "Publish"}</Button></div>
+      {save.error && <p className="action-feedback error m-0" role="alert">{save.error}</p>}
+      <div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" pending={saving}>{saving ? "Saving…" : announcement ? "Save changes" : "Publish"}</Button></div>
     </form>
   </Dialog>;
 }
@@ -72,7 +73,8 @@ export function AnnouncementActions({ user, groups, announcement, onChanged }: {
   const { notify } = useToast();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const { pending: busy, run } = useAsyncAction(notify);
+  // Pin and delete share one run at a time: a second press (the buttons have not re-rendered yet) sends nothing.
+  const { pending: busy, run } = useAsyncAction(notify, { exclusive: true });
 
   async function togglePin() {
     if (!announcementsAvailable() || busy) return;
@@ -83,13 +85,14 @@ export function AnnouncementActions({ user, groups, announcement, onChanged }: {
   async function remove() {
     if (!announcementsAvailable() || busy) return;
     const done = await run(() => deleteAnnouncement(announcement.id), { success: "Announcement deleted" });
+    if (!done.ok && done.skipped) return;   // a second press while the first runs: the first closes the question
     setConfirming(false);
     if (done.ok) await onChanged();
   }
 
   return <div className="flex flex-wrap gap-1">
     <Button size="sm" variant="ghost" onClick={() => setEditing(true)} aria-label={`Edit ${announcement.title}`}>Edit</Button>
-    <Button size="sm" variant="ghost" onClick={togglePin} disabled={busy} aria-label={`${announcement.is_pinned ? "Unpin" : "Pin"} ${announcement.title}`}>{announcement.is_pinned ? "Unpin" : "Pin"}</Button>
+    <Button size="sm" variant="ghost" onClick={togglePin} pending={busy} aria-label={`${announcement.is_pinned ? "Unpin" : "Pin"} ${announcement.title}`}>{announcement.is_pinned ? "Unpin" : "Pin"}</Button>
     <Button size="sm" variant="ghost" className="!text-[#8b2832]" onClick={() => setConfirming(true)} aria-label={`Delete ${announcement.title}`}>Delete</Button>
     {editing && <AnnouncementEditor user={user} groups={groups} announcement={announcement} onClose={() => setEditing(false)} onSaved={onChanged} />}
     <ConfirmDialog open={confirming} title="Delete this announcement?" confirmLabel="Delete announcement" danger busy={busy} onConfirm={remove} onCancel={() => setConfirming(false)}>
