@@ -12,7 +12,7 @@ export function GroupConfirmDialogs({ group, myRole, pending, busyKey, onConfirm
     <ConfirmDialog open={pending?.kind === "decline"} title="Decline this request?" confirmLabel="Decline request" danger busy={busyKey.startsWith("decline-")} onConfirm={onConfirm} onCancel={onCancel}>
       {pending?.kind === "decline" && <p className="m-0">{pending.row.full_name || pending.row.email} will not be added to {group.name}. They can ask to join again later.</p>}
     </ConfirmDialog>
-    <ConfirmDialog open={pending?.kind === "remove"} title="Remove from group?" confirmLabel="Remove member" danger busy={busyKey === "confirm"} onConfirm={onConfirm} onCancel={onCancel}>
+    <ConfirmDialog open={pending?.kind === "remove"} title={pending?.kind === "remove" ? `Remove ${pending.row.full_name || pending.row.email}?` : "Remove this member?"} confirmLabel="Remove member" danger busy={busyKey === "confirm"} onConfirm={onConfirm} onCancel={onCancel}>
       {pending?.kind === "remove" && <p className="m-0">{pending.row.full_name || pending.row.email} will lose access to {group.name}. Their past attendance is kept. They cannot rejoin on their own; an executive can add them back.</p>}
     </ConfirmDialog>
     <ConfirmDialog open={pending?.kind === "leave"} title={`Leave ${group.name}?`} confirmLabel="Leave group" danger busy={busyKey === "confirm"} onConfirm={onConfirm} onCancel={onCancel}>

@@ -359,7 +359,7 @@ describe("GroupConfirmDialogs", () => {
 
   it("removing: says what the person loses, and who can add them back", () => {
     show({ kind: "remove", row: person("u-dev", "Dev Nair") });
-    expect(screen.getByText("Remove from group?")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Remove Dev Nair?" })).toBeInTheDocument();
     expect(screen.getByText(/Dev Nair will lose access to Vocal\. Their past attendance is kept\. They cannot rejoin on their own; an executive can add them back\./)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove member" })).toBeInTheDocument();
   });

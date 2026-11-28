@@ -1,16 +1,23 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import dynamic from "next/dynamic";
 import type { ClubRole, GroupRole, Announcement, Subgroup } from "../../../lib/db";
 import { formatDate } from "../../../lib/format";
 import { canManageClub, canPostToGroup, groupCapabilities } from "../../../lib/permissions";
 import { Button } from "../../../components/ui/button";
+import { SkeletonRows } from "../../../components/ui/skeleton";
 import { AnnouncementActions } from "../../announcements/components/announcement-actions";
 import { DEFAULT_GROUP_TAB, useGroupTabParam, type GroupTabId } from "../hooks/use-group-selection";
 import type { GroupTabRenderer } from "../model";
-import { GroupDates } from "./group-dates";
-import { GroupPeople } from "./group-people";
 import { GROUP_PANEL_ID, GroupTabs, tabButtonId, type GroupTabItem } from "./group-tabs";
+
+// The Dates tab and the people tabs (roster, requests: with the dialogs that change them) are their own bundles, fetched when their tab is
+// first opened, so that the group page does not carry code for tabs nobody has opened. (A tab that cannot be fetched is caught by the shell.)
+const DatesLoading = () => <SkeletonRows rows={3} label="Loading the dates" />;
+const PeopleLoading = () => <SkeletonRows rows={3} label="Loading the people" />;
+const GroupDates = dynamic(() => import("./group-dates").then((module) => module.GroupDates), { ssr: false, loading: DatesLoading });
+const GroupPeople = dynamic(() => import("./group-people").then((module) => module.GroupPeople), { ssr: false, loading: PeopleLoading });
 
 const TAB_LABELS: Record<GroupTabId, string> = { announcements: "Announcements", dates: "Dates", resources: "Resources", recordings: "Recordings", attendance: "Attendance", roster: "Roster", requests: "Requests" };
 

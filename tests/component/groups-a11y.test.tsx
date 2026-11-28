@@ -156,7 +156,7 @@ describe("the dialogs of the groups page", () => {
 
   it.each([
     ["Leave Hindustani Vocal?", "Roster", "Leave group"],
-    ["Remove from group?", "Roster", "Remove"],
+    ["Remove Meera Iyer?", "Roster", "Remove"],
     ["Decline this request?", "Requests", "Decline"],
   ])("the question %s", async (title, tab, button) => {
     asExecutive(`groups&group=7&tab=${tab.toLowerCase()}`);
