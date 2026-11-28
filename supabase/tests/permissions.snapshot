@@ -31,6 +31,7 @@ resource_links  authenticated  SELECT
 resource_tag_assignments  authenticated  SELECT
 resource_tags  authenticated  SELECT
 resources  authenticated  DELETE,INSERT,SELECT,UPDATE
+signup_reviews  authenticated  SELECT
 subgroup_memberships  authenticated  SELECT
 subgroups  authenticated  SELECT
 transactions  authenticated  SELECT
@@ -274,7 +275,7 @@ public.profiles  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ((id = ( SELECT auth.uid() AS uid)) OR ( SELECT private.is_active_member() AS is_active_member))
     check: ( SELECT private.is_active_member() AS is_active_member)
 public.profiles  [Signed-in members view directory]  SELECT  to authenticated
-    using: true
+    using: ((status = ANY (ARRAY['active'::text, 'deactivated'::text])) OR (id = ( SELECT auth.uid() AS uid)) OR ( SELECT private.is_executive() AS is_executive))
     check: -
 public.profiles  [Users can update their profile]  UPDATE  to authenticated
     using: (id = ( SELECT auth.uid() AS uid))
@@ -383,6 +384,12 @@ public.resources  [Managers update resources]  UPDATE  to authenticated
     check: private.can_manage_resource(subgroup_id, visibility)
 public.resources  [Members view permitted resources]  SELECT  to authenticated
     using: (( SELECT private.is_executive() AS is_executive) OR ((visibility = 'members'::archive_visibility) AND (((status = 'ready'::resource_status) AND ((subgroup_id IS NULL) OR (subgroup_id = ANY (( SELECT private.my_active_subgroup_ids() AS my_active_subgroup_ids)::bigint[])))) OR ((status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND (created_by = ( SELECT auth.uid() AS uid))) OR ((subgroup_id IS NOT NULL) AND (subgroup_id = ANY (( SELECT private.my_managed_subgroup_ids() AS my_managed_subgroup_ids)::bigint[]))))))
+    check: -
+public.signup_reviews  [Active members only]  ALL  RESTRICTIVE  to authenticated
+    using: ( SELECT private.is_active_member() AS is_active_member)
+    check: ( SELECT private.is_active_member() AS is_active_member)
+public.signup_reviews  [Executives read sign-up reviews]  SELECT  to authenticated
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.subgroup_memberships  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -543,6 +550,7 @@ public.get_attendance_workspace(p_scope text, p_subgroup_id bigint, p_since time
 public.get_finance_summary()  invoker
 public.get_portal_bootstrap()  invoker
 public.leave_subgroup(p_subgroup_id bigint)  definer
+public.list_pending_members()  invoker
 public.list_subgroup_roster(p_subgroup_id bigint)  invoker
 public.open_attendance_session(p_session_id bigint, p_duration_minutes integer)  definer
 public.pay_personal_reimbursement(p_reimbursement_id bigint, p_payment_date date, p_account_name text)  definer
@@ -555,6 +563,7 @@ public.remove_subgroup_member(p_subgroup_id bigint, p_member_id uuid)  definer
 public.request_reimbursement_changes(p_reimbursement_id bigint, p_note text)  definer
 public.request_subgroup_enrollment(target_subgroup_id bigint)  definer
 public.review_attendance_excuse(p_excuse_id bigint, p_decision text, p_note text)  definer
+public.review_pending_member(p_member_id uuid, p_approved boolean, p_reason text)  definer
 public.review_personal_reimbursement(p_reimbursement_id bigint, p_decision text, p_approved_amount numeric, p_review_note text)  definer
 public.review_subgroup_request(p_subgroup_id bigint, p_member_id uuid, p_decision text)  definer
 public.rotate_attendance_code(p_session_id bigint)  definer

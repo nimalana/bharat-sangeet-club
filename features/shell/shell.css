@@ -119,3 +119,5 @@
 @media (max-width:520px){
 .portal-shell>.topbar .page-menu{top:calc(76px + 8px);width:min(360px,calc(100vw - 20px));padding:8px}
 }
+/* The count beside a menu entry (waiting sign-ups). */
+.nav-count{display:inline-block;min-width:18px;margin-left:4px;border-radius:9px;background:var(--maroon);padding:1px 6px;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}

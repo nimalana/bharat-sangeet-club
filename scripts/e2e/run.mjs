@@ -18,6 +18,7 @@ const jsonPath = flag("--json");
 
 const SECTIONS = [
   "./tests/00-accounts.mjs",
+  "./tests/03-membership-gate.mjs",
   "./tests/10-groups.mjs",
   "./tests/20-calendar-announcements.mjs",
   "./tests/30-recordings.mjs",

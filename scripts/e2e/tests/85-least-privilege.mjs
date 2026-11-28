@@ -19,7 +19,7 @@ const FUNCTION_ONLY = [
   "admin_audit_log", "attendance_eligibility", "attendance_excuses", "attendance_record_audit", "attendance_records", "attendance_remediations",
   "attendance_session_participants", "attendance_sessions", "attendance_settings", "finance_audit_log", "finance_expenses", "finance_payments",
   "funding_claim_expenses", "funding_claims", "member_deactivations", "personal_reimbursements", "resource_links", "resource_tag_assignments",
-  "resource_tags", "subgroup_memberships", "subgroups", "transactions",
+  "resource_tags", "signup_reviews", "subgroup_memberships", "subgroups", "transactions",
 ];
 // Still insertable by any signed-in person (the policies decide), by design for now: docs/KNOWN_GAPS.md, plan item P1-05 / Phase 4.2.
 const STILL_INSERTABLE = ["finance_documents", "finance_expense_documents", "finance_reimbursement_documents", "finance_claim_documents"];

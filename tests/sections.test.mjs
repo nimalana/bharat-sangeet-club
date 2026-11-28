@@ -63,6 +63,15 @@ test("only an admin may open the admin screen, and a refused section is never re
   assert.equal(resolveSection("admin", null).kind, "refused");
 });
 
+test("the sign-up queue is for executives and admins: members and unknown roles are refused", () => {
+  assert.equal(resolveSection("signups", "executive").kind, "render");
+  assert.equal(resolveSection("signups", "admin").kind, "render");
+  for (const role of ["member", null, undefined, "", "guest"]) assert.equal(resolveSection("signups", role).kind, "refused", String(role));
+  assert.equal(sectionFromSearch("?page=signups"), "signups");
+  assert.equal(SECTION_LABELS.signups, "Sign-up requests");
+  assert.ok(!menuPages("member").includes("signups"));
+});
+
 test("an unknown role can open the overview and nothing else", () => {
   for (const section of SECTIONS) {
     assert.equal(canViewSection(section, null), section === "home", section);
@@ -77,8 +86,8 @@ test("every role has finances in its menu, in the top bar order, and only admins
     assert.equal(new Set(pages).size, pages.length, `${role} menu lists no page twice`);
   }
   assert.deepEqual(menuPages("member"), ["home", "calendar", "members", "recordings", "documents", "groups", "attendance", "finances"]);
-  assert.deepEqual(menuPages("executive").slice(-1), ["finances"]);
-  assert.deepEqual(menuPages("admin").slice(-2), ["finances", "admin"]);
+  assert.deepEqual(menuPages("executive").slice(-2), ["finances", "signups"]);
+  assert.deepEqual(menuPages("admin").slice(-3), ["finances", "signups", "admin"]);
 });
 
 test("the menu lists exactly the pages a role may open", () => {

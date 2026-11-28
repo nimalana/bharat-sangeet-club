@@ -34,6 +34,7 @@ const TITLE: Record<Section, (role: ClubRole) => RegExp | string> = {
   recordings: () => "Recordings",
   documents: () => "Resources",
   finances: (role) => (role === "member" ? "My reimbursements" : "Club finances"),
+  signups: () => "Sign-up requests",
   admin: () => "Club control center",
 };
 const title = (section: Section, role: ClubRole) => screen.findByRole("heading", { level: 1, name: TITLE[section](role) }, { timeout: 4000 });
@@ -45,6 +46,13 @@ describe("every section a role may open is rendered; the rest are refused", () =
     openPortal({ role, page: section === "home" ? undefined : section });
     expect(await title(section, role)).toBeInTheDocument();
     expect(screen.queryByText(/is not available to your account/)).not.toBeInTheDocument();
+  });
+
+  it("a member is refused Sign-up requests, and the queue is never read", async () => {
+    openPortal({ role: "member", page: "signups" });
+    expect(await screen.findByText("Sign-up requests is not available to your account")).toBeInTheDocument();
+    expect(fake.rpc("list_pending_members").calls).toHaveLength(0);
+    expect(fake.rpc("review_pending_member").calls).toHaveLength(0);
   });
 
   it.each(ROLES.filter((role) => role !== "admin"))("%s is refused Admin, and the admin data is never read", async (role) => {

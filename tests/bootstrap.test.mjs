@@ -21,6 +21,16 @@ test("a deactivated profile gets the deactivated screen, whatever else came back
   assert.deepEqual(interpretBootstrap(answer({ profile: { status: "deactivated" } })), { kind: "deactivated" });
 });
 
+test("a sign-up waiting for approval gets the pending screen, a declined one the rejected screen, whatever else came back", () => {
+  assert.deepEqual(interpretBootstrap(answer({ profile: profile({ status: "pending", role: "member" }), groups: [] })), { kind: "pending" });
+  assert.deepEqual(interpretBootstrap(answer({ profile: { status: "pending" } })), { kind: "pending" });
+  assert.deepEqual(interpretBootstrap(answer({ profile: profile({ status: "rejected", role: "member" }) })), { kind: "rejected" });
+  assert.deepEqual(interpretBootstrap(answer({ profile: { status: "rejected" } })), { kind: "rejected" });
+  // Never the member shell: not even when the answer claims a role the database does not allow for a sign-up, and the data that came with it is dropped.
+  const odd = interpretBootstrap(answer({ profile: profile({ status: "pending", role: "admin" }), groups: [{ id: 1 }], resource_count: 9 }));
+  assert.deepEqual(odd, { kind: "pending" });
+});
+
 test("an error is a failure, never the member shell", () => {
   assert.deepEqual(interpretBootstrap(answer(null, { message: "Failed to fetch" })), { kind: "failed" });
   // Even if some data came back with the error.

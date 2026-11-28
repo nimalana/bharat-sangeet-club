@@ -4,6 +4,11 @@
 // `profileRole` is what the setup SQL writes directly. The two executives start as
 // plain members and are promoted by the suite itself through admin_change_member_role,
 // so the app's own admin function is exercised.
+//
+// `profileStatus` is the status the setup SQL leaves the profile in; the default is "active". Since the membership
+// gate (20261128010100) the signup trigger creates every profile "pending", so the setup SQL sets "active" itself
+// on every account that the suite needs as a member. The one exception is `applicant`, a fresh sign-up that the
+// suite itself approves (tests/03-membership-gate.mjs).
 
 export const ACCOUNTS = {
   admin:   { email: "e2e-admin@example.com",   name: "E2E Admin",          profileRole: "admin",  note: "club admin (set directly: the only other admin is the bootstrap account)" },
@@ -16,6 +21,8 @@ export const ACCOUNTS = {
   victim:  { email: "e2e-victim@example.com",  name: "E2E Victim",         profileRole: "member", note: "deactivated and reactivated while signed in" },
   hist:    { email: "e2e-hist@example.com",    name: "E2E With History",   profileRole: "member", note: "has finance history, so admin_delete_member must refuse" },
   nohist:  { email: "e2e-nohist@example.com",  name: "E2E No History",     profileRole: "member", note: "join requests and removal in the groups tests" },
+  // Signed in only by tests/03-membership-gate.mjs: left PENDING by the setup SQL, approved by the suite, deleted at the end of that section. Run the setup SQL again to get it back.
+  applicant: { email: "e2e-applicant@example.com", name: "E2E Applicant",    profileRole: "member", profileStatus: "pending", optional: true, note: "a fresh sign-up: pending until an executive approves it; used up by section 03" },
   // Signed in only by tests/90-admin-delete.mjs, which deletes it. Run the setup SQL again to get it back.
   doomed:  { email: "e2e-doomed@example.com",  name: "E2E To Delete",      profileRole: "member", optional: true, note: "no history: admin_delete_member removes it at the end of the run" },
 };

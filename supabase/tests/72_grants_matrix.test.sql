@@ -54,6 +54,7 @@ insert into test.expected_grants (rel, anon, auth, auth_cols) values
   ('public.resource_tag_assignments',        '',       'SELECT', ''),
   ('public.resource_tags',                   '',       'SELECT', ''),
   ('public.resources',                       '',       'DELETE,INSERT,SELECT,UPDATE', ''),
+  ('public.signup_reviews',                  '',       'SELECT', ''),
   ('public.subgroup_memberships',            '',       'SELECT', ''),
   ('public.subgroups',                       '',       'SELECT', ''),
   ('public.transactions',                    '',       'SELECT', '');
@@ -390,8 +391,11 @@ end $$;
 -- It also hands attendance_eligibility its old insert and update again (the matrix inside it
 -- is frozen), so the later migration that takes them away runs again after it, as it did on
 -- the first replay.
+-- It likewise takes the select on signup_reviews (a table created after it) away, so the
+-- membership gate's schema file runs again too, which is also the proof that it can be repeated.
 \ir ../migrations/20261127075000_least_privilege_grants.sql
 \ir ../migrations/20261127090000_attendance_eligibility_definer.sql
+\ir ../migrations/20261128010000_membership_gate_schema.sql
 
 do $$
 declare

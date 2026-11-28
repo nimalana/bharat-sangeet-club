@@ -8,18 +8,24 @@ marked `[e2e]` (or belongs to an `e2e-*@example.com` account) so it can be found
 
 ## One-time setup
 
-1. Generate the accounts (10 synthetic users: admin, two executives, a group manager, a leader, two members, one to deactivate,
-   one with finance history, one with none, plus a disposable one that the last section deletes):
+1. Generate the accounts (12 synthetic users: admin, two executives, a group manager, a leader, two members, one to deactivate,
+   one with finance history, one with none, plus two disposable ones: a fresh sign-up that section 03 approves and deletes, and one
+   that the last section deletes):
 
    ```
    node scripts/e2e/gen-setup-sql.mjs > /tmp/e2e-setup.sql
    ```
 
    Passwords are generated into `/tmp/claude-0/e2e/secrets.json` (override with `E2E_SECRETS`). They are never written into the
-   repository. The SQL is idempotent: accounts that exist are skipped.
+   repository. The SQL is idempotent: accounts that exist are skipped (except the applicant, below).
 2. Run `/tmp/e2e-setup.sql` on the **test** project (SQL editor). It inserts `auth.users` and `auth.identities`; the signup trigger
-   creates the profiles. Run it again whenever `tests/90-admin-delete.mjs` has used up the disposable account (the section then
-   skips that test and says so).
+   creates the profiles. Since the membership gate (20261128010100) that trigger creates every profile `pending`, so the SQL makes
+   each account `active` itself, in the same update as its role (a pending profile can only be a plain member); only
+   `e2e-applicant@example.com` is left `pending`, as a real first sign-in would leave it. Run the SQL again whenever
+   `tests/03-membership-gate.mjs` or `tests/90-admin-delete.mjs` has used up its disposable account (the section then skips that
+   test and says so); for the applicant it also puts an account that a stopped run left half used back to `pending`.
+   The SQL needs `20261128010000_membership_gate_schema.sql` applied to leave the applicant pending; without it the applicant stays
+   active and section 03 skips itself.
 
 ## Running
 
@@ -33,13 +39,14 @@ node scripts/e2e/run.mjs [--only groups,finance] [--json out.json]
 * `NODE_USE_ENV_PROXY=1` is needed behind an HTTP proxy (Node's `fetch` ignores `HTTPS_PROXY` otherwise). Keep concurrency modest;
   some proxies answer 429 to many parallel connections.
 * `--only` takes section-name fragments (`finance`, `60`, `anonymous`). Section 10 creates the groups that 30 to 90 use, so list it
-  too when you run one of the later sections alone: `--only "10 groups,60 finance"`.
+  too when you run one of the later sections alone: `--only "10 groups,60 finance"`. Section 03 needs the two executives that section 00 promotes: `--only "00 accounts,03 membership"`.
 * Exit code 1 means at least one test failed. `NOTE` lines are observations (known or suspected issues recorded without failing).
 * Optional: `SUPABASE_LEGACY_ANON_KEY` (never commit it) adds a comparison of the public concert request with the legacy JWT.
 
 | Section | What it covers |
 |---|---|
 | 00 accounts | sign-in, profile trigger, role escalation refused, admin promotes executives, directory |
+| 03 membership gate | the setup SQL's fresh sign-up is pending and reads nothing (every table of `inventory.json`, every bucket), its writes and the queue are refused in words, executives see it in the queue and the menu count, decline it, another executive undoes that, a second decision is refused, it reads and writes like a member afterwards, and it is deleted at the end |
 | 10 groups | join requests approved by a non-executive manager (member sees the workspace in the same session), waitlist, decline, removal, a removed member cannot rejoin an open group |
 | 20 calendar | event and announcement create, edit (`updated_at`), pin, delete, visibility, cross-executive edit |
 | 30 recordings | upload via Storage, draft, publish, notation file, delete in the app's order, non-uploader refused, legacy club-archive copy plays and is archive-only |

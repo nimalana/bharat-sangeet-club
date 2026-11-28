@@ -64,7 +64,7 @@ export default async function accounts(t, ctx) {
   });
 
   await t.test("the admin can read the member directory with the app's own query (profiles incl. role and status)", async () => {
-    const members = rowsOf(await c.admin.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").order("full_name").limit(2000), "admin member list");
+    const members = rowsOf(await c.admin.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").in("status", ["active", "deactivated"]).order("full_name").limit(2000), "admin member list");
     ok(members.length >= 11, `expected at least the 10 test accounts and the bootstrap admin, got ${members.length}`);
   });
 }

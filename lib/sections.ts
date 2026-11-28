@@ -9,24 +9,25 @@
 // Type-only import: lib modules that tests load directly import nothing at run time.
 import type { ClubRole } from "./db";
 export type { ClubRole };
-export type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "admin";
+export type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "signups" | "admin";
 
-export const SECTIONS: readonly Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "finances", "admin"];
+export const SECTIONS: readonly Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "finances", "signups", "admin"];
 
 export const SECTION_LABELS: Record<Section, string> = {
   home: "Overview", groups: "My Groups", calendar: "Calendar", members: "Members", attendance: "Attendance",
-  recordings: "Recordings", documents: "Resources", finances: "Finances", admin: "Admin",
+  recordings: "Recordings", documents: "Resources", finances: "Finances", signups: "Sign-up requests", admin: "Admin",
 };
 
 const ALL_ROLES: readonly ClubRole[] = ["member", "executive", "admin"];
 
 // Who may open each screen. Finances is open to every signed-in role: members
 // reach their own reimbursements, executives and admins the whole ledger; what
-// each sees is decided by the database policies, not by this table. Admin is
-// the one screen limited to a single role.
+// each sees is decided by the database policies, not by this table. Sign-up
+// requests (the queue of people waiting for approval) is for executives and
+// admins; Admin is the one screen limited to a single role.
 const ALLOWED_ROLES: Record<Section, readonly ClubRole[]> = {
   home: ALL_ROLES, groups: ALL_ROLES, calendar: ALL_ROLES, members: ALL_ROLES, attendance: ALL_ROLES,
-  recordings: ALL_ROLES, documents: ALL_ROLES, finances: ALL_ROLES, admin: ["admin"],
+  recordings: ALL_ROLES, documents: ALL_ROLES, finances: ALL_ROLES, signups: ["executive", "admin"], admin: ["admin"],
 };
 
 function isClubRole(value: unknown): value is ClubRole {
@@ -74,7 +75,7 @@ export type MenuGroup = { title: string; pages: Section[]; clubWide: boolean };
 // own (their requests are theirs, not club-wide); executives and admins get it
 // under "Manage club" with Admin.
 export function menuGroups(role: ClubRole | null | undefined): MenuGroup[] {
-  const manage: Section[] = ["finances", "admin"];
+  const manage: Section[] = ["finances", "signups", "admin"];
   const groups: MenuGroup[] = [
     { title: "CLUB", pages: ["home", "calendar", "members"], clubWide: true },
     { title: "LIBRARY", pages: ["recordings", "documents"], clubWide: false },

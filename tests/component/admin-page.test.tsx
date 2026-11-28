@@ -31,7 +31,7 @@ describe("what the page reads", () => {
   it("asks for the members, the announcements, the audit log and the memberships once each, with the limits it has always used", async () => {
     await openAdmin();
     expect(fake.from("profiles", "select").count).toBe(1);
-    expect(chainOf(fake.from("profiles", "select").calls[0])).toEqual([["select", "id,full_name,email,role,status,phone,class_year,specialty,joined_at"], ["order", "full_name"], ["limit", 2000]]);
+    expect(chainOf(fake.from("profiles", "select").calls[0])).toEqual([["select", "id,full_name,email,role,status,phone,class_year,specialty,joined_at"], ["in", "status", ["active", "deactivated"]], ["order", "full_name"], ["limit", 2000]]);
     expect(chainOf(fake.from("announcements", "select").calls.find((call) => call.used("limit", 50))!)).toEqual([["select", "*"], ["order", "is_pinned", { ascending: false }], ["order", "published_at", { ascending: false }], ["limit", 50]]);
     expect(chainOf(fake.from("admin_audit_log", "select").calls[0])).toEqual([["select", "id,action,actor_email,target_email,details,created_at"], ["order", "created_at", { ascending: false }], ["limit", 20]]);
     expect(chainOf(fake.from("subgroup_memberships", "select").calls.find((call) => call.used("limit", 5000))!)).toEqual([["select", "subgroup_id,member_id,status,membership_role"], ["limit", 5000]]);

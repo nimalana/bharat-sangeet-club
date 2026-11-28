@@ -23,10 +23,15 @@ writeFileSync(secretsPath, JSON.stringify(secrets, null, 2));
 try { chmodSync(secretsPath, 0o600); } catch { /* best effort */ }
 
 const q = (value) => `'${String(value).replace(/'/g, "''")}'`;
-const rows = Object.entries(ACCOUNTS).map(([key, a]) => `    (${q(key)}, ${q(a.email)}, ${q(a.name)}, ${q(secrets.passwords[key])}, ${q(a.profileRole)})`).join(",\n");
+const rows = Object.entries(ACCOUNTS).map(([key, a]) => `    (${q(key)}, ${q(a.email)}, ${q(a.name)}, ${q(secrets.passwords[key])}, ${q(a.profileRole)}, ${q(a.profileStatus || "active")})`).join(",\n");
 
-console.log(`-- Synthetic accounts for scripts/e2e. Safe to run again; existing accounts are left alone.
--- The signup trigger (private.handle_new_user) creates each profile.
+console.log(`-- Synthetic accounts for scripts/e2e. Safe to run again; existing accounts are left alone,
+-- except the applicant (a fresh sign-up the suite approves and deletes): it is made, or put back, pending.
+-- The signup trigger (private.handle_new_user) creates each profile. Since the membership gate
+-- (20261128010100) that trigger creates 'pending' profiles, so every account is made 'active' here
+-- (in the same update as its role: a pending profile can only be a plain member), and only the
+-- applicant is left pending. Before the gate migrations the applicant simply stays active and
+-- tests/03-membership-gate.mjs skips itself.
 do $e2e$
 declare
   r record;
@@ -34,9 +39,19 @@ declare
 begin
   for r in select * from (values
 ${rows}
-  ) as t(key, email, full_name, pw, profile_role)
+  ) as t(key, email, full_name, pw, profile_role, profile_status)
   loop
     if exists (select 1 from auth.users where email = r.email) then
+      -- The applicant is used up by a run (approved, then deleted): if a run stopped half way, put it back to
+      -- what a new sign-up is.
+      if r.profile_status = 'pending' then
+        begin
+          delete from public.signup_reviews where member_id = (select id from auth.users where email = r.email);
+          update public.profiles set status = 'pending', role = 'member' where email = r.email;
+        exception when check_violation or undefined_table then
+          raise notice '% stays as it is: the membership gate migrations are not applied on this project', r.email;
+        end;
+      end if;
       continue;
     end if;
     uid := gen_random_uuid();
@@ -57,8 +72,13 @@ ${rows}
       jsonb_build_object('sub', uid::text, 'email', r.email, 'email_verified', true, 'phone_verified', false),
       'email', now(), now(), now()
     );
-    if r.profile_role <> 'member' then
-      update public.profiles set role = r.profile_role::public.club_role where id = uid;
+    update public.profiles set role = r.profile_role::public.club_role, status = 'active' where id = uid;
+    if r.profile_status = 'pending' then
+      begin
+        update public.profiles set status = 'pending' where id = uid;
+      exception when check_violation then
+        raise notice '% stays active: the membership gate migrations are not applied on this project', r.email;
+      end;
     end if;
   end loop;
 end

@@ -2,7 +2,7 @@
 // the page used to send; a failure is an ApiError that keeps the database's words (the page's sentences are friendlyError's).
 import { describe, expect, it } from "vitest";
 import {
-  changeMemberRole, deactivateMember, deleteMember, listAdminAnnouncements, listAdminMembers, listAuditLog, publishAnnouncement, reactivateMember, updateMemberProfile,
+  changeMemberRole, deactivateMember, deleteMember, listAdminAnnouncements, listAdminMembers, listAuditLog, listPendingMembers, publishAnnouncement, reactivateMember, reviewPendingMember, updateMemberProfile,
 } from "../../lib/api/admin";
 import { ApiError } from "../../lib/errors";
 import { fail, fake, ok } from "../support/fake-supabase";
@@ -10,10 +10,10 @@ import { fail, fake, ok } from "../support/fake-supabase";
 const chainOf = (call: { chain: Array<{ method: string; args: unknown[] }> }) => call.chain.map((link) => [link.method, ...link.args]);
 
 describe("the Admin page reads", () => {
-  it("listAdminMembers: every member, deactivated ones too, by name, at most 2000", async () => {
+  it("listAdminMembers: every member, deactivated ones too but not sign-ups that are pending or declined, by name, at most 2000", async () => {
     fake.from("profiles", "select").reply(ok([{ id: "u-1" }]));
     expect(await listAdminMembers()).toEqual([{ id: "u-1" }]);
-    expect(chainOf(fake.calls[0])).toEqual([["select", "id,full_name,email,role,status,phone,class_year,specialty,joined_at"], ["order", "full_name"], ["limit", 2000]]);
+    expect(chainOf(fake.calls[0])).toEqual([["select", "id,full_name,email,role,status,phone,class_year,specialty,joined_at"], ["in", "status", ["active", "deactivated"]], ["order", "full_name"], ["limit", 2000]]);
   });
 
   it("listAdminAnnouncements: pinned first, then newest, at most 50", async () => {
@@ -61,6 +61,42 @@ describe("the administrator RPCs", () => {
     const error = await run().catch((caught) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ message: "Only administrators can change member roles", code: "P0001" });
+  });
+});
+
+describe("the sign-up queue", () => {
+  it("listPendingMembers calls list_pending_members with no arguments and returns the rows as they came", async () => {
+    const rows = [{ member_id: "u-9", full_name: "New Person", email: "new@x.test", status: "pending", requested_at: "2026-11-01T10:00:00Z", decided_at: null, decided_by_name: null, reason: "" }];
+    fake.rpc("list_pending_members").reply(ok(rows));
+    expect(await listPendingMembers()).toEqual(rows);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.rpc("list_pending_members").calls[0].payload).toEqual({});
+  });
+
+  it("listPendingMembers: an answer with no rows is an empty queue, a refusal is an ApiError that keeps the database's words", async () => {
+    fake.rpc("list_pending_members").reply(ok(null));
+    expect(await listPendingMembers()).toEqual([]);
+    fake.rpc("list_pending_members").reply(fail("Only club executives can see sign-up requests", "42501"));
+    const error = await listPendingMembers().catch((caught) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ message: "Only club executives can see sign-up requests", code: "42501" });
+  });
+
+  it.each([
+    ["approving", () => reviewPendingMember("u-9", true), { p_member_id: "u-9", p_approved: true, p_reason: "" }],
+    ["declining with a reason", () => reviewPendingMember("u-9", false, "Not a student"), { p_member_id: "u-9", p_approved: false, p_reason: "Not a student" }],
+  ] as const)("reviewPendingMember, %s, calls review_pending_member once with exactly these arguments", async (_what, run, args) => {
+    fake.rpc("review_pending_member").reply(ok(null));
+    await run();
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.rpc("review_pending_member").calls[0].payload).toEqual(args);
+  });
+
+  it("reviewPendingMember throws an ApiError that keeps the database's message and code", async () => {
+    fake.rpc("review_pending_member").reply(fail("This person is already an active member. Nothing was changed.", "P0001"));
+    const error = await reviewPendingMember("u-9", true).catch((caught) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ message: "This person is already an active member. Nothing was changed.", code: "P0001" });
   });
 });
 
