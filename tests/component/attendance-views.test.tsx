@@ -317,7 +317,7 @@ describe("the meetings list", () => {
     expect(second).toHaveTextContent("draft");
     expect(second).toHaveTextContent("Hindustani Vocal rehearsal");
     fireEvent.click(second);
-    expect(second).toHaveClass("active");
+    await waitFor(() => expect(second).toHaveClass("active"));
     expect(first).not.toHaveClass("active");
     expect(document.querySelector(".attendance-panel-heading .eyebrow")).toHaveTextContent("DRAFT");
     expect(screen.getByRole("heading", { name: "Vocal rehearsal" })).toBeInTheDocument();
@@ -330,10 +330,10 @@ describe("the meetings list", () => {
     expect(await screen.findByRole("button", { name: "Open check-in" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Meeting 2/ }));
-    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Close" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open check-in" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Meeting 3/ }));
-    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Open check-in" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Void meeting" })).toBeInTheDocument();
   });
@@ -346,6 +346,7 @@ describe("the meetings list", () => {
     fireEvent.change(within(dialog()).getByLabelText("Reason"), { target: { value: "Created twice" } });
     fireEvent.click(within(dialog()).getByRole("button", { name: "Keep meeting" }));
     fireEvent.click(screen.getByRole("button", { name: /Meeting 2/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Meeting 2/ })).toHaveClass("active"));
     fireEvent.click(screen.getByRole("button", { name: "Void meeting" }));
     expect(within(dialog()).getByLabelText("Reason")).toHaveValue("");
   });
@@ -649,7 +650,7 @@ describe("the new meeting form", () => {
     await act(async () => { slow.resolve(ok([{ id: 9 }])); });
     await waitFor(() => expect(screen.queryByRole("button", { name: /Creating…|Create meeting/ })).not.toBeInTheDocument());
     fireEvent.click(await screen.findByRole("button", { name: "＋ New meeting" }));
-    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close the new meeting form" }));
     expect(screen.queryByRole("button", { name: "Create meeting" })).not.toBeInTheDocument();
     expect(fake.rpc("create_attendance_session").count).toBe(1);
   });
@@ -677,8 +678,8 @@ describe("the absence form", () => {
   it("the × closes it; while it is sent the button says so and is off", async () => {
     const slow = deferred();
     fake.rpc("submit_attendance_excuse").reply(slow.reply);
-    const form = await open([session(1)]);
-    fireEvent.click(within(form).getByRole("button", { name: "×" }));
+    await open([session(1)]);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close the absence form" }));
     expect(screen.queryByRole("button", { name: "Submit form" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Submit absence form" }));
     const again = screen.getByRole("button", { name: "Submit form" }).closest("form")!;

@@ -5,9 +5,9 @@
 //
 // The table, function and bucket names stay literal here because the contract check (scripts/contract-check) reads them.
 import { ApiError, toApiError } from "../errors";
-import type { AttendanceStatus, EligibilityStatus, RemediationStatus, RpcArgs, RpcReturns } from "../db";
+import type { AttendanceStatus, EligibilityStatus, RemediationStatus, RpcArgs, RpcReturns, Tables } from "../db";
 import { supabase } from "../supabase";
-import { must, safeFileName } from "./_core";
+import { must, safeFileName, uploadWithProgress, type UploadProgress } from "./_core";
 
 // What the screen is showing: the audience (all, club-wide, or one subgroup) and the term (null: every term).
 export type AttendanceViewArgs = Pick<RpcArgs<"get_attendance_overview">, "p_scope" | "p_subgroup_id" | "p_term_key">;
@@ -35,6 +35,30 @@ export async function getAttendanceRoster(sessionId: number): Promise<RpcReturns
 export async function getAttendancePulse(view: AttendanceViewArgs): Promise<RpcReturns<"get_attendance_pulse">> {
   const client = db();
   return must(await client.rpc("get_attendance_pulse", view));
+}
+
+/** One member's marks on some meetings and their eligibility for a term, for an executive's summary of that member. */
+export type MemberAttendance = {
+  records: Array<Pick<Tables<"attendance_records">, "session_id" | "status" | "minutes_late" | "unexcused_units" | "marked_at">>;
+  /** null: no row, which means eligible. */
+  eligibility: Pick<Tables<"attendance_eligibility">, "term_key" | "status" | "reason"> | null;
+};
+
+/**
+ * The marks of ONE member on the meetings given (the overview sends an executive no marks, only totals for the flagged), and their
+ * eligibility row for `termKey` (null: no term to ask about). Two plain reads of tables an executive may select under row-level
+ * security (attendance_records, attendance_eligibility); the answer is the whole value or it throws, never half of it.
+ */
+export async function getMemberAttendance(memberId: string, sessionIds: number[], termKey: string | null): Promise<MemberAttendance> {
+  const client = db();
+  const readRecords = async (): Promise<MemberAttendance["records"]> => sessionIds.length
+    ? must(await client.from("attendance_records").select("session_id,status,minutes_late,unexcused_units,marked_at").eq("member_id", memberId).in("session_id", sessionIds)) ?? []
+    : [];
+  const readEligibility = async (): Promise<MemberAttendance["eligibility"]> => termKey
+    ? must(await client.from("attendance_eligibility").select("term_key,status,reason").eq("member_id", memberId).eq("term_key", termKey).maybeSingle())
+    : null;
+  const [records, eligibility] = await Promise.all([readRecords(), readEligibility()]);
+  return { records, eligibility };
 }
 
 // ---------------------------------------------------------------- check-in and meetings
@@ -110,12 +134,15 @@ export async function clearAttendanceStatus(sessionId: number, memberId: string)
 
 // ---------------------------------------------------------------- absence forms
 
-/** Uploads the proof image under the member's own folder and the meeting's; resolves to the stored path. */
-export async function uploadExcuseProof(userId: string, sessionId: number, file: File): Promise<string> {
+/**
+ * Uploads the proof image under the member's own folder and the meeting's; resolves to the stored path. `onProgress` hears how many
+ * bytes have gone (the same request storage-js sends, through XMLHttpRequest: see uploadWithProgress in _core.ts).
+ */
+export async function uploadExcuseProof(userId: string, sessionId: number, file: File, onProgress?: (progress: UploadProgress) => void): Promise<string> {
   const client = db();
   const path = `${userId}/${sessionId}/${crypto.randomUUID()}-${safeFileName(file)}`;
-  const upload = await client.storage.from("attendance-excuses").upload(path, file, { upsert: false });
-  if (upload.error) throw toApiError(upload.error);
+  const upload = await uploadWithProgress(client, "attendance-excuses", path, file, { upsert: false }, onProgress);
+  if (upload.error) throw upload.error;
   return path;
 }
 

@@ -20,7 +20,10 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
   const { notify } = useToast();
   const [showNewSession, setShowNewSession] = useState(false);
   const [checkInCode, setCheckInCode] = useState("");
-  const [liveCode, setLiveCode] = useState("");
+  // The code is kept with the meeting it opens: another meeting's card (another audience or term, reached by the pickers or by Back)
+  // never shows it.
+  const [live, setLive] = useState<{ sessionId: number; code: string } | null>(null);
+  const liveCodeFor = (sessionId: number) => live?.sessionId === sessionId ? live.code : "";
   const [feedback, setFeedback] = useState("");
 
   async function checkIn(event: FormEvent<HTMLFormElement>) {
@@ -30,7 +33,7 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
       const { error } = await attempt(() => checkInAttendance(checkInCode.replace(/\s/g, "").toUpperCase()));
       if (error) setFeedback(error.message);
       else { setFeedback("You are checked in. Your attendance is confirmed."); setCheckInCode(""); notify("Attendance confirmed"); load(); }
-    });
+    }, "check-in");
   }
 
   // Opens check-in for a meeting; returns whether it opened.
@@ -54,7 +57,7 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
       await load();
       return;
     }
-    setLiveCode(code);
+    setLive({ sessionId, code });
     setTab("meetings");
     // Opening adds every participant to the meeting. If it is on screen as a
     // draft its roster is empty and nothing else would refresh it.
@@ -82,26 +85,31 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
       setShowNewSession(false);
       notify("Meeting created");
       load();
-    });
+    }, "create");
   }
 
   async function openAttendance(sessionId: number) {
-    await exclusive(() => openCheckIn(sessionId, 60));
+    await exclusive(() => openCheckIn(sessionId, 60), `open:${sessionId}`);
   }
 
   async function rotateCode(sessionId: number) {
     await exclusive(async () => {
       const { data: rotated, error } = await attempt(() => rotateAttendanceCode(sessionId));
       if (error) notify(friendlyError(error, "The code could not be changed."), "error");
-      else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLiveCode(result?.check_in_code || /* `code` is never returned: see openCheckIn */ (result as { code?: string } | undefined)?.code || ""); notify("A new code is active"); load(); }
-    });
+      else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLive({ sessionId, code: result?.check_in_code || /* `code` is never returned: see openCheckIn */ (result as { code?: string } | undefined)?.code || "" }); notify("A new code is active"); load(); }
+    }, "rotate");
   }
 
-  // A new audience or term forgets the code and the message of the one before.
+  // Choosing another audience or term forgets the code and the message of the one before.
   function resetLive() {
-    setLiveCode("");
+    setLive(null);
     setFeedback("");
   }
 
-  return { showNewSession, setShowNewSession, checkInCode, setCheckInCode, liveCode, setLiveCode, feedback, checkIn, openAttendance, createSession, rotateCode, resetLive };
+  // Closing or canceling a meeting's check-in: its code is no longer one to share.
+  function clearLiveCode() {
+    setLive(null);
+  }
+
+  return { showNewSession, setShowNewSession, checkInCode, setCheckInCode, liveCodeFor, clearLiveCode, feedback, checkIn, openAttendance, createSession, rotateCode, resetLive };
 }

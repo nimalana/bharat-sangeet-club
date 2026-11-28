@@ -34,8 +34,22 @@ function renderAttendance(options: { role?: "member" | "executive"; tab?: "overv
 const overviewCalls = () => fake.rpc("get_attendance_overview").calls;
 const rosterCalls = () => fake.rpc("get_attendance_roster").calls;
 const pulseCalls = () => fake.rpc("get_attendance_pulse").calls;
-const chooseTerm = (value: string) => fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value } });
-const chooseAudience = (value: string) => fireEvent.change(screen.getByLabelText("Filter attendance by audience"), { target: { value } });
+// Choosing a view writes it to the address (Phase 3.2), and the screen follows the address a moment later: wait for the address, so the
+// next step acts on the new view and not on the old one that is about to be replaced.
+const inAddress = (key: string, value: string | null) => waitFor(() => expect(new URLSearchParams(window.location.search).get(key)).toBe(value));
+async function chooseTerm(value: string) {
+  fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value } });
+  await inAddress("term", value === "all" ? null : value);
+}
+/** Selecting a meeting writes ?session= and the screen follows the address a moment later: wait until the list shows it selected. */
+async function selectMeeting(name: RegExp) {
+  fireEvent.click(await screen.findByRole("button", { name }));
+  await waitFor(() => expect(screen.getByRole("button", { name })).toHaveAttribute("aria-current", "true"));
+}
+async function chooseAudience(value: string) {
+  fireEvent.change(screen.getByLabelText("Filter attendance by audience"), { target: { value } });
+  await inAddress("scope", value.startsWith("group:") ? `group-${value.slice(6)}` : value);
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // What is kept between visits and between views
@@ -53,7 +67,7 @@ describe("the last data of each audience and term", () => {
     renderAttendance({ tab: "meetings" });
     await screen.findByRole("button", { name: /Meeting of all/ });
     await waitFor(() => expect(readCache<{ sessions: Array<{ title: string }> }>("u-me", "attendance2:all:all")?.sessions[0].title).toBe("Meeting of all"));
-    chooseTerm("2026-spring");
+    await chooseTerm("2026-spring");
     // A new term brings the Overview tab back; the meetings are one tab away.
     fireEvent.click(await screen.findByRole("tab", { name: "Meetings" }));
     await screen.findByRole("button", { name: /Meeting of 2026-spring/ });
@@ -93,7 +107,7 @@ describe("the last data of each audience and term", () => {
     fake.rpc("get_attendance_overview").replyOnce(byTerm).reply(deferred().reply);
     renderAttendance({ tab: "meetings" });
     await screen.findByRole("button", { name: /Meeting of all/ });
-    chooseTerm("2026-spring");
+    await chooseTerm("2026-spring");
     expect(await screen.findByText("Loading attendance…")).toBeInTheDocument();
     expect(screen.queryByText(/Meeting of all/)).not.toBeInTheDocument();
   });
@@ -102,16 +116,17 @@ describe("the last data of each audience and term", () => {
     fake.rpc("get_attendance_overview").reply(byTerm);
     const first = renderAttendance({ tab: "meetings" });
     await screen.findByRole("button", { name: /Meeting of all/ });
-    chooseTerm("2026-spring");
+    await chooseTerm("2026-spring");
     fireEvent.click(await screen.findByRole("tab", { name: "Meetings" }));
     await screen.findByRole("button", { name: /Meeting of 2026-spring/ });
     await waitFor(() => expect(readCache("u-me", "attendance2:all:2026-spring")).toBeTruthy());
     first.unmount();
+    window.history.replaceState({}, "", "/");   // leaving the page and coming back: the shell's address has no term in it
     // Second visit: the first view is up at once; the spring term is in the cache but not in this visit.
     fake.rpc("get_attendance_overview").reply(deferred().reply);
     renderAttendance({ tab: "meetings" });
     await screen.findByRole("button", { name: /Meeting of all/ });
-    chooseTerm("2026-spring");
+    await chooseTerm("2026-spring");
     expect(screen.queryByText("Loading attendance…")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Meetings" }));
     expect(screen.getByRole("button", { name: /Meeting of 2026-spring/ })).toBeInTheDocument();
@@ -124,7 +139,7 @@ describe("the meeting that is selected", () => {
     fake.rpc("get_attendance_roster").reply((call: Call) => ok(roster(rosterFor(call))));
     fake.rpc("set_attendance_status").reply(ok(null));
     renderAttendance({ tab: "meetings" });
-    fireEvent.click(await screen.findByRole("button", { name: /Meeting 2/ }));
+    await selectMeeting(/Meeting 2/);
     fireEvent.change(await screen.findByLabelText("Attendance status for Dev Nair"), { target: { value: "present" } });
     fireEvent.submit(within(screen.getByRole("dialog")).getByRole("button", { name: "Save mark" }).closest("form")!);
     await waitFor(() => expect(overviewCalls()).toHaveLength(2));
@@ -140,7 +155,7 @@ describe("the meeting that is selected", () => {
     fake.rpc("get_attendance_roster").reply((call: Call) => ok(roster(rosterFor(call))));
     fake.rpc("set_attendance_status").reply(ok(null));
     renderAttendance({ tab: "meetings" });
-    fireEvent.click(await screen.findByRole("button", { name: /Meeting 2/ }));
+    await selectMeeting(/Meeting 2/);
     fireEvent.change(await screen.findByLabelText("Attendance status for Dev Nair"), { target: { value: "present" } });
     fireEvent.submit(within(screen.getByRole("dialog")).getByRole("button", { name: "Save mark" }).closest("form")!);
     await waitFor(() => expect(screen.queryByRole("button", { name: /Meeting 2/ })).not.toBeInTheDocument());
@@ -188,7 +203,7 @@ describe("when the roster is read", () => {
     fake.rpc("get_attendance_overview").reply(ok(overview({ sessions: [session(1), session(2)] })));
     fake.rpc("get_attendance_roster").replyOnce(slow.reply).reply((call: Call) => ok(roster(rosterFor(call), "Second Member")));
     renderAttendance({ tab: "meetings" });
-    fireEvent.click(await screen.findByRole("button", { name: /Meeting 2/ }));
+    await selectMeeting(/Meeting 2/);
     expect(await screen.findByText("Second Member", { selector: "b" })).toBeInTheDocument();
     await act(async () => { slow.resolve(ok(roster(1, "First Member"))); });
     expect(screen.getByText("Second Member", { selector: "b" })).toBeInTheDocument();
@@ -293,7 +308,8 @@ describe("the poll, in the parts the other tests leave open", () => {
     await advance(20_000);
     expect(refreshFailures()).toBe(1);
     // A good read of another term, then the next poll fails again: the person hears of it again.
-    chooseTerm("2026-spring");
+    fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value: "2026-spring" } });   // (a frozen clock: no waitFor)
+    await advance(1);
     await advance(1);
     await advance(11_000);
     expect(refreshFailures()).toBe(2);
@@ -311,11 +327,11 @@ describe("the page around the parts", () => {
     renderAttendance({ tab: "meetings" });
     await screen.findByRole("button", { name: /Meeting 1/ });
     expect(screen.getByRole("tab", { name: "Meetings" })).toHaveAttribute("aria-selected", "true");
-    chooseAudience("club");
+    await chooseAudience("club");
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
     fireEvent.click(screen.getByRole("tab", { name: "Meetings" }));
     await screen.findByRole("button", { name: /Meeting 1/ });
-    chooseTerm("2026-spring");
+    await chooseTerm("2026-spring");
     await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true"));
   });
 

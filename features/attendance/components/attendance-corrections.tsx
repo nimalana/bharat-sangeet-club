@@ -11,6 +11,7 @@ import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import { useToast } from "../../../components/ui/toast";
+import { useExclusive } from "../hooks/use-exclusive";
 
 type CorrectableSession = { id: number; title: string; starts_at: string; status: "draft" | "open" | "closed" | "canceled"; cancel_reason?: string | null };
 type Done = () => void | Promise<void>;
@@ -20,13 +21,19 @@ type Done = () => void | Promise<void>;
 export function SessionCorrections({ session, onChanged }: { session: CorrectableSession; onChanged: Done }) {
   const { notify } = useToast();
   const [dialog, setDialog] = useState<"edit" | "delete" | "void" | null>(null);
-  const [busy, setBusy] = useState(false);
+  // One request at a time: a second press while one runs is dropped (and every button of the dialog shows it).
+  const { saving: busy, exclusive } = useExclusive();
   const [reason, setReason] = useState("");
 
-  async function finish(error: { message?: string; code?: string } | null, message: string) {
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
-    setDialog(null); setReason(""); notify(message, "success"); await onChanged();
+  // Runs the request behind a dialog. A failure keeps the dialog open with what was typed; a success closes it, says so and reads again.
+  async function change(call: () => Promise<unknown>, success: string) {
+    let changed = false;
+    await exclusive(async () => {
+      const { error } = await attempt(call);
+      if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
+      setDialog(null); setReason(""); notify(success, "success"); changed = true;
+    });
+    if (changed) await onChanged();
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
@@ -34,20 +41,14 @@ export function SessionCorrections({ session, onChanged }: { session: Correctabl
     const form = new FormData(event.currentTarget);
     const startsAt = new Date(String(form.get("starts_at") || ""));
     if (Number.isNaN(startsAt.getTime())) { notify("Choose when the meeting starts."); return; }
-    setBusy(true);
-    const { error } = await attempt(() => updateAttendanceSession({ sessionId: session.id, title: String(form.get("title") || "").trim(), startsAt: startsAt.toISOString() }));
-    await finish(error, "Meeting updated");
+    await change(() => updateAttendanceSession({ sessionId: session.id, title: String(form.get("title") || "").trim(), startsAt: startsAt.toISOString() }), "Meeting updated");
   }
   async function remove() {
-    setBusy(true);
-    const { error } = await attempt(() => deleteAttendanceSession(session.id));
-    await finish(error, "Meeting deleted");
+    await change(() => deleteAttendanceSession(session.id), "Meeting deleted");
   }
   async function voidSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
-    const { error } = await attempt(() => voidAttendanceSession(session.id, reason.trim()));
-    await finish(error, "Meeting voided. It no longer counts toward attendance.");
+    await change(() => voidAttendanceSession(session.id, reason.trim()), "Meeting voided. It no longer counts toward attendance.");
   }
 
   if (session.status === "canceled") return session.cancel_reason ? <p className="m-0 text-sm text-[#4c5f6b]">Voided: {session.cancel_reason}</p> : null;
@@ -57,14 +58,14 @@ export function SessionCorrections({ session, onChanged }: { session: Correctabl
     {session.status === "draft" && <><Button type="button" variant="secondary" size="sm" onClick={() => setDialog("edit")}>Edit</Button><Button type="button" variant="danger" size="sm" onClick={() => setDialog("delete")}>Delete</Button></>}
     {session.status === "closed" && <Button type="button" variant="secondary" size="sm" onClick={() => setDialog("void")}>Void meeting</Button>}
 
-    <Dialog open={dialog === "edit"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[480px]">
-      <h2 className="m-0 text-2xl">Edit meeting</h2>
+    <Dialog open={dialog === "edit"} onClose={() => setDialog(null)} dismissible={!busy} closeOnBackdrop={false} labelledBy="session-edit-heading" className="max-w-[480px]">
+      <h2 id="session-edit-heading" className="m-0 text-2xl">Edit meeting</h2>
       <form className="mt-4 grid gap-3" onSubmit={saveEdit}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="session-edit-title">Title<Input id="session-edit-title" name="title" defaultValue={session.title} required maxLength={160} /></label>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="session-edit-start">Starts<Input id="session-edit-start" name="starts_at" type="datetime-local" defaultValue={toLocalInputValue(session.starts_at)} required /></label>
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button>
-          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
+          <Button type="submit" pending={busy}>{busy ? "Saving…" : "Save changes"}</Button>
         </div>
       </form>
     </Dialog>
@@ -73,14 +74,14 @@ export function SessionCorrections({ session, onChanged }: { session: Correctabl
       &ldquo;{session.title}&rdquo; has not opened for check-in, so nothing else is affected.
     </ConfirmDialog>
 
-    <Dialog open={dialog === "void"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[500px]">
-      <h2 className="m-0 text-2xl">Void this meeting?</h2>
-      <p className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">Use this when a meeting was recorded by mistake. It stops counting toward everyone&apos;s attendance, its open remediation items are waived and waiting absence forms are closed. The marks stay on file. This cannot be reversed.</p>
+    <Dialog open={dialog === "void"} onClose={() => setDialog(null)} dismissible={!busy} closeOnBackdrop={false} labelledBy="session-void-heading" describedBy="session-void-text" className="max-w-[500px]">
+      <h2 id="session-void-heading" className="m-0 text-2xl">Void this meeting?</h2>
+      <p id="session-void-text" className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">Use this when a meeting was recorded by mistake. It stops counting toward everyone&apos;s attendance, its open remediation items are waived and waiting absence forms are closed. The marks stay on file. This cannot be reversed.</p>
       <form className="mt-3 grid gap-3" onSubmit={voidSession}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="session-void-reason">Reason<Textarea id="session-void-reason" rows={3} maxLength={500} required minLength={3} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Created twice, wrong date…" /></label>
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Keep meeting</Button>
-          <Button type="submit" variant="danger" disabled={busy || reason.trim().length < 3}>{busy ? "Working…" : "Void meeting"}</Button>
+          <Button type="submit" variant="danger" pending={busy} disabled={reason.trim().length < 3}>{busy ? "Working…" : "Void meeting"}</Button>
         </div>
       </form>
     </Dialog>
@@ -91,13 +92,15 @@ export function SessionCorrections({ session, onChanged }: { session: Correctabl
 export function ClearMarkButton({ sessionId, memberId, memberName, onChanged }: { sessionId: number; memberId: string; memberName: string; onChanged: Done }) {
   const { notify } = useToast();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { saving: busy, exclusive } = useExclusive();
   async function clear() {
-    setBusy(true);
-    const { error } = await attempt(() => clearAttendanceStatus(sessionId, memberId));
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "The mark could not be cleared."), "error"); return; }
-    setOpen(false); notify("Mark cleared"); await onChanged();
+    let changed = false;
+    await exclusive(async () => {
+      const { error } = await attempt(() => clearAttendanceStatus(sessionId, memberId));
+      if (error) { notify(friendlyError(error, "The mark could not be cleared."), "error"); return; }
+      setOpen(false); notify("Mark cleared"); changed = true;
+    });
+    if (changed) await onChanged();
   }
   return <>
     <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label={`Clear attendance mark for ${memberName}`}>Clear</Button>
@@ -110,30 +113,32 @@ export function ClearMarkButton({ sessionId, memberId, memberName, onChanged }: 
 export function ThresholdSettings({ warning, critical, onChanged }: { warning: number; critical: number; onChanged: Done }) {
   const { notify } = useToast();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { saving: busy, exclusive } = useExclusive();
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const nextWarning = Number(form.get("warning"));
     const nextCritical = Number(form.get("critical"));
     if (!Number.isInteger(nextWarning) || !Number.isInteger(nextCritical) || nextWarning < 1 || nextCritical <= nextWarning) { notify("The review level must be higher than the warning level."); return; }
-    setBusy(true);
-    const { error } = await attempt(() => setAttendanceThresholds(nextWarning, nextCritical));
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "Thresholds could not be saved."), "error"); return; }
-    setOpen(false); notify("Attendance thresholds updated"); await onChanged();
+    let changed = false;
+    await exclusive(async () => {
+      const { error } = await attempt(() => setAttendanceThresholds(nextWarning, nextCritical));
+      if (error) { notify(friendlyError(error, "Thresholds could not be saved."), "error"); return; }
+      setOpen(false); notify("Attendance thresholds updated"); changed = true;
+    });
+    if (changed) await onChanged();
   }
   return <>
     <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>Change thresholds</Button>
-    <Dialog open={open} onClose={busy ? () => {} : () => setOpen(false)} className="max-w-[460px]">
-      <h2 className="m-0 text-2xl">Attendance thresholds</h2>
-      <p className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">Unexcused units in a term before a member is flagged.</p>
+    <Dialog open={open} onClose={() => setOpen(false)} dismissible={!busy} closeOnBackdrop={false} labelledBy="threshold-heading" describedBy="threshold-text" className="max-w-[460px]">
+      <h2 id="threshold-heading" className="m-0 text-2xl">Attendance thresholds</h2>
+      <p id="threshold-text" className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">Unexcused units in a term before a member is flagged.</p>
       <form className="mt-3 grid gap-3" onSubmit={save}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="threshold-warning">Warning at<Input id="threshold-warning" name="warning" type="number" min={1} max={49} step={1} defaultValue={warning} required /></label>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="threshold-critical">Review at<Input id="threshold-critical" name="critical" type="number" min={2} max={50} step={1} defaultValue={critical} required /></label>
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
-          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save thresholds"}</Button>
+          <Button type="submit" pending={busy}>{busy ? "Saving…" : "Save thresholds"}</Button>
         </div>
       </form>
     </Dialog>
@@ -143,13 +148,15 @@ export function ThresholdSettings({ warning, critical, onChanged }: { warning: n
 export function WithdrawExcuseButton({ excuseId, onChanged }: { excuseId: number; onChanged: Done }) {
   const { notify } = useToast();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { saving: busy, exclusive } = useExclusive();
   async function withdraw() {
-    setBusy(true);
-    const { error } = await attempt(() => withdrawAttendanceExcuse(excuseId));
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "The form could not be withdrawn."), "error"); return; }
-    setOpen(false); notify("Absence form withdrawn"); await onChanged();
+    let changed = false;
+    await exclusive(async () => {
+      const { error } = await attempt(() => withdrawAttendanceExcuse(excuseId));
+      if (error) { notify(friendlyError(error, "The form could not be withdrawn."), "error"); return; }
+      setOpen(false); notify("Absence form withdrawn"); changed = true;
+    });
+    if (changed) await onChanged();
   }
   return <>
     <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>Withdraw</Button>

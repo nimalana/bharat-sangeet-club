@@ -8,6 +8,7 @@ import {
   createFailureGate,
   createSequencer,
   flaggedSummaries,
+  historyRows,
   nextListLimit,
   normalizeOverview,
   openSessionIds,
@@ -16,6 +17,7 @@ import {
   pulseNeedsReload,
   queueNote,
   rosterIsStale,
+  summarizeMarks,
   termChoices,
   termLabel,
 } from "../features/attendance/model.ts";
@@ -281,4 +283,46 @@ test("Show more climbs 100, 250, 500, 1000 and then stops", () => {
   // Every note with a larger cap available leaves room to ask for it; at the top it does not.
   assert.equal(queueNote(500, 800, "open items", 500).includes("Narrow"), false);
   assert.equal(queueNote(1000, 1400, "open items", 1000).includes("Narrow"), true);
+});
+
+// ---- one person's marks (the member's own page and an executive's summary of a member)
+
+const meeting = (id, over = {}) => ({ id, status: "closed", counts_toward_metrics: true, title: `Meeting ${id}`, starts_at: "2026-10-01T23:00:00Z", ...over });
+const mark = (session_id, status, minutes_late = 0) => ({ session_id, status, minutes_late });
+
+test("marks: four counts over every mark in view, the rate over closed meetings that count", () => {
+  const sessions = [meeting(1), meeting(2), meeting(3), meeting(4, { status: "open" }), meeting(5, { counts_toward_metrics: false }), meeting(6, { status: "draft" })];
+  const records = [mark(1, "present"), mark(2, "tardy", 9), mark(3, "absent"), mark(4, "present"), mark(5, "absent"), mark(1, "excused")];
+  const totals = summarizeMarks(sessions, records);
+  // The counts see the marks on the open and the non-counting meetings too (what a member has always seen of their own) ...
+  assert.deepEqual({ present: totals.present, tardy: totals.tardy, excused: totals.excused, absent: totals.absent }, { present: 2, tardy: 1, excused: 1, absent: 2 });
+  // ... the rate does not: present, tardy and absent of meetings 1 to 3 only: 2 of 3.
+  assert.equal(totals.rate, 67);
+});
+
+test("marks: an excused absence is left out of the rate, and no counted mark gives no rate (not 100%)", () => {
+  const sessions = [meeting(1), meeting(2)];
+  assert.equal(summarizeMarks(sessions, [mark(1, "present"), mark(2, "excused")]).rate, 100);
+  assert.equal(summarizeMarks(sessions, [mark(1, "excused"), mark(2, "excused")]).rate, null);
+  assert.equal(summarizeMarks(sessions, []).rate, null);
+  assert.equal(summarizeMarks([meeting(1, { status: "open" })], [mark(1, "present")]).rate, null, "an open meeting is not counted yet");
+});
+
+test("marks: the rate is the one the flagged list gives for the same marks", () => {
+  for (let seed = 1; seed <= 40; seed += 1) {
+    const sessions = Array.from({ length: 12 }, (_, i) => meeting(i + 1));
+    const statuses = ["present", "tardy", "absent", "excused"];
+    const records = sessions.map((session, i) => mark(session.id, statuses[(seed * 7 + i * 3 + (i % 5)) % 4]));
+    const count = (status) => records.filter((record) => record.status === status).length;
+    const [row] = flaggedSummaries([{ member_id: "a", present: count("present"), absent: count("absent"), excused: count("excused"), tardy: count("tardy"), club_units: 9, subgroup_units: 0, eligibility: null }], [profile("a", "A")], thresholds);
+    assert.ok(row, `seed ${seed}: listed`);
+    assert.ok(records.some((record) => record.status !== "excused"), `seed ${seed}: something is counted`);
+    assert.equal(summarizeMarks(sessions, records).rate, row.rate, `seed ${seed}`);
+  }
+});
+
+test("history: drafts are left out, a mark wins over the meeting's status, a tardy mark says how late", () => {
+  const sessions = [meeting(1), meeting(2, { status: "open" }), meeting(3, { status: "draft" }), meeting(4, { status: "canceled" }), meeting(5)];
+  const rows = historyRows(sessions, [mark(1, "present"), mark(5, "tardy", 12)]);
+  assert.deepEqual(rows.map((row) => [row.session.id, row.status, row.minutesLate]), [[1, "present", null], [2, "open", null], [4, "canceled", null], [5, "tardy", 12]]);
 });

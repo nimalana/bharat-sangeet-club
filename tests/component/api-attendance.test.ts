@@ -4,11 +4,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   cancelAttendanceSession, checkInAttendance, clearAttendanceStatus, closeAttendanceSession, createAttendanceSession, createExcuseProofUrl, deleteAttendanceSession, getAttendanceOverview,
-  getAttendancePulse, getAttendanceRoster, openAttendanceSession, removeExcuseProof, reviewAttendanceExcuse, rotateAttendanceCode, setAttendanceEligibility, setAttendanceRemediation,
+  getAttendancePulse, getAttendanceRoster, getMemberAttendance, openAttendanceSession, removeExcuseProof, reviewAttendanceExcuse, rotateAttendanceCode, setAttendanceEligibility, setAttendanceRemediation,
   setAttendanceStatus, setAttendanceThresholds, submitAttendanceExcuse, updateAttendanceSession, uploadExcuseProof, voidAttendanceSession, withdrawAttendanceExcuse,
 } from "../../lib/api/attendance";
 import { ApiError } from "../../lib/errors";
 import { fail, fake, ok, rejects } from "../support/fake-supabase";
+import { FAKE_SUPABASE_KEY, FAKE_SUPABASE_URL, installFakeXhr } from "../support/fake-xhr";
 
 const rpcCall = (name: string) => {
   const calls = fake.rpc(name).calls;
@@ -121,27 +122,60 @@ describe("what the writes answer", () => {
 describe("the proof image of an absence form", () => {
   const png = () => new File(["x"], "my proof (1).png", { type: "image/png" });
 
+  // The upload goes through XMLHttpRequest (uploadWithProgress, so a screen can show a bar): the test plays the storage server.
+  async function upload(answer: { status: number; body: unknown } | "network") {
+    const xhr = installFakeXhr();
+    const done = uploadExcuseProof("u-me", 3, png());
+    const request = await xhr.waitForRequest();
+    if (answer === "network") request.networkError(); else request.respond(answer.status, answer.body);
+    return { done, request };
+  }
+
   it("is stored under the member's folder and the meeting's, in the attendance-excuses bucket, never replacing a file", async () => {
-    const path = await uploadExcuseProof("u-me", 3, png());
+    const { done, request } = await upload({ status: 200, body: { Id: "obj-1", Key: "attendance-excuses/x" } });
+    const path = await done;
     expect(path).toMatch(/^u-me\/3\/[0-9a-f-]{36}-my-proof--1-\.png$/);
-    const uploads = fake.storage("attendance-excuses", "upload").calls;
-    expect(uploads).toHaveLength(1);
-    expect(uploads[0].args[0]).toBe(path);
-    expect(uploads[0].args[1]).toBeInstanceOf(File);
-    expect(uploads[0].args[2]).toEqual({ upsert: false });
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe(`${FAKE_SUPABASE_URL}/storage/v1/object/attendance-excuses/${path}`);
+    expect(request.headers["x-upsert"]).toBe("false");
+    expect(request.headers.apikey).toBe(FAKE_SUPABASE_KEY);
+    const parts = [...(request.body as FormData).entries()];
+    expect(parts.map(([name]) => name)).toEqual(["cacheControl", ""]);
+    expect(parts[1][1]).toBeInstanceOf(File);
+    // It no longer goes through client.storage.from(...).upload(): that has no progress to report.
+    expect(fake.storage("attendance-excuses", "upload").count).toBe(0);
+  });
+
+  it("reports how many bytes have gone, for the bar of the form", async () => {
+    const xhr = installFakeXhr();
+    const heard: Array<{ loaded: number; total: number }> = [];
+    const done = uploadExcuseProof("u-me", 3, png(), (progress) => heard.push(progress));
+    const request = await xhr.waitForRequest();
+    request.progress(40, 100);
+    request.progress(100, 100);
+    request.respond(200, { Id: "obj-1", Key: "attendance-excuses/x" });
+    await done;
+    expect(heard).toEqual([{ loaded: 40, total: 100 }, { loaded: 100, total: 100 }]);
   });
 
   it("every upload gets a path of its own", async () => {
-    const first = await uploadExcuseProof("u-me", 3, png());
-    const second = await uploadExcuseProof("u-me", 3, png());
+    const first = await (await upload({ status: 200, body: { Id: "1", Key: "k" } })).done;
+    const second = await (await upload({ status: 200, body: { Id: "2", Key: "k" } })).done;
     expect(first).not.toBe(second);
   });
 
-  it("a refused upload throws an ApiError with storage's message", async () => {
-    fake.storage("attendance-excuses", "upload").reply(fail("The object exceeded the maximum allowed size"));
-    const error = await caught(uploadExcuseProof("u-me", 3, png()));
+  it("a refused upload throws an ApiError with storage's message and status", async () => {
+    const { done } = await upload({ status: 413, body: { message: "The object exceeded the maximum allowed size" } });
+    const error = await caught(done);
     expect(error).toBeInstanceOf(ApiError);
-    expect(error).toMatchObject({ message: "The object exceeded the maximum allowed size" });
+    expect(error).toMatchObject({ message: "The object exceeded the maximum allowed size", status: 413 });
+  });
+
+  it("a dropped connection throws an ApiError that friendlyError words as a dropped connection", async () => {
+    const { done } = await upload("network");
+    const error = await caught(done);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ message: "Failed to fetch" });
   });
 
   it("is removed again by path, and the answer is not read (a refused delete stays quiet, as before)", async () => {
@@ -162,6 +196,45 @@ describe("the proof image of an absence form", () => {
     expect(await createExcuseProofUrl("a")).toBeNull();
     fake.storage("attendance-excuses", "createSignedUrl").replyOnce(fail("Object not found"));
     expect(await caught(createExcuseProofUrl("a"))).toBeInstanceOf(ApiError);
+  });
+});
+
+describe("one member's marks (an executive's summary of a member)", () => {
+  const MARKS = [{ session_id: 1, status: "present", minutes_late: 0, unexcused_units: 0, marked_at: "2026-10-01T23:05:00Z" }, { session_id: 2, status: "tardy", minutes_late: 9, unexcused_units: 0.5, marked_at: "2026-10-08T23:09:00Z" }];
+
+  it("reads that member's marks on those meetings and their eligibility row for the term, and returns both", async () => {
+    fake.from("attendance_records", "select").reply(ok(MARKS));
+    fake.from("attendance_eligibility", "select").reply(ok({ term_key: "2026-fall", status: "under_review", reason: "Two unexcused" }));
+    expect(await getMemberAttendance("u-dev", [1, 2], "2026-fall")).toEqual({ records: MARKS, eligibility: { term_key: "2026-fall", status: "under_review", reason: "Two unexcused" } });
+    const records = fake.from("attendance_records", "select").calls[0];
+    expect(records.uses("select")).toEqual([["session_id,status,minutes_late,unexcused_units,marked_at"]]);
+    expect(records.uses("eq")).toEqual([["member_id", "u-dev"]]);
+    expect(records.uses("in")).toEqual([["session_id", [1, 2]]]);
+    const eligibility = fake.from("attendance_eligibility", "select").calls[0];
+    expect(eligibility.uses("select")).toEqual([["term_key,status,reason"]]);
+    expect(eligibility.uses("eq")).toEqual([["member_id", "u-dev"], ["term_key", "2026-fall"]]);
+    expect(eligibility.used("maybeSingle")).toBe(true);
+  });
+
+  it("a member with no eligibility row is null (eligible), and no meetings or no term means no read of that table", async () => {
+    fake.from("attendance_records", "select").reply(ok(MARKS));
+    fake.from("attendance_eligibility", "select").reply(ok(null));
+    expect(await getMemberAttendance("u-dev", [1, 2], "2026-fall")).toMatchObject({ eligibility: null });
+    fake.reset();
+    expect(await getMemberAttendance("u-dev", [], null)).toEqual({ records: [], eligibility: null });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("an error from either read is thrown as an ApiError that keeps the database's message, never half an answer", async () => {
+    fake.from("attendance_records", "select").reply(fail("permission denied for table attendance_records", "42501"));
+    fake.from("attendance_eligibility", "select").reply(ok(null));
+    const error = await caught(getMemberAttendance("u-dev", [1], "2026-fall"));
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ message: "permission denied for table attendance_records", code: "42501" });
+    fake.reset();
+    fake.from("attendance_records", "select").reply(ok(MARKS));
+    fake.from("attendance_eligibility", "select").reply(fail("boom"));
+    expect(await caught(getMemberAttendance("u-dev", [1], "2026-fall"))).toMatchObject({ message: "boom" });
   });
 });
 

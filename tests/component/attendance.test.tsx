@@ -28,6 +28,7 @@ import { AttendancePage } from "../../features/attendance/components/attendance-
 import { setCacheOwner } from "../../lib/cache";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, rejects, type Call } from "../support/fake-supabase";
+import { installFakeXhr } from "../support/fake-xhr";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Data
@@ -474,10 +475,13 @@ describe("the panels say which view they list", () => {
     renderAttendance({ tab: "excuses" });
     expect(await screen.findByText("3 awaiting review · All activity · All terms")).toBeInTheDocument();
     // Choosing another audience or term brings the person back to the Overview tab.
+    // (The pickers write the address and the screen follows it: wait for the read of the new view before acting on it.)
     fireEvent.change(screen.getByLabelText("Filter attendance by audience"), { target: { value: "group:7" } });
+    await waitFor(() => expect(overviewCalls().at(-1)?.payload).toMatchObject({ p_scope: "subgroup", p_subgroup_id: 7 }));
     fireEvent.click(await screen.findByRole("tab", { name: /Absence forms/ }));
     expect(await screen.findByText("3 awaiting review · Hindustani Vocal · All terms")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value: "2026-spring" } });
+    await waitFor(() => expect(overviewCalls().at(-1)?.payload).toMatchObject({ p_term_key: "2026-spring" }));
     fireEvent.click(await screen.findByRole("tab", { name: /Absence forms/ }));
     expect(await screen.findByText("3 awaiting review · Hindustani Vocal · Spring 2026")).toBeInTheDocument();
   });
@@ -564,17 +568,24 @@ describe("what the screen shows when it cannot load", () => {
     expect(await screen.findByRole("heading", { name: "Attendance" })).toBeInTheDocument();
   });
 
-  it("while the first read is on the way, the screen shows the loading line and nothing else", async () => {
+  // Phase 3.1: the first read shows skeleton rows (announced as "Loading attendance…") under the title and the pickers, which stay on
+  // screen, instead of one line of text in place of the whole page. The old test pinned that line (a DIV.inline-loading) and the absence
+  // of the title.
+  it("while the first read is on the way, the screen shows the title and pickers, skeleton rows, and none of the content", async () => {
     const slow = deferred();
     fake.rpc("get_attendance_overview").reply(slow.reply);
     renderAttendance();
-    const line = await screen.findByText("Loading attendance…");
-    expect(line.tagName).toBe("DIV");
-    expect(line.className).toBe("inline-loading");
-    expect(screen.queryByRole("heading", { name: "Attendance" })).not.toBeInTheDocument();
+    const status = await screen.findByText("Loading attendance…");
+    expect(status).toHaveAttribute("role", "status");
+    expect(document.querySelectorAll(".skeleton-row").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Attendance" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter attendance by term")).toBeEnabled();
+    expect(screen.queryByLabelText("Attendance code")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "＋ New meeting" })).not.toBeInTheDocument();
     await act(async () => { slow.resolve(ok({ ...BASE, sessions: [] })); });
-    expect(await screen.findByRole("heading", { name: "Attendance" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Attendance code")).toBeInTheDocument();
     expect(screen.queryByText("Loading attendance…")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".skeleton-row")).toHaveLength(0);
   });
 
   it("the failed first read is one line in the loading style: the sentence, then Try again", async () => {
@@ -591,8 +602,9 @@ describe("what the screen shows when it cannot load", () => {
     const slow = deferred();
     fake.rpc("get_attendance_roster").replyOnce(slow.reply).replyOnce(fail("boom")).reply(ok(roster(3, "r1")));
     renderAttendance({ tab: "meetings" });
+    // Phase 3.1: skeleton rows announced as "Loading roster…" (the old test pinned a DIV.inline-loading line).
     const loading = await screen.findByText("Loading roster…");
-    expect(loading.className).toBe("inline-loading");
+    expect(loading).toHaveAttribute("role", "status");
     await act(async () => { slow.resolve(fail("boom")); });
     const block = (await screen.findByText(/The roster could not be loaded\./)).closest("div")!;
     expect(block.className).toBe("attendance-empty");
@@ -676,7 +688,13 @@ describe("the absence form: the proof image, and what happens to it when the for
     return file;
   };
 
+  // The proof goes up through XMLHttpRequest (uploadWithProgress, so the form can show its progress): the test is the server.
+  let xhr: ReturnType<typeof installFakeXhr>;   // installed by fillExcuse: the setup removes the fake after every test
+  const stored = (request: { url: string }) => decodeURIComponent(request.url.split("/object/attendance-excuses/")[1]);
+  const accept = (request: { url: string; respond: (status: number, body: unknown) => void }) => request.respond(200, { Id: "obj-1", Key: `attendance-excuses/${stored(request)}` });
+
   async function fillExcuse(file?: File) {
+    xhr = installFakeXhr();
     scriptOverview({ sessions: [session(1)] });
     const rendered = renderAttendance({ role: "member" });
     fireEvent.click(await screen.findByRole("button", { name: "Submit absence form" }));
@@ -691,10 +709,15 @@ describe("the absence form: the proof image, and what happens to it when the for
     fake.rpc("submit_attendance_excuse").reply(ok(null));
     const { form, notify } = await fillExcuse(PROOF());
     fireEvent.submit(form);
+    const upload = await xhr.waitForRequest();
+    // The form is not sent before its proof is stored.
+    expect(rpcCount("submit_attendance_excuse")).toBe(0);
+    expect(upload.url).toMatch(/\/storage\/v1\/object\/attendance-excuses\/u-me\/1\/[0-9a-f-]{36}-note-from-doctor\.png$/);
+    expect(upload.headers["x-upsert"]).toBe("false");
+    accept(upload);
     await waitFor(() => expect(notify.find("Absence form submitted")).toBeTruthy());
-    const upload = fake.storage("attendance-excuses", "upload").calls[0];
-    expect(upload.args[0]).toMatch(/^u-me\/1\/[0-9a-f-]{36}-note-from-doctor\.png$/);
-    expect(fake.rpc("submit_attendance_excuse").calls[0].payload).toMatchObject({ p_session_id: 1, p_reason: "I was ill and saw a doctor", p_proof_path: upload.args[0], p_reason_category: "other", p_notified_at: null });
+    expect(stored(upload)).toMatch(/^u-me\/1\/[0-9a-f-]{36}-note-from-doctor\.png$/);
+    expect(fake.rpc("submit_attendance_excuse").calls[0].payload).toMatchObject({ p_session_id: 1, p_reason: "I was ill and saw a doctor", p_proof_path: stored(upload), p_reason_category: "other", p_notified_at: null });
     expect(fake.storage("attendance-excuses", "remove").count).toBe(0);
   });
 
@@ -703,9 +726,11 @@ describe("the absence form: the proof image, and what happens to it when the for
     fake.rpc("submit_attendance_excuse").reply(fail("You already submitted a form for this meeting"));
     const { form, notify } = await fillExcuse(PROOF());
     fireEvent.submit(form);
+    const upload = await xhr.waitForRequest();
+    accept(upload);
     await waitFor(() => expect(notify.find("You already submitted a form for this meeting").tone).toBe("error"));
     expect(fake.storage("attendance-excuses", "remove").calls).toHaveLength(1);
-    expect(fake.storage("attendance-excuses", "remove").calls[0].args[0]).toEqual([fake.storage("attendance-excuses", "upload").calls[0].args[0]]);
+    expect(fake.storage("attendance-excuses", "remove").calls[0].args[0]).toEqual([stored(upload)]);
     expect(screen.getByRole("button", { name: "Submit form" })).toBeInTheDocument();
   });
 
@@ -715,14 +740,14 @@ describe("the absence form: the proof image, and what happens to it when the for
     fireEvent.submit(form);
     await waitFor(() => expect(rpcCount("submit_attendance_excuse")).toBe(1));
     expect(fake.rpc("submit_attendance_excuse").calls[0].payload).toMatchObject({ p_proof_path: null });
-    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(xhr.requests).toHaveLength(0);
     expect(fake.storage("*", "remove").count).toBe(0);
   });
 
   it("a proof that cannot be uploaded stops the form: nothing is submitted", async () => {
-    fake.storage("attendance-excuses", "upload").reply(fail("Bucket not found"));
     const { form, notify } = await fillExcuse(PROOF());
     fireEvent.submit(form);
+    (await xhr.waitForRequest()).respond(400, { message: "Bucket not found" });
     await waitFor(() => expect(notify.find("Bucket not found").tone).toBe("error"));
     expect(rpcCount("submit_attendance_excuse")).toBe(0);
   });
@@ -734,7 +759,7 @@ describe("the absence form: the proof image, and what happens to it when the for
     fireEvent.change(within(form).getByLabelText(/Proof image/), { target: { files: [PROOF({ name: "notes.pdf", type: "application/pdf" })] } });
     fireEvent.submit(form);
     expect(notify.find("Choose an image as proof").tone).toBe("error");
-    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(xhr.requests).toHaveLength(0);
     expect(rpcCount("submit_attendance_excuse")).toBe(0);
   });
 });
@@ -802,7 +827,7 @@ describe("a failure that shows the database's own sentence is announced as an er
 
   it("the absence form: a refused upload and a refused form", async () => {
     scriptOverview({ sessions: [session(1)] });
-    fake.storage("attendance-excuses", "upload").replyOnce(cheerful());
+    const xhr = installFakeXhr();
     fake.rpc("submit_attendance_excuse").reply(cheerful());
     const { notify } = renderAttendance({ role: "member" });
     fireEvent.click(await screen.findByRole("button", { name: "Submit absence form" }));
@@ -811,8 +836,11 @@ describe("a failure that shows the database's own sentence is announced as an er
     fireEvent.change(within(form).getByLabelText(/What happened/), { target: { value: "I was ill and saw a doctor" } });
     fireEvent.change(within(form).getByLabelText(/Proof image/), { target: { files: [new File(["x"], "p.png", { type: "image/png" })] } });
     fireEvent.submit(form);
+    (await xhr.waitForRequest()).respond(400, { message: CHEERFUL });
     await waitFor(() => expect(toneOfSentence(notify)).toEqual(["error"]));
     fireEvent.submit(form);
+    await waitFor(() => expect(xhr.requests.filter((request) => request.sent)).toHaveLength(2));
+    xhr.last.respond(200, { Id: "obj-2", Key: "attendance-excuses/x" });
     await waitFor(() => expect(toneOfSentence(notify)).toEqual(["error", "error"]));
   });
 
