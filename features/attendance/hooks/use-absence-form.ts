@@ -47,7 +47,7 @@ export function useAbsenceForm({ user, load, exclusive }: {
       setShowExcuse(false);
       notify("Absence form submitted");
       load();
-    });
+    }, "absence");
   }
 
   async function openProof(excuse: Excuse) {

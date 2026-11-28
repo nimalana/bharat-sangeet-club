@@ -22,7 +22,7 @@ export function useAttendanceActions({ user, groups, summaryTerm, load, rereadRo
   rereadRoster: () => void;
   setTab: (tab: AttendanceTab) => void;
 }) {
-  const { saving, exclusive } = useExclusive();
+  const { saving, active, exclusive } = useExclusive();
 
   // After anything changed on the server: read the overview again and, when the
   // Meetings tab shows a roster, that roster too. Closing or canceling check-in
@@ -37,7 +37,7 @@ export function useAttendanceActions({ user, groups, summaryTerm, load, rereadRo
   const absence = useAbsenceForm({ user, load, exclusive });
 
   return {
-    saving, refresh,
+    saving, active, refresh,
     checkInCode: live.checkInCode, setCheckInCode: live.setCheckInCode, liveCode: live.liveCode, feedback: live.feedback, checkIn: live.checkIn,
     openAttendance: live.openAttendance, rotateCode: live.rotateCode, resetLive: live.resetLive,
     showNewSession: live.showNewSession, setShowNewSession: live.setShowNewSession, createSession: live.createSession,

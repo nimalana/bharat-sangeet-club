@@ -649,7 +649,7 @@ describe("the new meeting form", () => {
     await act(async () => { slow.resolve(ok([{ id: 9 }])); });
     await waitFor(() => expect(screen.queryByRole("button", { name: /Creating…|Create meeting/ })).not.toBeInTheDocument());
     fireEvent.click(await screen.findByRole("button", { name: "＋ New meeting" }));
-    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close the new meeting form" }));
     expect(screen.queryByRole("button", { name: "Create meeting" })).not.toBeInTheDocument();
     expect(fake.rpc("create_attendance_session").count).toBe(1);
   });
@@ -677,8 +677,8 @@ describe("the absence form", () => {
   it("the × closes it; while it is sent the button says so and is off", async () => {
     const slow = deferred();
     fake.rpc("submit_attendance_excuse").reply(slow.reply);
-    const form = await open([session(1)]);
-    fireEvent.click(within(form).getByRole("button", { name: "×" }));
+    await open([session(1)]);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close the absence form" }));
     expect(screen.queryByRole("button", { name: "Submit form" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Submit absence form" }));
     const again = screen.getByRole("button", { name: "Submit form" }).closest("form")!;

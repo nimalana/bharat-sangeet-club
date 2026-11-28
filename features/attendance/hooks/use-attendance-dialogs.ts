@@ -33,7 +33,7 @@ export function useAttendanceDialogs({ summaryTerm, exclusive, refresh, clearLiv
       onDone?.();
       notify(success, "success");
       refresh();
-    });
+    }, "dialog");
   }
 
   function submitDialog(values: Record<string, string>) {

@@ -30,7 +30,7 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
       const { error } = await attempt(() => checkInAttendance(checkInCode.replace(/\s/g, "").toUpperCase()));
       if (error) setFeedback(error.message);
       else { setFeedback("You are checked in. Your attendance is confirmed."); setCheckInCode(""); notify("Attendance confirmed"); load(); }
-    });
+    }, "check-in");
   }
 
   // Opens check-in for a meeting; returns whether it opened.
@@ -82,11 +82,11 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
       setShowNewSession(false);
       notify("Meeting created");
       load();
-    });
+    }, "create");
   }
 
   async function openAttendance(sessionId: number) {
-    await exclusive(() => openCheckIn(sessionId, 60));
+    await exclusive(() => openCheckIn(sessionId, 60), `open:${sessionId}`);
   }
 
   async function rotateCode(sessionId: number) {
@@ -94,7 +94,7 @@ export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }
       const { data: rotated, error } = await attempt(() => rotateAttendanceCode(sessionId));
       if (error) notify(friendlyError(error, "The code could not be changed."), "error");
       else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLiveCode(result?.check_in_code || /* `code` is never returned: see openCheckIn */ (result as { code?: string } | undefined)?.code || ""); notify("A new code is active"); load(); }
-    });
+    }, "rotate");
   }
 
   // A new audience or term forgets the code and the message of the one before.

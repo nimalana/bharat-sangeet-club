@@ -35,7 +35,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   const attendance = useAttendanceData({ user, canManage, initialScope, tab });
   const { scopeFilter, termFilter, data, view, failedKey, cacheKey, load, loadingMore, showMore, roster, rosterFailed, loadRoster, selectedSessionId, setSelectedSessionId } = attendance;
   const actions = useAttendanceActions({ user, groups, summaryTerm: view.summary_term, load, rereadRoster: attendance.rereadRoster, setTab });
-  const { saving, dialog, setDialog } = actions;
+  const { saving, active, dialog, setDialog } = actions;
   const sessions = view.sessions;
 
   const termOptions = useMemo(() => termChoices(view.terms, termFilter), [view.terms, termFilter]);
@@ -79,17 +79,17 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   return <section className="section-shell page-section attendance-page">
     <AttendanceHeader scopeFilter={scopeFilter} termFilter={termFilter} groups={groups} scopeLabel={scopeLabel} scopeInGroups={scopeInGroups} termOptions={termOptions} canManage={canManage} onScope={changeScope} onTerm={changeTerm} onNewMeeting={() => actions.setShowNewSession(true)} />
 
-    <CheckInCard code={actions.checkInCode} onCodeChange={actions.setCheckInCode} saving={saving} feedback={actions.feedback} onSubmit={actions.checkIn} />
+    <CheckInCard code={actions.checkInCode} onCodeChange={actions.setCheckInCode} saving={saving} pending={active === "check-in"} feedback={actions.feedback} onSubmit={actions.checkIn} />
 
     {canManage ? <>
       <AttendanceSummary closedCount={closedSessions.length} overall={overallRate(view.attended_total, view.absent_total)} flagged={summaries} />
-      {openSession && <LiveSessionCard session={openSession} liveCode={actions.liveCode} saving={saving} onRotate={() => actions.rotateCode(openSession.id)}
+      {openSession && <LiveSessionCard session={openSession} liveCode={actions.liveCode} saving={saving} rotating={active === "rotate"} onRotate={() => actions.rotateCode(openSession.id)}
         onClose={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "close" })}
         onCancel={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "cancel" })} />}
       <AttendanceTabs tab={tab} onTab={setTab} pendingExcuseCount={view.excuses_pending} />
       {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} profileName={profileName}
         onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} />}
-      {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving}
+      {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving} openingSessionId={active?.startsWith("open:") ? Number(active.slice(5)) : null}
         onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} />}
       {tab === "excuses" && <ExcusesTab view={view} sessions={sessions} viewLabel={viewLabel} saving={saving} profileName={profileName} onDialog={setDialog} onOpenProof={actions.openProof} showMore={showMore} loadingMore={loadingMore} />}
     </> : <MemberView view={view} sessions={sessions} user={user} scopeLabel={scopeLabel} termFilter={termFilter} onSubmitExcuse={() => actions.setShowExcuse(true)} onWithdrawn={() => load(true)} />}
