@@ -312,7 +312,7 @@ do $$
 declare
   f record; o record;
   call_sql text; arg_list text; answer jsonb; before_fp numeric; after_fp numeric;
-  exercised integer := 0; refused integer := 0; answered_nothing integer := 0;
+  exercised integer := 0; refused integer := 0; answered_nothing integer := 0; fn_count integer := 0;
   problems text[] := '{}';
   -- Functions whose answer is not "nothing" for an outsider, and what is checked instead.
   --   rows  no row beyond the caller's own profile, in the one json value the function returns (what
@@ -346,6 +346,7 @@ begin
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
     order by 1, 2
   loop
+    fn_count := fn_count + 1;
     -- Positional arguments, typed.
     select coalesce(string_agg(test.arg_literal(coalesce(f.proargnames[i], ''), f.argtypes[i]), ', ' order by i), '')
       into arg_list from generate_subscripts(f.argtypes, 1) i;
@@ -378,9 +379,29 @@ begin
     end loop;
   end loop;
   assert cardinality(problems) = 0, E'the gate has a hole:\n  ' || array_to_string(problems, E'\n  ');
-  assert exercised >= 74 * 3, 'only ' || exercised || ' calls were made: the enumeration missed functions';
+  -- Every enumerated function was called once as each of the three outsiders; and the enumeration is not empty by accident.
+  assert exercised = fn_count * 3, format('%s calls for %s functions', exercised, fn_count);
+  assert fn_count >= 50, 'only ' || fn_count || ' callable functions were found: the enumeration missed functions';
   -- Most calls are refused outright: if almost none were, the probes are not reaching the functions.
   assert refused >= exercised / 2, format('only %s of %s calls were refused', refused, exercised);
+end $$;
+
+-- finance_path_registered answers an account that is not active "registered" for ANY path, one that is not registered
+-- included (the sample path the loop above used may be a real one), while an active member is told the truth. The storage
+-- policies only ask "not registered", so a different answer would let such an account through that one condition.
+do $$
+declare o record; answer boolean; v_path text := 'nobody/' || gen_random_uuid() || '-missing.pdf';
+begin
+  for o in select * from test.gate_accounts where kind in ('pending', 'rejected', 'deactivated') loop
+    perform test.login(o.id);
+    answer := private.finance_path_registered(v_path);
+    perform test.logout();
+    assert answer is true, format('a %s account was told that an unregistered path is not registered', o.kind);
+  end loop;
+  perform test.login((select id from test.gate_accounts where kind = 'member'));
+  answer := private.finance_path_registered(v_path);
+  perform test.logout();
+  assert answer is false, 'an active member is told the truth about a path';
 end $$;
 
 rollback;

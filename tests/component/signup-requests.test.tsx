@@ -57,6 +57,12 @@ describe("what the queue lists", () => {
     expect(within(rowOf("Dev Nair")).getByText("Declined")).toBeInTheDocument();
   });
 
+  it("a decline reason that holds markup is shown as text, never as markup", async () => {
+    await openQueue([declined("u-3", "Dev Nair", { reason: "<img src=x onerror=alert(1)>" })]);
+    expect(within(rowOf("Dev Nair")).getByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument();
+    expect(document.querySelector("img[src='x']")).toBeNull();
+  });
+
   it("a failed read is a failure with Try again, never 'nobody is waiting'", async () => {
     fake.rpc("list_pending_members").replyOnce(fail("Could not reach the server")).reply(ok(WAITING));
     openPortal({ role: "executive", page: "signups" });
