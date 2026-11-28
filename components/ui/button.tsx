@@ -13,7 +13,7 @@ const variants: Record<ButtonVariant, string> = {
 
 const sizes: Record<ButtonSize, string> = {
   default: "min-h-11 px-5 text-xs",
-  sm: "min-h-9 px-3 text-[0.68rem]",
+  sm: "min-h-9 px-3 text-xs max-[700px]:min-h-11",
 };
 
 // `pending`: the button's action is running. It is disabled (so a second click cannot send the action twice, and it looks as a disabled
@@ -22,5 +22,5 @@ const sizes: Record<ButtonSize, string> = {
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; pending?: boolean; ref?: Ref<HTMLButtonElement> };
 
 export function Button({ className, variant = "primary", size = "default", type = "button", ref, pending = false, disabled, ...props }: ButtonProps) {
-  return <button ref={ref} type={type} disabled={disabled || pending} aria-busy={pending || undefined} className={cn("inline-flex max-w-full items-center justify-center gap-2 rounded-none font-bold tracking-[0.02em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--carolina)] disabled:cursor-not-allowed disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
+  return <button ref={ref} type={type} disabled={disabled || pending} aria-busy={pending || undefined} className={cn("inline-flex max-w-full items-center justify-center gap-2 rounded-none font-bold tracking-[0.02em] transition-colors max-[700px]:min-w-11 disabled:cursor-not-allowed disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
 }

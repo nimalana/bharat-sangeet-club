@@ -9,5 +9,5 @@ const variants: Record<BadgeVariant, string> = {
 };
 
 export function Badge({ className, variant = "subgroup", ...props }: HTMLAttributes<HTMLSpanElement> & { variant?: BadgeVariant }) {
-  return <span className={cn("inline-flex max-w-full min-w-0 items-center rounded-none border px-2 py-1 text-[0.66rem] font-semibold leading-tight tracking-[0.02em] whitespace-normal break-words", variants[variant], className)} {...props} />;
+  return <span className={cn("inline-flex max-w-full min-w-0 items-center rounded-none border px-2 py-1 text-xs font-semibold leading-tight tracking-[0.02em] whitespace-normal break-words", variants[variant], className)} {...props} />;
 }

@@ -14,6 +14,7 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 - [5. Upload progress](#5-upload-progress): `uploadWithProgress`, `UploadProgress`, and why it is a real progress bar
 - [6. Preview](#6-preview): `PreviewDialog` for an image, a PDF, a recording, a video
 - [7. State in the address](#7-state-in-the-address): `useUrlState` for the open tab, folder, selected group, month, filter
+- [8. Accessibility base](#8-accessibility-base): the focus ring, `.sr-only`, reduced motion, 44px tap targets, `IconButton`, the 12px floor
 
 ---
 
@@ -479,3 +480,75 @@ Rules for the areas:
   (the group is not loaded) shows the default until it can; do not write the default back.
 - A parameter that a page leaves behind is dropped by the shell's `navigate()` when the page changes; a screen that wants one to survive a page change sets it again after.
 - Test it through the real address (`window.history.replaceState({}, "", "/?page=attendance&tab=meetings")` before rendering, `window.location` after); `setup.ts` resets the address to `/` after every test.
+
+
+---
+
+## 8. Accessibility base
+
+What every screen inherits from `styles/shared.css` and `components/ui` (plan 3.4). A screen applies it by not undoing it.
+
+### The focus ring
+
+One rule in `styles/shared.css` gives **every** focusable element (links, buttons, inputs, selects, textareas, `summary`, `[tabindex]`, anything `:focus-visible`) the same ring:
+
+```css
+:focus-visible { outline: 3px solid var(--ink) !important; outline-offset: 2px; box-shadow: 0 0 0 2px var(--paper) !important; }
+```
+
+Two tones, because one is not enough on this palette: the old ring (carolina blue alone, 3 px) is **2.81:1 on the page (`--ivory`), 2.64:1 on pale blue and 3.00:1 on white**:
+not the 3:1 a focus indicator needs (WCAG 1.4.11). Ink outside and a paper-white band between it and the element give, whichever background is under the element,
+a tone that stands out: ink is **13.6:1 on the page, 14.5:1 on white, 12.7:1 on pale blue, 9.3:1 on `--line`, 4.8:1 on carolina** (a hovered button); the white band is **17.4:1 on
+the dark header and footer** (`--maroon-dark`), where ink alone would be 1.2:1. `tests/component/a11y-base.test.tsx` computes these ratios from the tokens in the stylesheet and fails if a background gets
+less than 3:1 from both tones, or if the band stops touching the ring.
+
+- Do not write `outline: none` or `outline: 0` on a focusable element and do not remove the box-shadow of `:focus-visible`. The only two rules that do are the search box inside `.search`
+  (its container draws the border) and the dialog panel (`[role="dialog"]`, which takes focus itself and names itself); both are pinned by a test.
+- Do not draw your own ring with `focus-visible:` utilities; `Button` no longer has its own (the global ring replaced it). A *different* focus style that is needed (a row that highlights)
+  is added on top of the ring, not instead of it.
+- `app/globals.css` still has an older `:focus-visible` rule (carolina, in `@layer base`); it is overridden by this one (`!important`) and is dead code. It is outside the foundation's files.
+
+Not verified here: how the ring looks on the real pages (clipped by an `overflow:hidden` parent, hidden behind a sticky header). That is for the browser run. A focused element inside a container
+with `overflow:hidden` loses the outer part of the ring: give that container `padding` of 4px or use `overflow:clip` with `overflow-clip-margin: 5px`.
+
+### `.sr-only`
+
+`<span className="sr-only">Delete the announcement</span>`: not drawn, read by a screen reader (the clip pattern, not `display:none`). It is a plain rule in `shared.css` so that it exists whether or not
+Tailwind generated the class. Use it for a name an icon needs next to it, a status that is only for the ear (`SkeletonRows` uses it), a heading a section has for navigation. An icon-only
+button takes `IconButton` instead.
+
+### Reduced motion
+
+`@media (prefers-reduced-motion: reduce)` in `shared.css` ends every transition and animation of every element (`.01ms`, no delay, one iteration) and sets `scroll-behavior: auto`; `ui.css` also switches
+off the skeleton sweep and the upload bar's width transition. Nothing in the foundation has to move to be understood. A screen that moves something by script (`element.animate`, a CSS animation
+it adds) follows the same rule. **Finding for the shell and public-site owners:** `window.scrollTo({ top: 0, behavior: "smooth" })` in `features/shell/hooks/use-portal-navigation.ts` and in
+`features/public/components/public-site.tsx` is a script-driven smooth scroll, which the CSS rule does not stop; choose `behavior` from `matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"`.
+
+### Tap targets: 44px on a small screen
+
+- `Button`: `min-h-11` (44px) by default; `size="sm"` is 36px on a wide screen and 44px under 700px (`max-[700px]:min-h-11`), and under 700px every button is at least 44px wide.
+- `IconButton`: 36px square, 44px under 700px.
+- `Input`: `h-11`; `Textarea`: `min-h-24`; the plain `input, select, textarea` of the stylesheets: `min-height: 44px` (the modal's were 43px: now 44).
+- The legacy `.modal-close` (the × of the hand-made modals) is 44px under 700px.
+- A link or button that is not one of these (a text link inside a sentence is exempt; a row that is clickable is not): `min-h-11` and `max-[700px]:min-w-11` on a plain element, or use `Button`/`IconButton`.
+
+### `IconButton` (`components/ui/icon-button.tsx`)
+
+```tsx
+<IconButton aria-label="Close the editor" onClick={onClose}>×</IconButton>
+<IconButton aria-label={`Edit ${member.name}`} onClick={() => edit(member)}><PencilIcon aria-hidden="true" /></IconButton>
+```
+
+`aria-label` is **required by the type** (a call without it is a compile error; TypeScript does not check hyphenated attributes it does not know, so `aria-labelledby` is not refused, but it is not the way to name this button); the name says what the button does ("Close the editor", "Edit Asha"), not what it
+looks like ("×", "pencil"). `type` is `button` unless given, a ref and a class are forwarded, and every other `<button>` attribute works. The hand-written icon buttons found by area (`.modal-close`,
+`.toast-close`, the resources panel's `iconButton`, `Button variant="ghost" aria-label=... >×`) are for the area agents to move to `IconButton` when they touch them.
+
+### Text is never under 12px
+
+No text under 12px (0.75rem) in `styles/shared.css`, `components/ui/ui.css` and the classes of `components/ui/*.tsx`; `a11y-base.test.tsx` reads those files and fails on a smaller size (so the next edit cannot bring one back).
+Rules raised to 12px in this step: `shared.css`: `.brand small` / `.role-button small` / `.footer-brand small` (10px), `.eyebrow` (10px, hidden by a later rule), `.count` (10px), `time` (10px), `footer` (10px), `.modal label` (10px),
+`.action-feedback` (11px), `.workspace-seal` (11px); `ui.css`: `.scope-badge` (8px), `.content-scope` (7px); `Button size="sm"` (0.68rem = 10.9px) and `Badge` (0.66rem = 10.6px) now `text-xs` (12px).
+Found in the areas, not changed: `features/dashboard/dashboard.css` (3 declarations), `features/shell/shell.css` (1) and 8 classes in `features/admin` (`text-[0.65rem]`, `text-[0.7rem]`). The same rule applies to the area files:
+12px or more, and do not set a size in a unit that scales below it.
+
+The larger text can wrap a place that was tuned for the smaller size (a badge, the footer, the header's "UNC Chapel Hill"); that is for the browser run to check.
