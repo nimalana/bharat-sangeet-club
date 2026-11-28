@@ -4,6 +4,15 @@
 //   const outcome = await run(() => must(await supabase.from("announcements").delete().eq("id", id)), { fallback: "It could not be deleted.", success: "Deleted" });
 //   if (outcome.ok) await onChanged();
 //
+// A mutation button is wired in one line: the button is disabled and busy while the action runs, and a second press is ignored
+//   const { notify } = useToast();
+//   const save = useAsyncAction(notify, { exclusive: true });
+//   <Button pending={save.pending} onClick={() => save.run(() => saveThing(values), { fallback: "It could not be saved.", success: "Saved" })}>Save</Button>
+//
+// `exclusive: true`: a run() that starts while another is still running does nothing (the action is not called, no toast, and it returns
+// `{ ok: false, skipped: true, ... }`), so a double click that lands before the button has re-rendered as disabled sends one request, not
+// two. Without it overlapping runs are allowed (a list of rows sharing one hook).
+//
 // run() sets `pending` before the call and clears it when the call settles (also when it throws). A failure becomes the sentence the
 // person sees (friendlyError, with the call's own `fallback`), is kept in `error` until the next run, and is sent to `notify` as an
 // error toast. A success sends `success` as a toast, after `pending` is cleared. What the action returned comes back as `value`.
@@ -14,16 +23,17 @@ import { useCallback, useRef, useState } from "react";
 import { friendlyError, toApiError } from "../errors";
 import type { Notify } from "../toast";
 
-export type AsyncOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown; message: string };
+export type AsyncOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown; message: string; skipped?: true };
 export type RunOptions = { fallback?: string; success?: string };
 
-export function useAsyncAction(notify?: Notify) {
+export function useAsyncAction(notify?: Notify, { exclusive = false }: { exclusive?: boolean } = {}) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   // Two overlapping runs keep `pending` up until the last one settles.
   const inFlight = useRef(0);
 
   const run = useCallback(async <T,>(action: () => Promise<T>, options: RunOptions = {}): Promise<AsyncOutcome<T>> => {
+    if (exclusive && inFlight.current > 0) return { ok: false, error: undefined, message: "", skipped: true };
     inFlight.current += 1;
     setPending(true);
     setError("");
@@ -43,7 +53,7 @@ export function useAsyncAction(notify?: Notify) {
       notify?.(outcome.message, "error");
     }
     return outcome;
-  }, [notify]);
+  }, [notify, exclusive]);
 
   const clearError = useCallback(() => setError(""), []);
   return { pending, error, run, clearError };

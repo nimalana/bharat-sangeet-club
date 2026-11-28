@@ -3,11 +3,11 @@
 .brand,.role-button { border:0; background:transparent; display:flex; align-items:center; gap:12px; cursor:pointer; text-align:left; padding:0; }
 .brand-mark { width:43px; height:43px; border:1px solid var(--brass); color:var(--maroon); border-radius:50% 50% 47% 53%; display:grid; place-items:center; font-family:Georgia,serif; font-size:18px; font-style:italic; }
 .brand b,.footer-brand b { display:block; text-transform:uppercase; letter-spacing:.12em; font-size:13px; }
-.brand small,.role-button small,.footer-brand small { display:block; margin-top:3px; color:#7b7066; font-size:10px; letter-spacing:.08em; text-transform:uppercase; }
+.brand small,.role-button small,.footer-brand small { display:block; margin-top:3px; color:#7b7066; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
 nav { display:flex; align-self:stretch; gap:30px; }
 nav button { background:transparent; border:0; border-bottom:2px solid transparent; text-transform:capitalize; cursor:pointer; font-size:13px; color:#655d56; padding:3px 0 0; }
 nav button:hover,nav button.active { color:var(--maroon); border-bottom-color:var(--maroon); }
-.eyebrow { color:var(--maroon); font-weight:700; letter-spacing:.18em; font-size:10px; margin:0 0 18px; }
+.eyebrow { color:var(--maroon); font-weight:700; letter-spacing:.18em; font-size:12px; margin:0 0 18px; }
 h1,h2,h3,p { margin-top:0; }
 .page-title h1{ font-family:Georgia,serif; font-weight:400; font-size:clamp(48px,5.6vw,78px); line-height:1.02; letter-spacing:-.04em; margin-bottom:25px; }
 .primary,.secondary { min-height:46px; border-radius:2px; padding:0 20px; cursor:pointer; font-weight:700; font-size:12px; letter-spacing:.02em; }
@@ -18,7 +18,7 @@ h1,h2,h3,p { margin-top:0; }
 .secondary:hover { border-color:var(--maroon); color:var(--maroon); }
 .section-shell { max-width:1240px; margin:auto; padding:88px 30px; }
 .modal h2{ font-family:Georgia,serif; font-size:40px; font-weight:400; margin:0; }
-.count { position:absolute; top:30px; right:30px; font-size:10px; text-transform:uppercase; letter-spacing:.1em; opacity:.72; }
+.count { position:absolute; top:30px; right:30px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; opacity:.72; }
 .page-section { min-height:calc(100vh - 170px); }
 .page-title { max-width:750px; margin-bottom:50px; }
 .page-title h1 { font-size:60px; margin-bottom:15px; }
@@ -27,23 +27,26 @@ h1,h2,h3,p { margin-top:0; }
 .search { border:1px solid var(--line); background:var(--paper); height:46px; padding:0 15px; display:flex; align-items:center; gap:10px; flex:1; max-width:520px; }
 .search input { border:0; outline:0; background:transparent; width:100%; font-size:13px; }
 .recording-list,.ledger { border-top:1px solid var(--ink); }
-time{ font-size:10px; color:#8a8179; }
+time{ font-size:12px; color:#8a8179; }
 .more { border:0; background:transparent; cursor:pointer; }
-footer { min-height:130px; padding:30px 5vw; background:#29231f; color:#eee4d7; display:flex; justify-content:space-between; align-items:center; font-size:10px; letter-spacing:.06em; }
+footer { min-height:130px; padding:30px 5vw; background:#29231f; color:#eee4d7; display:flex; justify-content:space-between; align-items:center; font-size:12px; letter-spacing:.06em; }
 .footer-brand { display:flex; gap:12px; align-items:center; }
 .footer-brand .brand-mark { color:#d6aa68; }
 .modal-backdrop { position:fixed; inset:0; z-index:50; background:rgba(30,23,20,.66); display:grid; place-items:center; padding:20px; }
 .modal { width:min(500px,100%); background:var(--paper); padding:38px; position:relative; box-shadow:0 25px 80px rgba(0,0,0,.3); }
 .modal-close { position:absolute; top:14px; right:18px; background:transparent; border:0; font-size:27px; cursor:pointer; }
 .modal h2 { margin-bottom:25px; }
-.modal label { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin:15px 0; }
-.modal input,.modal select { display:block; width:100%; margin-top:7px; min-height:43px; border:1px solid var(--line); background:white; padding:10px; text-transform:none; letter-spacing:0; font-size:13px; }
+.modal label { display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin:15px 0; }
+.modal input,.modal select { display:block; width:100%; margin-top:7px; min-height:44px; border:1px solid var(--line); background:white; padding:10px; text-transform:none; letter-spacing:0; font-size:13px; }
 .modal .primary { width:100%; margin-top:10px; }
 @media (max-width:900px){
 nav{position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--paper);z-index:30;justify-content:space-around;gap:0;border-top:1px solid var(--line)}
 nav button{border-bottom:0}
 time{display:none}
 footer{margin-bottom:60px}
+}
+@media (max-width:700px){
+.modal-close{min-width:44px;min-height:44px}
 }
 @media (max-width:600px){
 .section-shell{padding:60px 18px}
@@ -55,7 +58,7 @@ footer{align-items:flex-start;gap:25px;flex-direction:column}
 .loading-screen p{color:#746b64}
 .form-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .primary:disabled{opacity:.58;cursor:wait}
-.action-feedback{margin:10px 0 24px;padding:12px 15px;border-left:4px solid var(--carolina);background:var(--carolina-pale);color:var(--maroon);font-size:11px}
+.action-feedback{margin:10px 0 24px;padding:12px 15px;border-left:4px solid var(--carolina);background:var(--carolina-pale);color:var(--maroon);font-size:12px}
 .action-feedback.success{border-left-color:#62806a;background:#e5eee5;color:#3f6147}
 .action-feedback.error{border-left-color:#a94f59;background:#f5e5e6;color:#7d2630}
 @media (max-width:1050px) and (min-width:901px){
@@ -79,7 +82,12 @@ html{scroll-padding-top:80px}
 body{background:var(--ivory);color:var(--ink);font-family:var(--ui);font-size:15px;line-height:1.5}
 ::selection{background:var(--carolina);color:#071a33}
 *{scrollbar-color:var(--maroon) var(--ivory);scrollbar-width:thin}
-:focus-visible{outline:3px solid var(--carolina)!important;outline-offset:3px}
+/* The focus ring: two tones, so that one of them shows against any background. Ink outside (13.6:1 on the page, 14.5:1 on white) and a paper-white band
+   between it and the element (17:1 on the dark header and footer). The old ring, carolina blue alone, is 2.81:1 on the page and 2.64:1 on pale blue: under the 3:1 a focus
+   indicator needs (WCAG 1.4.11). The numbers are checked from these tokens by tests/component/a11y-base.test.ts. The dialog panel has no ring of its own (ui.css). */
+:focus-visible{outline:3px solid var(--ink)!important;outline-offset:2px;box-shadow:0 0 0 2px var(--paper)!important}
+/* Text for a screen reader only: not drawn, still read. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
 .eyebrow{display:none!important}
 button,a,input,select,textarea{border-radius:0!important}
 button,a{transition:color .16s ease-out,background-color .16s ease-out,border-color .16s ease-out,transform .16s ease-out}
@@ -87,7 +95,7 @@ button,a{transition:color .16s ease-out,background-color .16s ease-out,border-co
 .primary{border:1px solid var(--maroon);background:var(--maroon);color:#fff}
 .secondary{border:1px solid var(--ink);background:transparent;color:var(--ink)}
 .secondary:hover{background:var(--ink);color:var(--paper)}
-.portal-shell>.topbar .workspace-seal{width:32px;height:32px;border-radius:0;background:var(--ink);font:600 11px var(--display)}
+.portal-shell>.topbar .workspace-seal{width:32px;height:32px;border-radius:0;background:var(--ink);font:600 12px var(--display)}
 .portal-shell>.topbar .workspace-seal.subgroup{background:var(--carolina);color:var(--ink)}
 .page-title{max-width:none;margin-bottom:34px;padding-bottom:30px;border-bottom:1px solid var(--ink)}
 .page-title h1{margin:0 0 12px;font:600 clamp(44px,5vw,70px)/.92 var(--display);letter-spacing:-.025em;text-transform:uppercase;color:var(--ink);text-wrap:balance}
@@ -104,7 +112,7 @@ input::placeholder,textarea::placeholder{color:#65757e;opacity:1}
 .portal-shell>.topbar .workspace-seal{width:32px;height:32px}
 }
 @media (prefers-reduced-motion:reduce){
-*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
+*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.01ms!important;transition-delay:0s!important;animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important}
 }
 /* Club identity artwork supplied by Bharat Sangeet. */
 .brand-mark{

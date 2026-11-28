@@ -9,6 +9,11 @@ hooks and UI blocks, the screens moved into `features/<area>/` and split into ho
 context, the global stylesheet split into one file per area (see "CSS"); the Cloudflare/vinext/Drizzle starter that the app never
 used is gone, and `npm run knip` keeps dead code out.
 
+Phase 3 (UI/UX) has its shared pieces in place (the foundation): toasts that keep a failure on screen, one `Dialog` under every dialog,
+`useConfirm()`, states with Try again, an upload with a real progress bar, a file preview, state kept in the address, and the
+accessibility base (focus ring, 44px targets, 12px text floor). They are described, with their props and the rules for the screens
+that use them, in `docs/UI_PATTERNS.md`; the areas adopt them one by one.
+
 ## Data flow
 
 ```
@@ -30,7 +35,8 @@ features/<area>/hooks/use-*.ts         what a screen reads and does: state, load
         |
 features/<area>/components/*.tsx       what is drawn; never imports lib/supabase
         |
-components/ui/*                        primitives: button, dialog, toast, empty-state, page-title, loading-block, error-block ...
+components/ui/*                        primitives: button, icon-button, dialog (+ confirm, form-dialog, preview-dialog), toast, skeleton,
+                                       upload-progress, empty-state, page-title, loading-block, error-block ...
 app/                                   routing and layout; page.tsx renders features/shell
 ```
 
@@ -132,14 +138,21 @@ The `client()` helper at the top of several modules throws `ApiError("Supabase i
 |---|---|---|
 | `lib/format.ts` | `formatDate`, `formatDateOrNone`, `formatMoney`, `initials`, `toLocalInputValue` | admin, announcements, attendance, calendar, finance, groups, members, recordings, resources |
 | `lib/permissions.ts` | The role and group permission table | attendance, finance, groups, resources, shell |
-| `lib/hooks/use-async-action.ts` | The pending flag, the failure sentence and the toast of a "press a button, wait for the database" handler; takes `notify` as its argument | admin, announcements, resources |
+| `lib/hooks/use-async-action.ts` | The pending flag, the failure sentence and the toast of a "press a button, wait for the database" handler; takes `notify` as its argument; `{ exclusive: true }` skips a second run while one is running | admin, announcements, resources |
 | `lib/hooks/use-debounced.ts` | A search box that asks the database after a pause | recordings, resources |
 | `lib/hooks/use-polling.ts` | A poll that pauses on a hidden page | attendance |
-| `lib/hooks/use-query.ts` | A cached read | members (the pilot; the other screens key several reads together or clear the cache by prefix) |
+| `lib/hooks/use-query.ts` | A cached read; `error` and `retry()` after a failed first load | members (the pilot; the other screens key several reads together or clear the cache by prefix) |
+| `lib/hooks/use-url-state.ts` | A piece of screen state kept in the address (`?tab=`, `?group=`, `?month=`, a filter): omitted at its default, Back and Forward, SSR-safe, one history entry per tick | none yet (`?page=` is still `lib/sections.ts` and the shell) |
+| `lib/api/_core.ts` `uploadWithProgress` | The storage upload request supabase-js sends, through `XMLHttpRequest`, so the bytes sent are known; `{ data, error }` like `.upload()` | none yet (see "Uploads" below) |
 | `lib/api/attempt.ts`, `lib/api/settle.ts` | `{ data, error }` for a handler; independent reads | attempt: attendance, recordings; settle: admin, groups, members |
-| `components/ui/toast.tsx` | `ToastProvider`, `useToast()`, `ToastViewport` | every area that notifies |
-| `components/ui/{empty-state,page-title,loading-block,error-block,load-error}` | The repeated blocks | empty-state: finance, groups, members, public, shell; page-title: admin, calendar, groups, members, public; loading-block: admin, attendance, calendar, finance, groups, members, public, shell; error-block: attendance; load-error: finance, members, recordings, resources |
-| `components/ui/{button,dialog,confirm-dialog,form-dialog,input,textarea,badge}` | Primitives | most areas |
+| `components/ui/toast.tsx` | `ToastProvider`, `useToast()`, `ToastViewport`: a failure stays until dismissed, at most 3 stacked, in a polite live region | every area that notifies |
+| `components/ui/{empty-state,page-title,loading-block,error-block,load-error}` | The repeated blocks (`ErrorBlock` has Try again and `busy`) | empty-state: finance, groups, members, public, shell; page-title: admin, calendar, groups, members, public; loading-block: admin, attendance, calendar, finance, groups, members, public, shell; error-block: attendance; load-error: finance, members, recordings, resources |
+| `components/ui/{button,input,textarea,badge}` | Primitives; `Button` has `pending` and is 44px under 700px | most areas |
+| `components/ui/icon-button.tsx` | A button that is only an icon; `aria-label` is required by the type | none yet |
+| `components/ui/dialog.tsx` | The one modal: role, name, focus in / trap / back, Escape, backdrop, inert page, no scroll. `ConfirmDialog`, `FormDialog` and `PreviewDialog` are built on it | confirm-dialog, form-dialog: admin, attendance, finance, groups, members; the hand-made modals move to it (the list is in `docs/UI_PATTERNS.md`) |
+| `components/ui/confirm.tsx` | `ConfirmProvider`, `useConfirm()`: `await confirm({ title, message, confirmLabel, tone })` is true only on Confirm | rendered by `Home`; screens adopt it |
+| `components/ui/preview-dialog.tsx` | A stored file shown in a dialog (image, PDF, recording, video; else a download link), with loading, Try again, Open in a new tab | none yet |
+| `components/ui/{skeleton,upload-progress}.tsx` | `SkeletonRows` for a first read; `UploadProgress` (a row per file, a progressbar, Retry) | none yet |
 | `components/ui/content-scope-label.tsx` | "Club-wide" or the group's name, as a tag | admin (the calendar writes its own `<small class="calendar-scope">`, with "Group" as the fallback word, which its tests pin) |
 | `components/ui/section-boundary.tsx` | Catches a screen that fails to render or load | shell |
 
@@ -149,11 +162,22 @@ for a bad value) and `lib/dates.ts` `formatDateTime` (the club's time zone, empt
 
 ### Toasts
 
-`Home` (features/shell) renders `ToastProvider`; the `ToastViewport` is drawn inside the shell's `<main>`. Anything that tells the
+`Home` (features/shell) renders `ToastProvider` and, inside it, `ConfirmProvider`; the `ToastViewport` is drawn inside the shell's `<main>`. Anything that tells the
 person something calls `const { notify } = useToast()`; there is no `notify` prop or argument anywhere (only `useAsyncAction(notify?)`
 takes the function, as an injection point of a shared hook). `notify(message, "error")` for a failure, always for text that comes
-from the database; an untagged message is a fixed sentence read for the ordinary words of a failure (`lib/toast.ts`). In tests,
-`notifySpy()` (tests/support/helpers.ts) is what `useToast()` answers.
+from the database; an untagged message is a fixed sentence read for the ordinary words of a failure (`lib/toast.ts`). A failure
+stays on screen until the person dismisses it; a confirmation fades after 2.8 s; at most three show at once (`pushToast`, a pure
+function in `lib/toast.ts`). In tests, `notifySpy()` (tests/support/helpers.ts) is what `useToast()` answers.
+
+### Dialogs, confirmations, uploads
+
+Every dialog is `components/ui/dialog.tsx` (directly or through `ConfirmDialog`, `FormDialog`, `PreviewDialog`): it is the only place that
+traps Tab, closes on Escape, returns focus, makes the page behind inert and stops it scrolling. Two dialogs open at once are fine (only
+the top one answers the keyboard). "Are you sure?" is `const { confirm } = useConfirm()`, an awaited question; `ConfirmDialog` is for a
+confirmation that needs state of its own (a busy button). A file upload that should show progress calls `uploadWithProgress`
+(`lib/api/_core.ts`) instead of `client.storage.from(bucket).upload(...)`; the bucket stays a literal at the call site, because
+`scripts/contract-check` reads it there (`storageHelpers` in `scripts/contract-check/config.json`). Why that function sends the same request as
+supabase-js, and the test that keeps it so, are in `docs/UI_PATTERNS.md` section 5.
 
 ## CSS
 

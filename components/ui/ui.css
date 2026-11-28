@@ -1,14 +1,37 @@
 /* ui: Rules of the primitives in components/ui.
    Imported by app/globals.css; the import order decides ties between rules of equal specificity (docs/ARCHITECTURE.md, "CSS"). */
-.toast { position:fixed; right:25px; bottom:25px; z-index:60; background:#303d31; color:white; padding:15px 20px; box-shadow:0 10px 30px rgba(0,0,0,.2); font-size:12px; }
+.toast-stack { position:fixed; right:25px; bottom:25px; z-index:60; display:flex; flex-direction:column; align-items:flex-end; gap:8px; max-width:calc(100vw - 50px); pointer-events:none; }
+.toast-item { display:flex; align-items:stretch; max-width:100%; pointer-events:auto; }
+.toast { background:#303d31; color:white; padding:15px 20px; box-shadow:0 10px 30px rgba(0,0,0,.2); font-size:12px; overflow-wrap:anywhere; }
+.toast-close { min-width:44px; border:0; background:var(--ink); color:#fff; font-size:20px; line-height:1; cursor:pointer; }
+.toast-close:hover { background:var(--maroon-dark); }
 .inline-loading{padding:45px 0;color:#746b64;font-family:Georgia,serif;font-style:italic}
 .empty-state{min-height:280px;border:1px dashed var(--line);display:grid;place-content:center;justify-items:center;text-align:center;padding:40px;background:rgba(251,248,241,.45)}
 .empty-state>span{width:48px;height:48px;border:1px solid var(--brass);border-radius:50%;display:grid;place-items:center;color:var(--maroon);font:italic 18px Georgia,serif;margin-bottom:16px}
 .empty-state h3{font:400 24px Georgia,serif;margin-bottom:8px}
 .empty-state p{color:#7b7169;font-size:12px}
-.scope-badge{display:inline-flex;margin-bottom:14px;border:1px solid var(--carolina);background:var(--carolina-pale);padding:6px 9px;color:var(--maroon);font-size:8px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
-.content-scope{display:inline-flex;align-items:center;margin-right:8px;border:1px solid var(--line);padding:3px 6px;color:#596f7d;font:750 7px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;vertical-align:middle}
+.scope-badge{display:inline-flex;margin-bottom:14px;border:1px solid var(--carolina);background:var(--carolina-pale);padding:6px 9px;color:var(--maroon);font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.content-scope{display:inline-flex;align-items:center;margin-right:8px;border:1px solid var(--line);padding:3px 6px;color:#596f7d;font:750 12px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;vertical-align:middle}
 .content-scope.subgroup{border-color:var(--carolina);background:var(--carolina-pale);color:var(--maroon)}
 .scope-badge{margin-bottom:14px;border:0;border-bottom:1px solid var(--carolina);background:transparent;padding:0 0 5px;color:#286a9c}
 .toast{border-radius:0;background:var(--ink);box-shadow:8px 10px 24px rgba(23,37,47,.18)}
 .toast.error{border-left:4px solid #e3a1a8}
+/* The dialog panel takes the focus itself when it has nothing to focus (tabIndex -1): no ring around the whole panel. */
+[role="dialog"]:focus,[role="dialog"]:focus-visible{outline:none!important;box-shadow:none!important}
+/* Skeleton: the bars a screen shows while its first read is on the way. No motion for a person who asked for less of it. */
+.skeleton{display:block;background:linear-gradient(90deg,var(--line) 0%,var(--carolina-pale) 50%,var(--line) 100%);background-size:200% 100%;animation:skeleton-sweep 1.6s ease-in-out infinite}
+.skeleton-row{height:56px;margin-bottom:10px}
+@keyframes skeleton-sweep{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skeleton{animation:none}}
+/* Upload progress: one row per file (components/ui/upload-progress.tsx). The bar has a border of its own: its track alone is too pale to see against the page. */
+.upload-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.upload-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 14px;border:1px solid var(--line);background:var(--ivory);padding:10px 14px}
+.upload-name{overflow-wrap:anywhere;color:var(--ink);font-size:13px;font-weight:700}
+.upload-state{color:#596f7d;font-size:12px;text-align:right}
+.upload-item[data-status="failed"] .upload-state{color:#8b2832}
+.upload-item[data-status="done"] .upload-state{color:#2f5d3a}
+.upload-bar{grid-column:1/-1;height:8px;border:1px solid var(--sage);background:var(--line);overflow:hidden}
+.upload-bar>span{display:block;height:100%;background:var(--ink);transition:width .2s linear}
+.upload-percent{grid-column:1/-1;color:#596f7d;font-size:12px}
+.upload-retry{grid-column:1/-1;justify-self:start}
+@media (prefers-reduced-motion:reduce){.upload-bar>span{transition:none}}

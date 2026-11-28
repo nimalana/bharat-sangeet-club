@@ -68,6 +68,13 @@ const bucketGap = (() => {
   for (const b of bucketNames) for (const [cmd, m] of Object.entries(method)) if (!policies.some((p) => (p.cmd === cmd || p.cmd === "ALL") && (p.roles.includes("authenticated") || p.roles.includes("public")) && p.text.includes(`'${b}'`))) return { bucket: b, method: m, need: cmd };
   return null;
 })();
+// a bucket authenticated may upload into, and one it may not (check.mjs: only PERMISSIVE policies count)
+const uploadBuckets = (() => {
+  const policies = rows(`select cmd, roles, permissive, coalesce(qual, '') || ' ' || coalesce(with_check, '') as text from pg_policies where schemaname = 'storage' and tablename = 'objects'`);
+  const names = psql("select name from storage.buckets order by 1").split("\n").filter(Boolean);
+  const can = (b) => policies.some((p) => p.permissive === "PERMISSIVE" && (p.cmd === "INSERT" || p.cmd === "ALL") && (p.roles.includes("authenticated") || p.roles.includes("public")) && p.text.includes(`'${b}'`));
+  return { allowed: names.find(can), denied: names.find((b) => !can(b)) };
+})();
 if (!R || !W || !S) { console.error(`selftest needs a readable table, a writable table and a SELECT-only table in the replayed schema (found ${R?.name}, ${W?.name}, ${S?.name})`); process.exit(2); }
 
 const jsValue = (type, labels) => labels ? JSON.stringify(labels.replace(/^\{|\}$/g, "").split(",")[0].replace(/^"|"$/g, "")) : /\[\]$/.test(type) ? "[]" : /^(smallint|integer|bigint|numeric|real|double precision)$/.test(type) ? "1" : type === "boolean" ? "true" : /^jsonb?$/.test(type) ? "{}" : '"x"';
@@ -99,6 +106,7 @@ const t0 = Date.now();
 // ---------------------------------------------------------------- 1. baseline and 2. control
 const base = run(copyFrontend("baseline"));
 const control = `import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { uploadWithProgress } from "../../../lib/api/_core";
 const warehouse = createClient("http://localhost:54321", "selftest-key");
 async function readOnly(client: SupabaseClient, table: string) { return client.from(table).select("${R.cols[0]}"); }
 type AnyTable = ${readable.map((t) => JSON.stringify(t.name)).join(" | ")};
@@ -117,6 +125,7 @@ export async function control() {
   ${fnTwoRequired ? `await warehouse.rpc("${fnTwoRequired.name}", { ${argsFor(fnTwoRequired)} });` : ""}
   ${fkPair ? `await warehouse.from("${fkPair.a}").select("*, ${fkPair.b}(*)");` : ""}
   ${A ? `await fetch("http://localhost/rest/v1/${A.name}?select=${A.col}&order=${A.col}.desc");` : ""}
+  ${uploadBuckets.allowed ? `await uploadWithProgress(warehouse, "${uploadBuckets.allowed}", "a", new Blob(), { upsert: false }, () => {});` : ""}
 }
 `;
 {
@@ -160,17 +169,21 @@ add("upsert into a SELECT-only table", `await warehouse.from("${S.name}").upsert
 if (colPriv) add("update of a column authenticated may not write", `await warehouse.from("${colPriv.tbl}").update({ ${colPriv.col}: "x" }).eq("id", "u");`, `write-col-priv:${colPriv.tbl}:update:${colPriv.col}`);
 add("missing storage bucket", `await warehouse.storage.from("zz-no-bucket").upload("a", new Blob());`, "bucket-missing:zz-no-bucket");
 if (bucketGap) add(`storage call without a policy (${bucketGap.need} on ${bucketGap.bucket})`, `await warehouse.storage.from("${bucketGap.bucket}").${bucketGap.method}("a"${bucketGap.method === "remove" ? "" : ""} as never);`, `bucket-policy:${bucketGap.bucket}:${bucketGap.need}`);
+add("missing storage bucket, uploaded through uploadWithProgress", `await uploadWithProgress(warehouse, "zz-no-progress-bucket", "a", new Blob());`, "bucket-missing:zz-no-progress-bucket");
+if (uploadBuckets.denied) add(`uploadWithProgress into a bucket without an INSERT policy (${uploadBuckets.denied})`, `await uploadWithProgress(warehouse, "${uploadBuckets.denied}", "a", new Blob());`, `bucket-policy:${uploadBuckets.denied}:INSERT`);
 if (fkPair) add("wrong column inside an embedded relation", `await warehouse.from("${fkPair.a}").select("id, ${fkPair.b}(zz_emb_col)");`, `select-col:${fkPair.b}:zz_emb_col`);
 if (noFkPair) add("embedded relation without a foreign key", `await warehouse.from("${noFkPair.a}").select("id, ${noFkPair.b}(id)");`, `embed-fk:${noFkPair.a}:${noFkPair.b}`);
 if (A) add("wrong column in a raw REST url", `await fetch("http://localhost/rest/v1/${A.name}?select=${A.col},zz_rest_col");`, `rest-select-col:${A.name}:zz_rest_col`);
 add("raw REST url of a table the anon key may not read", `await fetch("http://localhost/rest/v1/${R.name}?select=id");`, `rest-priv:${R.name}`);
 const injected = `import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { uploadWithProgress } from "../../../../lib/api/_core";
 const warehouse = createClient("http://localhost:54321", "selftest-key");
 export async function injected() {
 ${cases.map((c) => `  { // ${c.name}\n  ${c.code}\n  }`).join("\n")}
   // dynamic: cannot be read statically and must be LISTED, not skipped
   const dynamicTable = String(process.env.ZZ_TABLE);
   await warehouse.from(dynamicTable).select("id");
+  await uploadWithProgress(warehouse, String(process.env.ZZ_BUCKET), "a", new Blob());
   const { from } = warehouse; void from;
 }
 `;
@@ -180,7 +193,7 @@ ${cases.map((c) => `  { // ${c.name}\n  ${c.code}\n  }`).join("\n")}
   fs.writeFileSync(path.join(dir, "features/area/deep/er/zz-injected.ts"), injected);
   const r = run(dir);
   for (const c of cases) record("injected", c.name, r.keys.has(c.key), r.keys.has(c.key) ? "" : `expected ${c.key}`);
-  record("injected", "a table name that is not a literal is listed as UNRESOLVED (count rises)", r.unresolved >= base.unresolved + 2, `${r.unresolved} vs ${base.unresolved}`);
+  record("injected", "a table name, a bucket given to uploadWithProgress and a destructured client that are not literals are listed as UNRESOLVED (count rises by 3)", r.unresolved >= base.unresolved + 3, `${r.unresolved} vs ${base.unresolved}`);
   record("injected", "a count of unresolved calls above the allowed one fails the check", r.keys.has("unresolved-count"), "");
 }
 

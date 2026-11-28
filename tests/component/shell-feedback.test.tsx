@@ -70,7 +70,9 @@ describe("a toast wears the tick only when it succeeded", () => {
   });
 });
 
-describe("failures stay longer than confirmations, and a newer toast takes over the timer", () => {
+// Phase 3.1: was "failures stay longer than confirmations, and a newer toast takes over the timer" (a failure faded after 6 s and a newer
+// toast replaced the older). Now a failure stays until it is dismissed or the next failure replaces it, and toasts stack.
+describe("a confirmation fades, a failure stays until dismissed, and toasts stack", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fake.from("profiles", "select").reply(ok([member("u-me", "Asha Rao")]));
@@ -86,8 +88,9 @@ describe("failures stay longer than confirmations, and a newer toast takes over 
     fireEvent.submit(screen.getByRole("heading", { name: "Contact information" }).closest("form")!);
     await advance(1);
   }
+  const shownToasts = () => Array.from(document.querySelectorAll(".toast")).map((node) => node.textContent);
 
-  it("a confirmation goes after 2.8 s, a failure after 6 s", async () => {
+  it("a confirmation goes after 2.8 s; a failure is still there a minute later and goes when it is dismissed", async () => {
     fake.from("profiles", "update").replyOnce(ok(null)).reply(fail("Phone numbers must be 10 digits"));
     await openMembers();
     await save();
@@ -98,24 +101,24 @@ describe("failures stay longer than confirmations, and a newer toast takes over 
     expect(toast()).toBeNull();
     await save();
     expect(toast()).toHaveTextContent("Phone numbers must be 10 digits");
-    await advance(5800);
-    expect(toast()).not.toBeNull();
-    await advance(300);
+    await advance(60_000);
+    expect(toast()).toHaveTextContent("Phone numbers must be 10 digits");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss message" }));
     expect(toast()).toBeNull();
   });
 
-  it("a newer toast replaces the older one and the older one's timer does not end it early", async () => {
+  it("a failure that arrives while a confirmation is showing stacks with it; the confirmation goes at its own time and the failure stays", async () => {
     fake.from("profiles", "update").replyOnce(ok(null)).reply(fail("Phone numbers must be 10 digits"));
     await openMembers();
     await save();
     await advance(2000);
     // The first toast would go in 0.8 s. A failure arrives now.
     await save();
-    expect(toast()).toHaveTextContent("Phone numbers must be 10 digits");
-    await advance(1500);
-    expect(toast()).toHaveTextContent("Phone numbers must be 10 digits");
-    await advance(4600);
-    expect(toast()).toBeNull();
+    expect(shownToasts()).toEqual(["✓ Your contact information was updated", "! Phone numbers must be 10 digits"]);
+    await advance(900);
+    expect(shownToasts()).toEqual(["! Phone numbers must be 10 digits"]);
+    await advance(60_000);
+    expect(shownToasts()).toEqual(["! Phone numbers must be 10 digits"]);
   });
 });
 

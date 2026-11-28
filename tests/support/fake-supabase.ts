@@ -161,6 +161,8 @@ function createFakeSupabase() {
       }
     }
     if (call.kind === "rpc") return { data: null, error: null };
+    // Nobody signed in: the answer a real client gives, with `data` an object (a caller may read `data.session`).
+    if (call.kind === "auth" && call.op === "getSession") return { data: { session: null }, error: null };
     return { data: call.op === "select" ? [] : null, error: null, count: null };
   }
 
