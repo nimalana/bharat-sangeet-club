@@ -3,16 +3,25 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { clubToday, formatDay } from "../../../lib/dates";
-import { supabase } from "../../../lib/supabase";
 import { readCache, writeCache } from "../../../lib/cache";
-import { friendlyError } from "../../../lib/errors";
+import { ApiError, friendlyError } from "../../../lib/errors";
+import {
+  FINANCE_LIST_LIMIT, addFundingClaimExpense, approveFundingClaim, approveReimbursement, createFinanceDocumentUrl, createFundingClaim, declineReimbursement,
+  financeAvailable, loadFinanceWave, payPersonalReimbursement, recordClubExpense, recordFinanceIncome, recordFundingClaimPayment, recordFundingClaimDecision,
+  removeFinanceDocument, removeFundingClaimExpense, requestReimbursementChanges, setFundingClaimStatus, submitMemberReimbursement, updateFinanceExpense,
+  updateMemberReimbursement, uploadFinanceDocument, voidFinanceExpense, voidFinancePayment, voidFundingClaim, withdrawMemberReimbursement,
+} from "../../../lib/api/finance";
+import type {
+  ClaimDocument, ClaimExpense, Expense, ExpenseDocument, FinanceDocument, FundingClaim, Payment, Profile, PurchaseDetails, Reimbursement, ReimbursementDocument,
+} from "../../../lib/api/finance";
+import { prepareFinanceUpload } from "../../../lib/finance-upload";
+import { answered, refusal } from "../refusal";
 import { formatMoney } from "../../../lib/format";
 import { canManageClub } from "../../../lib/permissions";
 import { REFRESH_WAIT_MS, waitAtMost } from "../../../lib/bounded-wait";
 import { financeRefreshFailed } from "../../../lib/finance-load";
 import { createRequestGate } from "../../../lib/request-gate";
 import { createSingleFlight } from "../../../lib/single-flight";
-import { removeStoredFile } from "../../../lib/storage";
 import type { ClubRole, Tables } from "../../../lib/db";
 import type { Notify } from "../../../lib/toast";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -26,30 +35,15 @@ import { Dialog } from "../../../components/ui/dialog";
 
 type Subgroup = Pick<Tables<"subgroups">, "id" | "name">;
 type ClubEvent = Pick<Tables<"events">, "id" | "title" | "starts_at">;
-// paid_by and direction are text columns with a CHECK constraint, so the generated type is `string`; the UI knows the two values.
-type Expense = Pick<Tables<"finance_expenses">, "id" | "description" | "vendor" | "amount" | "purchase_date" | "category" | "paid_by_member_id"
-  | "payment_card_last4" | "subgroup_id" | "club_event_id" | "event_related" | "event_name" | "event_starts_at"
-  | "event_attendee_count" | "event_schedule" | "status" | "created_by"> & { paid_by: "club" | "member" };
-type Reimbursement = Pick<Tables<"personal_reimbursements">, "id" | "expense_id" | "member_id" | "requested_amount" | "approved_amount" | "status"
-  | "member_note" | "review_note" | "created_at"> & Partial<Pick<Tables<"personal_reimbursements">, "void_reason">>;
-type Payment = Pick<Tables<"finance_payments">, "id" | "purpose" | "amount" | "description" | "category" | "account_name" | "counterparty"
-  | "payment_date" | "status" | "reimbursement_id" | "funding_claim_id"> & Partial<Pick<Tables<"finance_payments">, "expense_id">> & { direction: "inflow" | "outflow" };
-type FundingClaim = Pick<Tables<"funding_claims">, "id" | "title" | "funder_name" | "award_reference" | "heellife_reference" | "requested_amount"
-  | "approved_amount" | "received_amount" | "submission_deadline" | "status" | "notes">;
-type ClaimExpense = Pick<Tables<"funding_claim_expenses">, "claim_id" | "expense_id" | "claimed_amount">;
-type FinanceDocument = Pick<Tables<"finance_documents">, "id" | "document_type" | "title" | "storage_path" | "uploaded_by">;
-type ExpenseDocument = Pick<Tables<"finance_expense_documents">, "expense_id" | "document_id">;
-type ReimbursementDocument = Pick<Tables<"finance_reimbursement_documents">, "reimbursement_id" | "document_id">;
-type ClaimDocument = Pick<Tables<"finance_claim_documents">, "claim_id" | "document_id">;
-type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 type FinanceView = "overview" | "expenses" | "reimbursements" | "claims";
-// `warning` is for a change that went through but left something undone; it is shown instead of the success message.
-type ActionResult = PromiseLike<{ error: { message?: string; code?: string } | null; warning?: string }>;
-type FinanceAction = { title: string; description?: string; fields: FormField[]; submitLabel: string; danger?: boolean; success: string; run: (values: Record<string, string>) => ActionResult };
+// What a correction's action answers when it went through. `warning` is for a change that went through but left something undone;
+// it is shown instead of the success message. A change the database refuses throws an ApiError instead.
+type ActionOutcome = { warning?: string } | void;
+type FinanceAction = { title: string; description?: string; fields: FormField[]; submitLabel: string; danger?: boolean; success: string; run: (values: Record<string, string>) => Promise<ActionOutcome> };
 type FinanceSummary = { available_cash: number; income: number; spending: number; pending_reimbursement_total: number; pending_reimbursement_count: number; expected_funding: number };
 const reasonField = (label = "Reason"): FormField => ({ name: "reason", label, type: "textarea", required: true, minLength: 3, maxLength: 500, placeholder: "Kept in the audit trail" });
 type FinanceSnapshot = { expenses: Expense[]; reimbursements: Reimbursement[]; payments: Payment[]; documents: FinanceDocument[]; expenseDocuments: ExpenseDocument[]; reimbursementDocuments: ReimbursementDocument[]; claims: FundingClaim[]; claimExpenses: ClaimExpense[]; claimDocuments: ClaimDocument[]; profiles: Profile[]; summary: FinanceSummary | null };
-const LIST_LIMIT = 500;
+const LIST_LIMIT = FINANCE_LIST_LIMIT;
 // Shown when the lists have not come back REFRESH_WAIT_MS after a change that was saved.
 const REFRESH_SLOW_NOTICE = "Saved. The lists are slow to refresh and will update on their own.";
 // The same, for a refresh run after a change that was NOT saved: it must not say "Saved".
@@ -62,6 +56,26 @@ type FinanceConfirm = { kind: "pay"; request: Reimbursement } | { kind: "submit"
 
 const expenseCategories = ["Food", "Instruments", "Venue", "Travel", "Publicity", "Performance", "Supplies", "Fees", "Other"];
 const incomeCategories = ["Gig revenue", "Ticket sales", "Merchandise", "Membership dues", "Donation", "Sponsorship", "Grant", "Other"];
+
+// What the purchase forms (a member's request, a club expense) collect, read from the form as they always were.
+function readPurchaseDetails(form: FormData, last4: string): PurchaseDetails {
+  const subgroupValue = String(form.get("subgroup_id") || "");
+  return {
+    description: String(form.get("description") || ""),
+    vendor: String(form.get("vendor") || ""),
+    amount: Number(form.get("amount")),
+    purchaseDate: String(form.get("purchase_date") || ""),
+    category: String(form.get("category") || "Other"),
+    cardLast4: last4,
+    subgroupId: subgroupValue ? Number(subgroupValue) : null,
+    clubEventId: form.get("club_event_id") ? Number(form.get("club_event_id")) : null,
+    eventRelated: form.get("event_related") === "on",
+    eventName: String(form.get("event_name") || ""),
+    eventStartsAt: form.get("event_starts_at") ? new Date(String(form.get("event_starts_at"))).toISOString() : null,
+    eventAttendeeCount: form.get("event_attendee_count") ? Number(form.get("event_attendee_count")) : null,
+    eventSchedule: String(form.get("event_schedule") || ""),
+  };
+}
 
 export function FinancePage({ user, role, groups, events, notify }: {
   user: User;
@@ -108,48 +122,33 @@ export function FinancePage({ user, role, groups, events, notify }: {
   const [receiptRequestId, setReceiptRequestId] = useState<number | null>(null);
 
   const loadFinance = useCallback(async () => {
-    const client = supabase;
-    if (!client) return;
+    if (!financeAvailable()) return;
     if (!readCache(user.id, "finance")) setLoading(true);
     const isCurrent = loadGate.begin();
-    const none = Promise.resolve({ data: [] as unknown[], error: null });
-    // Everything in one wave (it used to be three, one after another). The
-    // lists show the latest LIST_LIMIT rows; totals come from the database.
-    const [expenseResult, reimbursementResult, paymentResult, documentResult, expenseDocumentResult, reimbursementDocumentResult, summaryResult, claimResult, claimExpenseResult, claimDocumentResult, profileResult] = await Promise.all([
-      client.from("finance_expenses").select("*").order("purchase_date", { ascending: false }).order("id", { ascending: false }).limit(LIST_LIMIT),
-      client.from("personal_reimbursements").select("*").order("created_at", { ascending: false }).limit(LIST_LIMIT),
-      client.from("finance_payments").select("*").order("payment_date", { ascending: false }).order("id", { ascending: false }).limit(LIST_LIMIT),
-      client.from("finance_documents").select("id,document_type,title,storage_path,uploaded_by").order("created_at", { ascending: false }).limit(LIST_LIMIT * 4),
-      client.from("finance_expense_documents").select("expense_id,document_id").limit(LIST_LIMIT * 4),
-      client.from("finance_reimbursement_documents").select("reimbursement_id,document_id").limit(LIST_LIMIT * 4),
-      client.rpc("get_finance_summary"),
-      canManage ? client.from("funding_claims").select("*").order("created_at", { ascending: false }).limit(LIST_LIMIT) : none,
-      canManage ? client.from("funding_claim_expenses").select("claim_id,expense_id,claimed_amount").limit(LIST_LIMIT * 4) : none,
-      canManage ? client.from("finance_claim_documents").select("claim_id,document_id").limit(LIST_LIMIT * 4) : none,
-      canManage ? client.from("profiles").select("id,full_name,email").order("full_name").limit(2000) : none,
-    ]);
+    // Everything in one wave (it used to be three, one after another).
+    const wave = await loadFinanceWave(canManage);
     if (!isCurrent()) return;
     // One failed query must not blank the lists (the balance would read $0.00): keep what is shown.
     // The totals RPC counts too. Without it the cards would fall back to sums of the (capped)
     // lists and quietly replace the database totals.
-    if (financeRefreshFailed({ expenses: expenseResult, reimbursements: reimbursementResult, payments: paymentResult, documents: documentResult, expenseDocuments: expenseDocumentResult, reimbursementDocuments: reimbursementDocumentResult, summary: summaryResult, claims: claimResult, claimExpenses: claimExpenseResult, claimDocuments: claimDocumentResult, profiles: profileResult })) {
+    if (financeRefreshFailed({ expenses: wave.expenses, reimbursements: wave.reimbursements, payments: wave.payments, documents: wave.documents, expenseDocuments: wave.expenseDocuments, reimbursementDocuments: wave.reimbursementDocuments, summary: wave.summary, claims: wave.claims, claimExpenses: wave.claimExpenses, claimDocuments: wave.claimDocuments, profiles: wave.profiles })) {
       setLoadFailed(true); setLoading(false);
       notify("Some finance records could not be loaded", "error");
       return;
     }
     setLoadFailed(false); setLoaded(true);
     const snapshot: FinanceSnapshot = {
-      expenses: (expenseResult.data || []) as Expense[],
-      reimbursements: (reimbursementResult.data || []) as Reimbursement[],
-      payments: (paymentResult.data || []) as Payment[],
-      documents: (documentResult.data || []) as FinanceDocument[],
-      expenseDocuments: (expenseDocumentResult.data || []) as ExpenseDocument[],
-      reimbursementDocuments: (reimbursementDocumentResult.data || []) as ReimbursementDocument[],
-      claims: (claimResult.data || []) as FundingClaim[],
-      claimExpenses: (claimExpenseResult.data || []) as ClaimExpense[],
-      claimDocuments: (claimDocumentResult.data || []) as ClaimDocument[],
-      profiles: (profileResult.data || []) as Profile[],
-      summary: summaryResult.error || !summaryResult.data ? null : Object.fromEntries(Object.entries(summaryResult.data as Record<string, unknown>).map(([key, value]) => [key, Number(value)])) as FinanceSummary,
+      expenses: wave.expenses.data || [],
+      reimbursements: wave.reimbursements.data || [],
+      payments: wave.payments.data || [],
+      documents: wave.documents.data || [],
+      expenseDocuments: wave.expenseDocuments.data || [],
+      reimbursementDocuments: wave.reimbursementDocuments.data || [],
+      claims: wave.claims.data || [],
+      claimExpenses: wave.claimExpenses.data || [],
+      claimDocuments: wave.claimDocuments.data || [],
+      profiles: wave.profiles.data || [],
+      summary: wave.summary.error || !wave.summary.data ? null : Object.fromEntries(Object.entries(wave.summary.data as Record<string, unknown>).map(([key, value]) => [key, Number(value)])) as FinanceSummary,
     };
     setExpenses(snapshot.expenses); setReimbursements(snapshot.reimbursements); setPayments(snapshot.payments);
     setDocuments(snapshot.documents); setExpenseDocuments(snapshot.expenseDocuments); setReimbursementDocuments(snapshot.reimbursementDocuments);
@@ -191,74 +190,31 @@ export function FinancePage({ user, role, groups, events, notify }: {
   const expectedFunding = claims.filter((claim) => ["approved", "partially_paid"].includes(claim.status)).reduce((total, claim) => total + Math.max(0, Number(claim.approved_amount || 0) - Number(claim.received_amount)), 0);
 
   async function uploadDocument(file: File, documentType: string, title: string, links: { expenseId?: number; reimbursementId?: number; claimId?: number }, last4?: string) {
-    if (!supabase) throw new Error("Finance storage is unavailable");
-    if (!file.size) throw new Error("Choose a document to upload");
-    if (file.size > 10 * 1024 * 1024) throw new Error("Finance documents must be 10 MB or smaller");
-    const inferredMime = file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
-    if (["bank_statement", "card_statement"].includes(documentType) && inferredMime !== "application/pdf") {
-      throw new Error("Statements must be uploaded as PDF documents, not screenshots");
-    }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const storagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
-    const uploaded = await supabase.storage.from("finance-private").upload(storagePath, file, { contentType: inferredMime, upsert: false });
-    if (uploaded.error) throw uploaded.error;
-    const saved = await supabase.from("finance_documents").insert({
-      document_type: documentType,
-      title,
-      storage_path: storagePath,
-      mime_type: inferredMime,
-      file_size_bytes: file.size,
-      payment_card_last4: last4 || null,
-      uploaded_by: user.id,
-    }).select("id").single();
-    if (saved.error || !saved.data) throw saved.error || new Error("Document record could not be created");
-    const documentId = Number(saved.data.id);
-    const linkRequests = [];
-    if (links.expenseId) linkRequests.push(supabase.from("finance_expense_documents").insert({ expense_id: links.expenseId, document_id: documentId }));
-    if (links.reimbursementId) linkRequests.push(supabase.from("finance_reimbursement_documents").insert({ reimbursement_id: links.reimbursementId, document_id: documentId }));
-    if (links.claimId) linkRequests.push(supabase.from("finance_claim_documents").insert({ claim_id: links.claimId, document_id: documentId }));
-    const linked = await Promise.all(linkRequests);
-    const linkError = linked.find((request) => request.error)?.error;
-    if (linkError) throw linkError;
-    return documentId;
+    if (!financeAvailable()) throw new Error("Finance storage is unavailable");
+    const { mimeType, storagePath } = prepareFinanceUpload(file, documentType, user.id);
+    return uploadFinanceDocument({ file, storagePath, mimeType, documentType, title, cardLast4: last4 || null, uploadedBy: user.id, links });
   }
 
   async function openDocument(documentId: number) {
-    if (!supabase) return;
+    if (!financeAvailable()) return;
     const document = documentById.get(documentId);
     if (!document) return;
-    const { data, error } = await supabase.storage.from("finance-private").createSignedUrl(document.storage_path, 90);
-    if (error || !data) notify("This finance document could not be opened", "error");
-    else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    const link = await answered(createFinanceDocumentUrl(document.storage_path));
+    if (!link.ok) notify("This finance document could not be opened", "error");
+    else window.open(link.value, "_blank", "noopener,noreferrer");
   }
 
   async function submitReimbursement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!financeAvailable()) return;
     setSaving(true);
     const form = new FormData(event.currentTarget);
     const receipt = form.get("receipt") as File;
     const statement = form.get("statement") as File;
     const last4 = String(form.get("last4") || "").trim();
-    const subgroupValue = String(form.get("subgroup_id") || "");
-    const { data, error } = await supabase.rpc("submit_member_reimbursement", {
-      p_description: String(form.get("description") || ""),
-      p_vendor: String(form.get("vendor") || ""),
-      p_amount: Number(form.get("amount")),
-      p_purchase_date: String(form.get("purchase_date") || ""),
-      p_category: String(form.get("category") || "Other"),
-      p_payment_card_last4: last4,
-      p_member_note: String(form.get("note") || ""),
-      p_subgroup_id: subgroupValue ? Number(subgroupValue) : null,
-      p_club_event_id: form.get("club_event_id") ? Number(form.get("club_event_id")) : null,
-      p_event_related: form.get("event_related") === "on",
-      p_event_name: String(form.get("event_name") || ""),
-      p_event_starts_at: form.get("event_starts_at") ? new Date(String(form.get("event_starts_at"))).toISOString() : null,
-      p_event_attendee_count: form.get("event_attendee_count") ? Number(form.get("event_attendee_count")) : null,
-      p_event_schedule: String(form.get("event_schedule") || ""),
-    });
-    if (error) { setSaving(false); notify(friendlyError(error, "The request could not be submitted."), "error"); return; }
-    const result = (Array.isArray(data) ? data[0] : data) as { expense_id: number; reimbursement_id: number };
+    const created = await answered(submitMemberReimbursement(readPurchaseDetails(form, last4), String(form.get("note") || "")));
+    if (!created.ok) { setSaving(false); notify(friendlyError(created.error, "The request could not be submitted."), "error"); return; }
+    const result = created.value;
     try {
       await uploadDocument(receipt, "receipt", `Receipt — ${String(form.get("description") || "Purchase")}`, { expenseId: result.expense_id, reimbursementId: result.reimbursement_id }, last4);
       if (statement?.size) await uploadDocument(statement, "card_statement", "Payment card statement", { expenseId: result.expense_id, reimbursementId: result.reimbursement_id }, last4);
@@ -271,26 +227,15 @@ export function FinancePage({ user, role, groups, events, notify }: {
 
   async function recordExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!financeAvailable()) return;
     setSaving(true);
     const form = new FormData(event.currentTarget);
     const receipt = form.get("receipt") as File;
     const last4 = String(form.get("last4") || "").trim();
-    const subgroupValue = String(form.get("subgroup_id") || "");
-    const { data, error } = await supabase.rpc("record_club_expense", {
-      p_description: String(form.get("description") || ""), p_vendor: String(form.get("vendor") || ""),
-      p_amount: Number(form.get("amount")), p_purchase_date: String(form.get("purchase_date") || ""),
-      p_category: String(form.get("category") || "Other"), p_account_name: String(form.get("account_name") || "Club bank account"),
-      p_payment_card_last4: last4, p_subgroup_id: subgroupValue ? Number(subgroupValue) : null,
-      p_club_event_id: form.get("club_event_id") ? Number(form.get("club_event_id")) : null,
-      p_event_related: form.get("event_related") === "on", p_event_name: String(form.get("event_name") || ""),
-      p_event_starts_at: form.get("event_starts_at") ? new Date(String(form.get("event_starts_at"))).toISOString() : null,
-      p_event_attendee_count: form.get("event_attendee_count") ? Number(form.get("event_attendee_count")) : null,
-      p_event_schedule: String(form.get("event_schedule") || ""),
-    });
-    if (error) { setSaving(false); notify(friendlyError(error, "The expense could not be recorded."), "error"); return; }
+    const recorded = await answered(recordClubExpense(readPurchaseDetails(form, last4), String(form.get("account_name") || "Club bank account")));
+    if (!recorded.ok) { setSaving(false); notify(friendlyError(recorded.error, "The expense could not be recorded."), "error"); return; }
     try {
-      await uploadDocument(receipt, "receipt", `Receipt — ${String(form.get("description") || "Purchase")}`, { expenseId: Number(data) }, last4);
+      await uploadDocument(receipt, "receipt", `Receipt — ${String(form.get("description") || "Purchase")}`, { expenseId: Number(recorded.value) }, last4);
       setModal(null); setEventRelated(false); notify("Club expense recorded"); await refreshAfterChange();
     } catch (uploadError) {
       notify(uploadError instanceof Error ? `Expense saved; ${uploadError.message}` : "Expense saved, but the receipt failed to upload", "error");
@@ -300,33 +245,33 @@ export function FinancePage({ user, role, groups, events, notify }: {
 
   async function recordIncome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!financeAvailable()) return;
     setSaving(true);
     const form = new FormData(event.currentTarget);
-    const { error } = await supabase.rpc("record_finance_income", {
-      p_description: String(form.get("description") || ""), p_amount: Number(form.get("amount")),
-      p_payment_date: String(form.get("payment_date") || ""), p_category: String(form.get("category") || "Other"),
-      p_counterparty: String(form.get("counterparty") || ""), p_account_name: String(form.get("account_name") || "Club bank account"),
-    });
+    const failure = await refusal(recordFinanceIncome({
+      description: String(form.get("description") || ""), amount: Number(form.get("amount")),
+      paymentDate: String(form.get("payment_date") || ""), category: String(form.get("category") || "Other"),
+      counterparty: String(form.get("counterparty") || ""), accountName: String(form.get("account_name") || "Club bank account"),
+    }));
     setSaving(false);
-    if (error) notify(friendlyError(error, "The income could not be recorded."), "error"); else { setModal(null); notify("Income recorded"); loadFinance(); }
+    if (failure) notify(friendlyError(failure, "The income could not be recorded."), "error"); else { setModal(null); notify("Income recorded"); loadFinance(); }
   }
 
   async function createClaim(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || selectedClaimExpenses.size === 0) { notify("Select at least one expense for this claim", "error"); return; }
+    if (!financeAvailable() || selectedClaimExpenses.size === 0) { notify("Select at least one expense for this claim", "error"); return; }
     setSaving(true);
     const form = new FormData(event.currentTarget);
     const approval = form.get("funding_approval") as File;
     // One call creates the claim and links its expenses, so a failure leaves nothing half-made.
-    const saved = await supabase.rpc("create_funding_claim", {
-      p_title: String(form.get("title") || ""), p_funder_name: String(form.get("funder_name") || "GPSG Senate"),
-      p_award_reference: String(form.get("award_reference") || ""), p_heellife_reference: String(form.get("heellife_reference") || ""),
-      p_submission_deadline: (String(form.get("submission_deadline") || "") || null) as string, /* NULL means no deadline: the function stores it, the generated type cannot say so for a required argument */ p_notes: String(form.get("notes") || ""),
-      p_expense_ids: [...selectedClaimExpenses],
-    });
-    if (saved.error || !saved.data) { setSaving(false); notify(friendlyError(saved.error, "Claim could not be created"), "error"); return; }
-    const claimId = Number((saved.data as { id: number }).id);
+    const saved = await answered(createFundingClaim({
+      title: String(form.get("title") || ""), funderName: String(form.get("funder_name") || "GPSG Senate"),
+      awardReference: String(form.get("award_reference") || ""), heellifeReference: String(form.get("heellife_reference") || ""),
+      submissionDeadline: String(form.get("submission_deadline") || "") || null, notes: String(form.get("notes") || ""),
+      expenseIds: [...selectedClaimExpenses],
+    }));
+    if (!saved.ok) { setSaving(false); notify(friendlyError(saved.error, "Claim could not be created"), "error"); return; }
+    const claimId = Number(saved.value.id);
     try {
       await uploadDocument(approval, "funding_approval", "Funding approval", { claimId });
       setModal(null); setSelectedClaimExpenses(new Set()); notify("Funding claim workspace created"); await refreshAfterChange();
@@ -374,21 +319,21 @@ export function FinancePage({ user, role, groups, events, notify }: {
   }
 
   async function markReimbursementPaid(id: number) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     await runOnce(`pay-${id}`, async () => {
-      const { error } = await client.rpc("pay_personal_reimbursement", { p_reimbursement_id: id, p_payment_date: clubToday(), p_account_name: "Club bank account" });
+      const failure = await refusal(payPersonalReimbursement(id, clubToday(), "Club bank account"));
       // Reload either way: a failure usually means another executive already paid it.
-      if (error) { notify(friendlyError(error, "The payment could not be recorded."), "error"); await refreshAfterChange(false); return; }
+      if (failure) { notify(friendlyError(failure, "The payment could not be recorded."), "error"); await refreshAfterChange(false); return; }
       notify("Reimbursement marked paid"); await refreshAfterChange();
     });
   }
 
   async function updateClaimStatus(claim: FundingClaim, status: string) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     if (status === "ready" && !claimChecklist(claim).complete) { notify("Complete every required claim document first", "error"); return; }
     await runOnce(`claim-${claim.id}-${status}`, async () => {
-      const { error } = await client.rpc("set_funding_claim_status", { p_claim_id: claim.id, p_status: status });
-      if (error) { notify(friendlyError(error, "The claim could not be updated"), "error"); await refreshAfterChange(false); return; }
+      const failure = await refusal(setFundingClaimStatus(claim.id, status));
+      if (failure) { notify(friendlyError(failure, "The claim could not be updated"), "error"); await refreshAfterChange(false); return; }
       notify("Funding claim updated"); await refreshAfterChange();
     });
   }
@@ -408,12 +353,16 @@ export function FinancePage({ user, role, groups, events, notify }: {
       // Busy until the refreshed lists are on screen, so no second change can start in between.
       setActionBusy(true);
       try {
-        let outcome: Awaited<ReturnType<FinanceAction["run"]>>;
+        let outcome: ActionOutcome;
+        // A change the database refuses is an ApiError, worded by friendlyError; anything else thrown is a call that never got an answer.
         try { outcome = await current.run(values); }
-        catch { notify("That change could not be saved. Check your connection and try again.", "error"); return; }
-        if (outcome.error) { notify(friendlyError(outcome.error, "That change could not be saved."), "error"); return; }
+        catch (error) {
+          if (error instanceof ApiError) notify(friendlyError(error, "That change could not be saved."), "error");
+          else notify("That change could not be saved. Check your connection and try again.", "error");
+          return;
+        }
         // A change that went through but left something undone is reported as the problem it is.
-        if (outcome.warning) notify(outcome.warning, "error"); else notify(current.success, "success");
+        if (outcome?.warning) notify(outcome.warning, "error"); else notify(current.success, "success");
         setAction(null); await refreshAfterChange();
       } finally { setActionBusy(false); }
     });
@@ -421,17 +370,17 @@ export function FinancePage({ user, role, groups, events, notify }: {
 
   // ---- Corrections. Each opens one small dialog and calls one audited function. ----
   function askVoidPayment(payment: Payment) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     const effect = payment.purpose === "member_reimbursement" ? "The reimbursement goes back to approved so it can be paid again."
       : payment.purpose === "external_reimbursement" ? "The funding claim's received amount is reduced."
       : payment.purpose === "direct_expense" ? "The club expense it paid for is voided too." : "It stops counting toward available cash.";
     setAction({ title: "Void this payment?", description: `${payment.description} · ${formatMoney(Number(payment.amount))}. ${effect} Nothing is deleted.`, fields: [reasonField()], submitLabel: "Void payment", danger: true, success: "Payment voided",
-      run: (values) => client.rpc("void_finance_payment", { p_payment_id: payment.id, p_reason: values.reason }) });
+      run: (values) => voidFinancePayment(payment.id, values.reason) });
   }
   function askVoidExpense(expense: Expense) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Void this expense?", description: `${expense.description} · ${formatMoney(Number(expense.amount))}. ${expense.paid_by === "club" ? "Its payment is voided with it." : "The member's reimbursement request is voided with it."} Nothing is deleted.`, fields: [reasonField()], submitLabel: "Void expense", danger: true, success: "Expense voided",
-      run: (values) => client.rpc("void_finance_expense", { p_expense_id: expense.id, p_reason: values.reason }) });
+      run: (values) => voidFinanceExpense(expense.id, values.reason) });
   }
   function expenseFields(expense: Expense, withMoney: boolean): FormField[] {
     return [
@@ -442,97 +391,96 @@ export function FinancePage({ user, role, groups, events, notify }: {
       { name: "last4", label: "Card last four digits", defaultValue: expense.payment_card_last4 || "", pattern: "[0-9]{4}", maxLength: 4, required: withMoney },
     ];
   }
+  // The details of an expense that an edit keeps (everything a correction form does not ask for stays as the expense has it).
   const expenseDetails = (expense: Expense, values: Record<string, string>) => ({
-    p_description: values.description, p_vendor: values.vendor, p_category: values.category, p_payment_card_last4: values.last4 || null,
-    p_subgroup_id: expense.subgroup_id, p_club_event_id: expense.club_event_id, p_event_related: expense.event_related, p_event_name: expense.event_name,
-    p_event_starts_at: expense.event_starts_at, p_event_attendee_count: expense.event_attendee_count, p_event_schedule: expense.event_schedule,
+    description: values.description, vendor: values.vendor, category: values.category, cardLast4: values.last4 || null,
+    subgroupId: expense.subgroup_id, clubEventId: expense.club_event_id, eventRelated: expense.event_related, eventName: expense.event_name,
+    eventStartsAt: expense.event_starts_at, eventAttendeeCount: expense.event_attendee_count, eventSchedule: expense.event_schedule,
   });
   function askEditExpense(expense: Expense) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Edit expense details", description: "The amount and date cannot be changed here. To correct those, void the expense and enter it again.", fields: expenseFields(expense, false), submitLabel: "Save changes", success: "Expense updated",
-      run: (values) => client.rpc("update_finance_expense", { p_expense_id: expense.id, ...expenseDetails(expense, values) }) });
+      run: (values) => updateFinanceExpense(expense.id, expenseDetails(expense, values)) });
   }
   function askEditRequest(request: Reimbursement, expense: Expense) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Edit my request", description: request.status === "changes_requested" ? "Saving sends the request back for review." : undefined,
       fields: [...expenseFields(expense, true), { name: "note", label: "Note for the reviewer", type: "textarea", defaultValue: request.member_note, maxLength: 1000 }], submitLabel: request.status === "changes_requested" ? "Save and resubmit" : "Save changes", success: "Request updated",
-      run: (values) => client.rpc("update_member_reimbursement", { p_reimbursement_id: request.id, ...expenseDetails(expense, values), p_payment_card_last4: values.last4, p_amount: Number(values.amount), p_purchase_date: values.purchase_date, p_member_note: values.note }) });
+      run: (values) => updateMemberReimbursement(request.id, { ...expenseDetails(expense, values), cardLast4: values.last4 }, { amount: Number(values.amount), purchaseDate: values.purchase_date, memberNote: values.note }) });
   }
   function askWithdrawRequest(request: Reimbursement) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Withdraw this request?", description: "It will not be reviewed or paid. You can submit a new request later.", fields: [], submitLabel: "Withdraw request", danger: true, success: "Request withdrawn",
-      run: () => client.rpc("withdraw_member_reimbursement", { p_reimbursement_id: request.id }) });
+      run: () => withdrawMemberReimbursement(request.id) });
   }
   function askApprove(request: Reimbursement) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Approve reimbursement", description: `Requested: ${formatMoney(Number(request.requested_amount))}. Lower the amount to approve part of it.`,
       fields: [{ name: "amount", label: "Amount to approve", type: "number", defaultValue: String(request.requested_amount), required: true, min: 0.01, max: Number(request.requested_amount), step: 0.01 }, { name: "note", label: "Note to the member (optional)", type: "textarea", maxLength: 1000 }], submitLabel: "Approve", success: "Reimbursement approved",
-      run: (values) => client.rpc("review_personal_reimbursement", { p_reimbursement_id: request.id, p_decision: "approved", p_approved_amount: Number(values.amount), p_review_note: values.note }) });
+      run: (values) => approveReimbursement(request.id, Number(values.amount), values.note) });
   }
   function askDecline(request: Reimbursement) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Decline this request?", fields: [{ ...reasonField("Reason shown to the member"), name: "note" }], submitLabel: "Decline", danger: true, success: "Reimbursement declined",
-      run: (values) => client.rpc("review_personal_reimbursement", { p_reimbursement_id: request.id, p_decision: "rejected", p_approved_amount: null, p_review_note: values.note }) });
+      run: (values) => declineReimbursement(request.id, values.note) });
   }
   function askRequestChanges(request: Reimbursement) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Ask the member for changes", description: "The member can edit the request or replace the receipt and send it back.", fields: [{ ...reasonField("What needs to change?"), name: "note" }], submitLabel: "Request changes", success: "Changes requested",
-      run: (values) => client.rpc("request_reimbursement_changes", { p_reimbursement_id: request.id, p_note: values.note }) });
+      run: (values) => requestReimbursementChanges(request.id, values.note) });
   }
   function askRemoveDocument(document: FinanceDocument) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Remove this document?", description: `"${document.title}" will be deleted. Add the replacement first if this is the only receipt.`, fields: [], submitLabel: "Remove document", danger: true, success: "Document removed",
       run: async () => {
-        const removed = await client.rpc("remove_finance_document", { p_document_id: document.id });
-        if (removed.error || typeof removed.data !== "string") return { error: removed.error };
         // The record goes first; the file is cleaned up after. Storage answers a refused delete with an
         // empty list and no error, so an empty answer is a failure to report, not a success. The record
         // is already gone by now, so the dialog still closes. Whatever went wrong with the file (refused,
         // a storage error, no network), the warning says the record is removed and the file is still
         // stored; the person is never told to retry. A deleted file (the usual case: the uploader and
         // the executives can delete an unregistered object) gives no warning.
-        const leftover = await removeStoredFile("finance-private", removed.data, { refusedMessage: FILE_LEFT_IN_STORAGE, failedMessage: FILE_LEFT_IN_STORAGE });
-        return { error: null, warning: leftover ?? undefined };
+        const { fileLeft } = await removeFinanceDocument(document.id, { refusedMessage: FILE_LEFT_IN_STORAGE, failedMessage: FILE_LEFT_IN_STORAGE });
+        return { warning: fileLeft ?? undefined };
       } });
   }
   function askClaimDecision(claim: FundingClaim, status: "approved" | "changes_requested" | "denied") {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     if (status === "approved") {
       setAction({ title: "Record the funder's approval", description: `Requested: ${formatMoney(Number(claim.requested_amount))}.`, fields: [{ name: "amount", label: "Amount approved", type: "number", defaultValue: String(claim.requested_amount), required: true, min: 0.01, max: Number(claim.requested_amount), step: 0.01 }, { name: "note", label: "Note (optional)", type: "textarea" }], submitLabel: "Mark approved", success: "Claim approved",
-        run: (values) => client.rpc("set_funding_claim_status", { p_claim_id: claim.id, p_status: "approved", p_approved_amount: Number(values.amount), p_note: values.note }) });
+        run: (values) => approveFundingClaim(claim.id, Number(values.amount), values.note) });
     } else {
       setAction({ title: status === "denied" ? "Mark this claim denied?" : "The funder asked for changes", fields: [{ ...reasonField(status === "denied" ? "What did the funder say?" : "What do they need?"), name: "note" }], submitLabel: status === "denied" ? "Mark denied" : "Reopen claim", danger: status === "denied", success: "Funding claim updated",
-        run: (values) => client.rpc("set_funding_claim_status", { p_claim_id: claim.id, p_status: status, p_note: values.note }) });
+        run: (values) => recordFundingClaimDecision(claim.id, status, values.note) });
     }
   }
   function askVoidClaim(claim: FundingClaim) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Void this funding claim?", description: "Its expenses are released so they can go on another claim. A claim with money received must have those payments voided first.", fields: [reasonField()], submitLabel: "Void claim", danger: true, success: "Funding claim voided",
-      run: (values) => client.rpc("void_funding_claim", { p_claim_id: claim.id, p_reason: values.reason }) });
+      run: (values) => voidFundingClaim(claim.id, values.reason) });
   }
   function askRemoveClaimExpense(claim: FundingClaim, expense: Expense) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     setAction({ title: "Remove this expense from the claim?", description: `${expense.description} · ${formatMoney(Number(expense.amount))}. The claim total is reduced.`, fields: [], submitLabel: "Remove from claim", success: "Expense removed from the claim",
-      run: () => client.rpc("remove_funding_claim_expense", { p_claim_id: claim.id, p_expense_id: expense.id }) });
+      run: () => removeFundingClaimExpense(claim.id, expense.id) });
   }
   function askAddClaimExpense(claim: FundingClaim) {
-    const client = supabase; if (!client) return;
+    if (!financeAvailable()) return;
     if (!unclaimedExpenses.length) { notify("No unclaimed expenses are available", "error"); return; }
     setAction({ title: "Add an expense to this claim", fields: [{ name: "expense_id", label: "Expense", type: "select", required: true, options: unclaimedExpenses.map((expense) => ({ value: String(expense.id), label: `${expense.description} · ${formatMoney(Number(expense.amount))}` })) }], submitLabel: "Add to claim", success: "Expense added to the claim",
-      run: (values) => client.rpc("add_funding_claim_expense", { p_claim_id: claim.id, p_expense_id: Number(values.expense_id) }) });
+      run: (values) => addFundingClaimExpense(claim.id, Number(values.expense_id)) });
   }
 
   async function recordClaimPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !claimPaymentId) return;
+    if (!financeAvailable() || !claimPaymentId) return;
     setSaving(true);
     const form = new FormData(event.currentTarget);
-    const { error } = await supabase.rpc("record_funding_claim_payment", {
-      p_claim_id: claimPaymentId, p_amount: Number(form.get("amount")),
-      p_payment_date: String(form.get("payment_date") || ""), p_account_name: String(form.get("account_name") || "Club bank account"),
-    });
+    const failure = await refusal(recordFundingClaimPayment({
+      claimId: claimPaymentId, amount: Number(form.get("amount")),
+      paymentDate: String(form.get("payment_date") || ""), accountName: String(form.get("account_name") || "Club bank account"),
+    }));
     setSaving(false);
-    if (error) notify(friendlyError(error, "The payment could not be recorded."), "error"); else { setClaimPaymentId(null); notify("Funding payment recorded"); loadFinance(); }
+    if (failure) notify(friendlyError(failure, "The payment could not be recorded."), "error"); else { setClaimPaymentId(null); notify("Funding payment recorded"); loadFinance(); }
   }
 
   function claimChecklist(claim: FundingClaim) {
