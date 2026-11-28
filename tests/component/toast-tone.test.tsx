@@ -33,7 +33,7 @@ import { AnnouncementActions } from "../../features/announcements/components/ann
 import { ClubArchiveManager, type ClubArchiveItem } from "../../components/recordings/club-archive-manager";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../components/recordings/recording-manage";
 import { ResourceActions, type ManagedResource } from "../../components/resources/resource-actions";
-import { GroupPeople } from "../../components/subgroups/group-people";
+import { GroupPeople } from "../../features/groups/components/group-people";
 import { notifySpy, userOf } from "../support/helpers";
 import { fail, fake, ok } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";

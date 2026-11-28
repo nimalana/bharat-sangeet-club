@@ -37,7 +37,7 @@ import { ClubArchiveManager, type ClubArchiveItem } from "../../components/recor
 import { RecordingWorkspace } from "../../components/recordings/recording-workspace";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../components/recordings/recording-manage";
 import { ResourceActions, type ManagedResource } from "../../components/resources/resource-actions";
-import { GroupPeople } from "../../components/subgroups/group-people";
+import { GroupPeople } from "../../features/groups/components/group-people";
 import { setCacheOwner } from "../../lib/cache";
 import { FILE_NOT_DELETED } from "../../lib/storage-remove";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";

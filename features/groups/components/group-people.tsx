@@ -2,18 +2,18 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import type { ClubRole, EnrollmentMode, GroupRole, RpcReturns, Tables } from "../../lib/db";
-import { friendlyError } from "../../lib/errors";
-import { canRemoveGroupMember, groupCapabilities } from "../../lib/permissions";
-import { createRequestGate } from "../../lib/request-gate";
-import { createSingleFlight } from "../../lib/single-flight";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import type { ClubRole, EnrollmentMode, GroupRole, RpcReturns, Tables } from "../../../lib/db";
+import { friendlyError } from "../../../lib/errors";
+import { canRemoveGroupMember, groupCapabilities } from "../../../lib/permissions";
+import { createRequestGate } from "../../../lib/request-gate";
+import { createSingleFlight } from "../../../lib/single-flight";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
 
 export type ManagedGroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode"> & Partial<Pick<Tables<"subgroups">, "archived_at">>;
 type RosterRow = RpcReturns<"list_subgroup_roster">[number]; // what list_subgroup_roster returns, row by row
