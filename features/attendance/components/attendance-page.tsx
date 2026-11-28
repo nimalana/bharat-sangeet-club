@@ -9,6 +9,7 @@ import { LoadErrorBanner } from "../../../components/ui/load-error";
 import { SkeletonRows } from "../../../components/ui/skeleton";
 import { useAttendanceActions } from "../hooks/use-attendance-actions";
 import { useAttendanceData } from "../hooks/use-attendance-data";
+import { useAttendanceUrl } from "../hooks/use-attendance-url";
 import { flaggedSummaries, overallRate, termChoices, termLabel, type AttendanceTab, type ClubRole } from "../model";
 import { AbsenceFormDialog } from "./absence-form-dialog";
 import { ActionDialogs } from "./action-dialogs";
@@ -31,10 +32,16 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   initialTab?: AttendanceTab;
 }) {
   const canManage = canManageClub(role);
-  const [tab, setTab] = useState<AttendanceTab>(initialTab || "overview");
+  // The audience, term and selected meeting are in the address (so a reload, a link and Back keep them); the tab is not (the shell keys
+  // this page by its ?tab=, so writing it would remount the page). The tab the page starts on: the one the shell asks for, or the
+  // Meetings tab when the address names a meeting and the person can manage. A tab the person chooses is theirs from then on.
+  const url = useAttendanceUrl({ initialScope, groups });
+  const { scopeFilter, termFilter } = url;
+  const [chosenTab, setTab] = useState<AttendanceTab | null>(null);
+  const tab: AttendanceTab = chosenTab ?? (initialTab !== "overview" ? initialTab : canManage && url.sessionParam !== null ? "meetings" : "overview");
   // What is read and kept fresh (overview, roster, poll), and what the person does (check in, open, mark, review).
-  const attendance = useAttendanceData({ user, canManage, initialScope, tab });
-  const { scopeFilter, termFilter, data, view, failedKey, cacheKey, load, loadingMore, showMore, roster, rosterFailed, loadRoster, selectedSessionId, setSelectedSessionId } = attendance;
+  const attendance = useAttendanceData({ user, canManage, scopeFilter, termFilter, sessionParam: url.sessionParam, tab });
+  const { data, view, failedKey, cacheKey, load, loadingMore, showMore, roster, rosterFailed, loadRoster, selectedSessionId } = attendance;
   const actions = useAttendanceActions({ user, groups, summaryTerm: view.summary_term, load, rereadRoster: attendance.rereadRoster, setTab });
   const { saving, active, dialog, setDialog } = actions;
   const sessions = view.sessions;
@@ -58,13 +65,13 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   const profileName = (memberId: string) => { const profile = view.profiles.find((item) => item.id === memberId); return profile?.full_name || profile?.email || "Member"; };
 
   function changeScope(value: ScopeFilter) {
-    attendance.chooseScope(value);
+    url.chooseScope(value);
     setTab("overview");
     actions.resetLive();
   }
 
   function changeTerm(value: string) {
-    attendance.chooseTerm(value);
+    url.chooseTerm(value);
     setTab("overview");
     actions.resetLive();
   }
@@ -88,14 +95,14 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
 
     {canManage ? <>
       <AttendanceSummary closedCount={closedSessions.length} overall={overallRate(view.attended_total, view.absent_total)} flagged={summaries} />
-      {openSession && <LiveSessionCard session={openSession} liveCode={actions.liveCode} saving={saving} rotating={active === "rotate"} onRotate={() => actions.rotateCode(openSession.id)}
+      {openSession && <LiveSessionCard session={openSession} liveCode={actions.liveCodeFor(openSession.id)} saving={saving} rotating={active === "rotate"} onRotate={() => actions.rotateCode(openSession.id)}
         onClose={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "close" })}
         onCancel={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "cancel" })} />}
       <AttendanceTabs tab={tab} onTab={setTab} pendingExcuseCount={view.excuses_pending} />
       <div role="tabpanel" id={ATTENDANCE_PANEL_ID} aria-labelledby={attendanceTabId(tab)}>
         {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} profileName={profileName}
           onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} />}
-        {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving} openingSessionId={active?.startsWith("open:") ? Number(active.slice(5)) : null}
+        {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={url.chooseSession} roster={roster} rosterFailed={rosterFailed} saving={saving} openingSessionId={active?.startsWith("open:") ? Number(active.slice(5)) : null}
           onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} />}
         {tab === "excuses" && <ExcusesTab view={view} sessions={sessions} viewLabel={viewLabel} saving={saving} profileName={profileName} onDialog={setDialog} onOpenProof={actions.openProof} openingProofId={actions.openingProofId} showMore={showMore} loadingMore={loadingMore} />}
       </div>

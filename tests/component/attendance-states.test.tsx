@@ -40,17 +40,19 @@ function renderAttendance(options: { role?: "member" | "executive"; tab?: "overv
 // ---------------------------------------------------------------------------------------------------------------
 
 describe("a view that cannot be read", () => {
-  it("keeps the title and the pickers on screen, says so as an alert, and another term can still be chosen", async () => {
-    fake.rpc("get_attendance_overview").replyOnce(fail("boom")).reply(ok({ ...BASE, term: "2026-spring", view_term: "2026-spring", sessions: [session(1, { title: "Spring opener" })] }));
+  it("keeps the title and the pickers on screen, says so as an alert, and another audience can still be chosen", async () => {
+    fake.rpc("get_attendance_overview").replyOnce(fail("boom")).reply(ok({ ...BASE, sessions: [session(1, { title: "Opening" })] }));
     renderAttendance();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Attendance could not be loaded.");
     expect(screen.getByRole("heading", { name: "Attendance" })).toBeInTheDocument();
     // Not an empty page: nothing says "no meetings" for a read that did not answer.
     expect(screen.queryByText("No meetings yet.")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value: "2026-spring" } });
+    // (The term picker has only "All terms" until a read has answered, so the audience is what can be changed.)
+    fireEvent.change(screen.getByLabelText("Filter attendance by audience"), { target: { value: "club" } });
     expect(await screen.findByLabelText("Attendance code")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fake.rpc("get_attendance_overview").calls.at(-1)?.payload).toMatchObject({ p_scope: "club" });
   });
 
   it("Try again shows the rows while it reads, and a double press reads once", async () => {
@@ -170,7 +172,7 @@ describe("the meetings list", () => {
     expect(first).toHaveAttribute("aria-current", "true");
     expect(second).not.toHaveAttribute("aria-current");
     fireEvent.click(second);
-    expect(second).toHaveAttribute("aria-current", "true");
+    await waitFor(() => expect(second).toHaveAttribute("aria-current", "true"));
     expect(first).not.toHaveAttribute("aria-current");
   });
 });

@@ -8,6 +8,9 @@
 // - reopening the screen shows the last data at once and refreshes behind it;
 // - the poll patches the open meeting in place and reads the overview again only when something it cannot patch changed;
 // - the roster is read when a meeting is selected on the Meetings tab, and again when the poll says its marks moved.
+//
+// Which audience, term and meeting is in view is not decided here: it comes from the address (use-attendance-url.ts) and this hook
+// reads what that view needs. The selected meeting is the one the address names when this view has it, else the first.
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { attempt } from "../../../lib/api/attempt";
@@ -23,36 +26,42 @@ import { useAttendancePoll, type PollState } from "./use-attendance-poll";
 
 const viewKey = (scope: ScopeFilter, term: string) => `attendance2:${scope}:${term}`;
 
-export function useAttendanceData({ user, canManage, initialScope, tab }: {
+export function useAttendanceData({ user, canManage, scopeFilter, termFilter, sessionParam, tab }: {
   user: User;
   canManage: boolean;
-  initialScope: ScopeFilter;
+  /** The audience and term in view (from the address). */
+  scopeFilter: ScopeFilter;
+  termFilter: string;
+  /** The meeting the address names, or null. */
+  sessionParam: number | null;
   /** The tab on screen: the poll reads the roster again only while the Meetings tab shows it. */
   tab: AttendanceTab;
 }) {
   const { notify } = useToast();
-  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(initialScope);
-  const [termFilter, setTermFilter] = useState("all");
   // How many items each review queue lists for an executive (see queueNote in
   // attendance-model.ts). 'Show more' raises it once the server has answered
-  // with the larger lists; changing the audience or term puts it back, so a long
+  // with the larger lists; a load for another audience or term (however it was
+  // reached: the pickers, or Back in the browser) puts it back, so a long
   // list is only loaded on request. A ref, because every load reads the value
   // in force when it starts and none should start because it changed.
   const listLimit = useRef<number>(DEFAULT_LIST_LIMIT);
+  const limitIsFor = useRef<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   // Reopening the screen shows the last data at once and refreshes behind it.
   const cacheKey = viewKey(scopeFilter, termFilter);
-  const [cached] = useState(() => readCache<AttendanceOverview>(user.id, viewKey(initialScope, "all")));
+  const [cached] = useState(() => readCache<AttendanceOverview>(user.id, cacheKey));
   // What has been read for each audience and term this visit, so the data on
   // screen always belongs to the audience and term chosen now.
-  const [views, setViews] = useState<Record<string, AttendanceOverview>>(() => cached ? { [viewKey(initialScope, "all")]: normalizeOverview(cached) } : {});
+  const [views, setViews] = useState<Record<string, AttendanceOverview>>(() => cached ? { [cacheKey]: normalizeOverview(cached) } : {});
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const data = views[cacheKey] ?? null;
   const view = data ?? EMPTY_OVERVIEW;
   const sessions = view.sessions;
   const [roster, setRoster] = useState<Roster | null>(null);
   const [rosterFailed, setRosterFailed] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(cached?.sessions?.[0]?.id ?? null);
+  // The meeting the address names, when this view has it; else the first (so a link to a meeting of another view, or a meeting that
+  // was voided, still opens a roster).
+  const selectedSessionId = sessionParam !== null && sessions.some((session) => session.id === sessionParam) ? sessionParam : sessions[0]?.id ?? null;
 
   // Only the answer to the newest request of each kind is used, so a slow
   // answer for an earlier audience, term or poll can never overwrite newer data.
@@ -75,9 +84,11 @@ export function useAttendanceData({ user, canManage, initialScope, tab }: {
     if (failures.shouldNotify(background)) notify(message, "error");
   }, [failures, notify]);
 
-  const load = useCallback(async (silent = false, limit: number = listLimit.current) => {
+  const load = useCallback(async (silent = false, askedLimit?: number) => {
     const id = loadSeq.next();
     const key = cacheKey;
+    if (limitIsFor.current !== key) { limitIsFor.current = key; listLimit.current = DEFAULT_LIST_LIMIT; }
+    const limit = askedLimit ?? listLimit.current;
     if (!silent) {
       setFailedKey(null);
       // Show what this audience and term looked like last time while it refreshes.
@@ -94,10 +105,8 @@ export function useAttendanceData({ user, canManage, initialScope, tab }: {
       failures.succeeded();
       listLimit.current = limit;
       const next = normalizeOverview(result as Partial<AttendanceOverview>);
-      const ids = next.sessions.map((session) => session.id);
       setViews((current) => ({ ...current, [key]: next }));
       setFailedKey(null);
-      setSelectedSessionId((current) => current && ids.includes(current) ? current : next.sessions[0]?.id || null);
       writeCache(user.id, key, next);
     } catch {
       if (!loadSeq.isLatest(id)) return;
@@ -145,10 +154,6 @@ export function useAttendanceData({ user, canManage, initialScope, tab }: {
   const hasOpenSession = sessions.some((session) => session.status === "open");
   useAttendancePoll({ cacheKey, scopeArgs, canManage, hasOpenSession, latest, loadSeq, pulseSeq, failures, reportFailure, load, loadRoster, setViews });
 
-  // A new audience or term starts again at the first page of the review queues.
-  const chooseScope = useCallback((value: ScopeFilter) => { setScopeFilter(value); listLimit.current = DEFAULT_LIST_LIMIT; }, []);
-  const chooseTerm = useCallback((value: string) => { setTermFilter(value); listLimit.current = DEFAULT_LIST_LIMIT; }, []);
-
   // 'Show more' asks the server for the next cap and keeps it for later loads
   // only once the larger lists have arrived (a failure leaves the page as it was
   // and the button to try again). It is absent once the most the server gives is
@@ -161,7 +166,6 @@ export function useAttendanceData({ user, canManage, initialScope, tab }: {
   };
 
   return {
-    scopeFilter, termFilter, chooseScope, chooseTerm,
     /** The overview read for this audience and term; null until the first read has answered. */
     data,
     /** `data`, or an empty overview while there is none. */
@@ -169,6 +173,7 @@ export function useAttendanceData({ user, canManage, initialScope, tab }: {
     failedKey, cacheKey,
     load, showMore, loadingMore,
     roster, rosterFailed, loadRoster, rereadRoster,
-    selectedSessionId, setSelectedSessionId,
+    /** The meeting whose roster the Meetings tab shows. */
+    selectedSessionId,
   };
 }

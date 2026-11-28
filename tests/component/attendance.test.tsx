@@ -474,10 +474,13 @@ describe("the panels say which view they list", () => {
     renderAttendance({ tab: "excuses" });
     expect(await screen.findByText("3 awaiting review · All activity · All terms")).toBeInTheDocument();
     // Choosing another audience or term brings the person back to the Overview tab.
+    // (The pickers write the address and the screen follows it: wait for the read of the new view before acting on it.)
     fireEvent.change(screen.getByLabelText("Filter attendance by audience"), { target: { value: "group:7" } });
+    await waitFor(() => expect(overviewCalls().at(-1)?.payload).toMatchObject({ p_scope: "subgroup", p_subgroup_id: 7 }));
     fireEvent.click(await screen.findByRole("tab", { name: /Absence forms/ }));
     expect(await screen.findByText("3 awaiting review · Hindustani Vocal · All terms")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value: "2026-spring" } });
+    await waitFor(() => expect(overviewCalls().at(-1)?.payload).toMatchObject({ p_term_key: "2026-spring" }));
     fireEvent.click(await screen.findByRole("tab", { name: /Absence forms/ }));
     expect(await screen.findByText("3 awaiting review · Hindustani Vocal · Spring 2026")).toBeInTheDocument();
   });

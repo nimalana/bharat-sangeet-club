@@ -33,12 +33,12 @@ export function useAttendanceActions({ user, groups, summaryTerm, load, rereadRo
   }
 
   const live = useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive });
-  const dialogs = useAttendanceDialogs({ summaryTerm, exclusive, refresh, clearLiveCode: () => live.setLiveCode("") });
+  const dialogs = useAttendanceDialogs({ summaryTerm, exclusive, refresh, clearLiveCode: live.clearLiveCode });
   const absence = useAbsenceForm({ user, load, exclusive });
 
   return {
     saving, active, refresh,
-    checkInCode: live.checkInCode, setCheckInCode: live.setCheckInCode, liveCode: live.liveCode, feedback: live.feedback, checkIn: live.checkIn,
+    checkInCode: live.checkInCode, setCheckInCode: live.setCheckInCode, liveCodeFor: live.liveCodeFor, feedback: live.feedback, checkIn: live.checkIn,
     openAttendance: live.openAttendance, rotateCode: live.rotateCode, resetLive: live.resetLive,
     showNewSession: live.showNewSession, setShowNewSession: live.setShowNewSession, createSession: live.createSession,
     dialog: dialogs.dialog, setDialog: dialogs.setDialog, submitDialog: dialogs.submitDialog, confirmSession: dialogs.confirmSession,

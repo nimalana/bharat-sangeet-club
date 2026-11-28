@@ -93,6 +93,7 @@ describe("a member checks in", () => {
     await screen.findByText("That code has expired");
     fireEvent.change(screen.getByLabelText("Filter attendance by term"), { target: { value: "2026-spring" } });
     // The screen shows the loading line while the other term is read; the message must not come back with the form.
+    await waitFor(() => expect(overviewCalls().at(-1)?.payload).toMatchObject({ p_term_key: "2026-spring" }));
     await screen.findByLabelText("Attendance code");
     expect(screen.queryByText("That code has expired")).not.toBeInTheDocument();
   });
@@ -221,6 +222,8 @@ describe("rotating the code", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Rotate code" }));
     await screen.findByText("999111");
     fireEvent.change(screen.getByLabelText("Filter attendance by audience"), { target: { value: "club" } });
+    // The picker writes the address and the screen follows it: wait for the read of the new audience, then look at its card.
+    await waitFor(() => expect(overviewCalls().at(-1)?.payload).toMatchObject({ p_scope: "club" }));
     expect(await screen.findByText("Hidden after reload")).toBeInTheDocument();
     expect(screen.queryByText("999111")).not.toBeInTheDocument();
   });
