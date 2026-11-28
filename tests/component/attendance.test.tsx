@@ -564,6 +564,44 @@ describe("what the screen shows when it cannot load", () => {
     expect(await screen.findByRole("heading", { name: "Attendance" })).toBeInTheDocument();
   });
 
+  it("while the first read is on the way, the screen shows the loading line and nothing else", async () => {
+    const slow = deferred();
+    fake.rpc("get_attendance_overview").reply(slow.reply);
+    renderAttendance();
+    const line = await screen.findByText("Loading attendance…");
+    expect(line.tagName).toBe("DIV");
+    expect(line.className).toBe("inline-loading");
+    expect(screen.queryByRole("heading", { name: "Attendance" })).not.toBeInTheDocument();
+    await act(async () => { slow.resolve(ok({ ...BASE, sessions: [] })); });
+    expect(await screen.findByRole("heading", { name: "Attendance" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading attendance…")).not.toBeInTheDocument();
+  });
+
+  it("the failed first read is one line in the loading style: the sentence, then Try again", async () => {
+    fake.rpc("get_attendance_overview").reply(fail("boom"));
+    renderAttendance();
+    const line = (await screen.findByText(/Attendance could not be loaded\./)).closest("div")!;
+    expect(line.className).toBe("inline-loading");
+    expect(line.textContent).toBe("Attendance could not be loaded. Try again");
+    expect(within(line).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("a roster that cannot be read says so in the empty-panel style and reads it again on Try again; while it is read, it says Loading roster…", async () => {
+    scriptOverview({ sessions: [session(3, { status: "open", live: live(4, "r1") })] });
+    const slow = deferred();
+    fake.rpc("get_attendance_roster").replyOnce(slow.reply).replyOnce(fail("boom")).reply(ok(roster(3, "r1")));
+    renderAttendance({ tab: "meetings" });
+    const loading = await screen.findByText("Loading roster…");
+    expect(loading.className).toBe("inline-loading");
+    await act(async () => { slow.resolve(fail("boom")); });
+    const block = (await screen.findByText(/The roster could not be loaded\./)).closest("div")!;
+    expect(block.className).toBe("attendance-empty");
+    expect(block.textContent).toBe("The roster could not be loaded. Try again");
+    const before = rosterCalls().length;
+    fireEvent.click(within(block).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(rosterCalls().length).toBeGreaterThan(before));
+  });
+
   it("a dropped connection reads the same", async () => {
     fake.rpc("get_attendance_overview").reply(rejects());
     const { notify } = renderAttendance();

@@ -117,6 +117,34 @@ describe("finance: reading the screen's data", () => {
     await waitFor(() => expect(card("Available cash")).toBe("$9,999.00"));
   });
 
+  it("until the first read arrives the screen says so in the loading line, and not the ledger", async () => {
+    scriptFinance();
+    const slow = deferred();
+    READS.summary().reply(slow.reply);
+    renderFinance();
+    const line = await screen.findByText("Loading finance workspace…");
+    expect(line.tagName).toBe("DIV");
+    expect(line.className).toBe("inline-loading");
+    expect(screen.queryByText("Cash ledger")).not.toBeInTheDocument();
+    await act(async () => { slow.resolve(ok(SUMMARY)); });
+    await waitForLoad();
+    expect(screen.queryByText("Loading finance workspace…")).not.toBeInTheDocument();
+    expect(await screen.findByText("Cash ledger")).toBeInTheDocument();
+  });
+
+  it("an empty ledger is the club mark, a title and a line, in the finance look", async () => {
+    scriptFinance({ payments: [] });
+    renderFinance();
+    await waitForLoad();
+    const title = await screen.findByRole("heading", { name: "No payments yet" });
+    const block = title.parentElement!;
+    expect(block.className).toBe("finance-empty");
+    expect(Array.from(block.children).map((child) => child.tagName)).toEqual(["IMG", "H3", "P"]);
+    expect(block.querySelector("img")).toHaveAttribute("src", "/unc-bharat-sangeet-logo.jpg");
+    expect(block.querySelector("img")).toHaveAttribute("alt", "");
+    expect(block.querySelector("p")).toHaveTextContent("Income and paid expenses will appear in the cash ledger.");
+  });
+
   // finance-wiring 1: every one of the 11 reads is in the failure check, each under its own result.
   it.each(Object.keys(READS) as ReadName[])("a failed read (%s) is reported and nothing from the other reads is shown as if it were complete", async (name) => {
     scriptFinance();

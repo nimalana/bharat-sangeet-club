@@ -11,7 +11,9 @@ import { supabase } from "../lib/supabase";
 import type { Notify } from "../lib/toast";
 import { Button } from "../components/ui/button";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
+import { ErrorBlock } from "../components/ui/error-block";
 import { FormDialog, type FormField } from "../components/ui/form-dialog";
+import { LoadingBlock } from "../components/ui/loading-block";
 import { ClearMarkButton, SessionCorrections, ThresholdSettings, WithdrawExcuseButton } from "../components/attendance/attendance-corrections";
 import {
   DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, applyPulse, createFailureGate, createSequencer, flaggedSummaries, nextListLimit, normalizeOverview, overallRate, parseMinutesLate,
@@ -469,8 +471,8 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   if (!data) {
     return <section className="section-shell page-section">
       {failedKey === cacheKey
-        ? <div className="inline-loading">Attendance could not be loaded. <Button size="sm" variant="secondary" onClick={() => load()}>Try again</Button></div>
-        : <div className="inline-loading">Loading attendance…</div>}
+        ? <ErrorBlock message="Attendance could not be loaded." onRetry={() => load()} />
+        : <LoadingBlock>Loading attendance…</LoadingBlock>}
     </section>;
   }
 
@@ -542,7 +544,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
                         {row.status && selectedSession.status !== "canceled" && <ClearMarkButton sessionId={selectedSession.id} memberId={row.member_id} memberName={memberName} notify={notify} onChanged={refresh} />}
                       </div>
                     );
-                  }) : rosterFailed ? <div className="attendance-empty">The roster could not be loaded. <Button size="sm" variant="secondary" onClick={() => loadRoster(selectedSession.id)}>Try again</Button></div> : <div className="inline-loading">Loading roster…</div>}
+                  }) : rosterFailed ? <ErrorBlock className="attendance-empty" message="The roster could not be loaded." onRetry={() => loadRoster(selectedSession.id)} /> : <LoadingBlock>Loading roster…</LoadingBlock>}
                 </div>
               </>
             ) : <div className="attendance-empty">Choose a meeting to view its roster.</div>}
