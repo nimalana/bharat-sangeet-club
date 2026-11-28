@@ -1,33 +1,26 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { addSubgroupMember, leaveSubgroup, listSubgroupRoster, removeSubgroupMember, reviewSubgroupRequest, setSubgroupArchived, setSubgroupEnrollmentMode, setSubgroupMemberRole, updateSubgroup, type RosterRow } from "../../../lib/api/groups";
+import { FormEvent, useState } from "react";
+import { addSubgroupMember, leaveSubgroup, removeSubgroupMember, reviewSubgroupRequest, setSubgroupArchived, setSubgroupEnrollmentMode, setSubgroupMemberRole, updateSubgroup, type RosterRow } from "../../../lib/api/groups";
 import { listAddableMembers, type MemberCandidate } from "../../../lib/api/members";
 import { settle } from "../../../lib/api/settle";
-import type { ClubRole, EnrollmentMode, GroupRole, Tables } from "../../../lib/db";
+import type { ClubRole, EnrollmentMode, GroupRole } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { canRemoveGroupMember, groupCapabilities } from "../../../lib/permissions";
-import { createRequestGate } from "../../../lib/request-gate";
 import { createSingleFlight } from "../../../lib/single-flight";
 import type { Notify } from "../../../lib/toast";
-import { useToast } from "../../../components/ui/toast";
 import { Button } from "../../../components/ui/button";
-import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
-import { Dialog } from "../../../components/ui/dialog";
-import { Input } from "../../../components/ui/input";
-import { Textarea } from "../../../components/ui/textarea";
+import { useToast } from "../../../components/ui/toast";
+import { useGroupRoster } from "../hooks/use-group-roster";
+import { roleLabels, type ManagedGroup, type Pending } from "../model";
+import { AddMemberDialog } from "./add-member-dialog";
+import { GroupConfirmDialogs } from "./group-confirm-dialogs";
+import { GroupSettingsDialog } from "./group-settings-dialog";
+import { JoinRequestsPanel } from "./join-requests-panel";
+import { RosterList } from "./roster-list";
 
-export type ManagedGroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode"> & Partial<Pick<Tables<"subgroups">, "archived_at">>;
-type Pending =
-  | { kind: "remove"; row: RosterRow }
-  | { kind: "decline"; row: RosterRow }
-  | { kind: "leave" }
-  | { kind: "archive" }
-  | null;
-
-const roleLabels: Record<GroupRole, string> = { member: "Member", leader: "Leader", manager: "Manager" };
-const modeLabels: Record<EnrollmentMode, string> = { open: "Open — anyone can join", approval: "Request approval", invite: "Invitation only" };
+export type { ManagedGroup };
 
 // `notify` is kept until the cleanup step removes it from every caller; the screen reads the toast from useToast().
 export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft }: {
@@ -36,32 +29,15 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
 }) {
   const { notify } = useToast();
   const can = groupCapabilities(role, myRole);
-  const [roster, setRoster] = useState<RosterRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const { roster, loading, loadError, loadRoster, retry } = useGroupRoster(group.id);
   const [busyKey, setBusyKey] = useState("");
   // `busyKey` shows which change is running; `flight` stops a second click before the next render.
   const [flight] = useState(createSingleFlight);
-  // Reloads follow every change and can overlap; only the newest answer may replace the roster.
-  const [loadGate] = useState(createRequestGate);
   const [pending, setPending] = useState<Pending>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [candidates, setCandidates] = useState<MemberCandidate[]>([]);
   const [candidateQuery, setCandidateQuery] = useState("");
-
-  const loadRoster = useCallback(async () => {
-    const isCurrent = loadGate.begin();
-    const { data, error } = await settle(listSubgroupRoster(group.id));
-    if (!isCurrent()) return;
-    if (error) setLoadError(friendlyError(error, "The roster could not be loaded."));
-    else { setLoadError(""); setRoster(data || []); }
-    setLoading(false);
-  }, [group.id, loadGate]);
-
-  // The loader synchronizes remote Supabase state into this client component.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRoster(); }, [loadRoster]);
 
   const requests = roster.filter((row) => row.status === "pending" || row.status === "waitlisted");
   const members = roster.filter((row) => row.status === "active");
@@ -168,69 +144,16 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
       </div>
     </div>
 
-    {loadError && <p className="action-feedback error" role="alert">{loadError} <button type="button" className="underline" onClick={() => { setLoading(true); void loadRoster(); }}>Try again</button></p>}
+    {loadError && <p className="action-feedback error" role="alert">{loadError} <button type="button" className="underline" onClick={retry}>Try again</button></p>}
 
-    {can.canReviewRequests && requests.length > 0 && <div className="mt-5 border border-[var(--carolina)] bg-[var(--carolina-pale)] p-4">
-      <h3 className="m-0 text-base">Requests to join <span className="ml-1 text-sm font-normal text-[#4c5f6b]">({requests.length})</span></h3>
-      <ul className="m-0 mt-3 grid list-none gap-3 p-0">
-        {requests.map((row) => <li key={row.member_id} className="flex flex-wrap items-center justify-between gap-3 border-t border-[#b9d3e3] pt-3 first:border-t-0 first:pt-0">
-          <div className="min-w-0"><b className="block truncate text-sm">{row.full_name || row.email}</b><small className="block truncate text-xs text-[#4c5f6b]">{row.email}{row.status === "waitlisted" ? " · Waitlisted" : ""}</small></div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={Boolean(busyKey)} onClick={() => review(row, "approve")}>{busyKey === `approve-${row.member_id}` ? "Approving…" : "Approve"}</Button>
-            {row.status === "pending" && <Button size="sm" variant="secondary" disabled={Boolean(busyKey)} onClick={() => review(row, "waitlist")}>{busyKey === `waitlist-${row.member_id}` ? "Waitlisting…" : "Waitlist"}</Button>}
-            <Button size="sm" variant="danger" disabled={Boolean(busyKey)} onClick={() => setPending({ kind: "decline", row })}>{busyKey === `decline-${row.member_id}` ? "Declining…" : "Decline"}</Button>
-          </div>
-        </li>)}
-      </ul>
-    </div>}
+    {can.canReviewRequests && requests.length > 0 && <JoinRequestsPanel requests={requests} busyKey={busyKey} onReview={review} onDecline={(row) => setPending({ kind: "decline", row })} />}
 
-    {loading ? <p className="workspace-empty mt-4">Loading the roster…</p> : members.length ? <ul className="m-0 mt-4 list-none p-0">
-      {members.map((row) => <li key={row.member_id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] py-3 last:border-b-0">
-        <div className="min-w-0"><b className="block truncate text-sm">{row.full_name || row.email}{row.member_id === user.id ? " (you)" : ""}</b><small className="block truncate text-xs text-[#70818c]">{row.email}</small></div>
-        <div className="flex flex-wrap items-center gap-2">
-          {can.canChangeRoles ? <select aria-label={`Group role for ${row.full_name || row.email}`} className="h-9 border border-[var(--line)] bg-white px-2 text-xs" value={row.membership_role} disabled={Boolean(busyKey)} onChange={(event) => changeRole(row, event.target.value as GroupRole)}><option value="member">Member</option><option value="leader">Leader</option><option value="manager">Manager</option></select> : row.membership_role !== "member" && <span className="border border-[var(--line)] px-2 py-1 text-xs">{roleLabels[row.membership_role]}</span>}
-          {canRemoveRow(row) && <Button size="sm" variant="danger" disabled={Boolean(busyKey)} onClick={() => setPending({ kind: "remove", row })}>Remove</Button>}
-        </div>
-      </li>)}
-    </ul> : !loadError && <p className="workspace-empty mt-4">No one is in this group yet.</p>}
+    {loading ? <p className="workspace-empty mt-4">Loading the roster…</p> : members.length ? <RosterList members={members} userId={user.id} busyKey={busyKey} canChangeRoles={can.canChangeRoles} canRemoveRow={canRemoveRow} onChangeRole={changeRole} onRemove={(row) => setPending({ kind: "remove", row })} /> : !loadError && <p className="workspace-empty mt-4">No one is in this group yet.</p>}
 
-    <ConfirmDialog open={pending?.kind === "decline"} title="Decline this request?" confirmLabel="Decline request" danger busy={busyKey.startsWith("decline-")} onConfirm={confirmPending} onCancel={() => setPending(null)}>
-      {pending?.kind === "decline" && <p className="m-0">{pending.row.full_name || pending.row.email} will not be added to {group.name}. They can ask to join again later.</p>}
-    </ConfirmDialog>
-    <ConfirmDialog open={pending?.kind === "remove"} title="Remove from group?" confirmLabel="Remove member" danger busy={busyKey === "confirm"} onConfirm={confirmPending} onCancel={() => setPending(null)}>
-      {pending?.kind === "remove" && <p className="m-0">{pending.row.full_name || pending.row.email} will lose access to {group.name}. Their past attendance is kept. They cannot rejoin on their own; an executive can add them back.</p>}
-    </ConfirmDialog>
-    <ConfirmDialog open={pending?.kind === "leave"} title={`Leave ${group.name}?`} confirmLabel="Leave group" danger busy={busyKey === "confirm"} onConfirm={confirmPending} onCancel={() => setPending(null)}>
-      <p className="m-0">You will lose access to this group&apos;s resources and recordings. Your past attendance is kept.{myRole && myRole !== "member" ? ` You will also give up your ${roleLabels[myRole].toLowerCase()} role.` : ""}</p>
-    </ConfirmDialog>
-    <ConfirmDialog open={pending?.kind === "archive"} title={group.archived_at ? `Restore ${group.name}?` : `Archive ${group.name}?`} confirmLabel={group.archived_at ? "Restore group" : "Archive group"} danger={!group.archived_at} busy={busyKey === "confirm"} onConfirm={confirmPending} onCancel={() => setPending(null)}>
-      <p className="m-0">{group.archived_at ? "The group will appear in members' lists again." : "The group is hidden from members and stops accepting requests. Nothing is deleted: its members, resources, recordings and attendance are kept, and you can restore it later."}</p>
-    </ConfirmDialog>
+    <GroupConfirmDialogs group={group} myRole={myRole} pending={pending} busyKey={busyKey} onConfirm={confirmPending} onCancel={() => setPending(null)} />
 
-    <Dialog open={showSettings} onClose={() => setShowSettings(false)} className="max-w-[520px]">
-      <form onSubmit={saveSettings} className="grid gap-4">
-        <h2 className="m-0 text-2xl">Group settings</h2>
-        <label htmlFor="group-settings-name" className="grid gap-1 text-xs font-semibold">Name<Input id="group-settings-name" name="name" required maxLength={120} defaultValue={group.name} /></label>
-        <label htmlFor="group-settings-description" className="grid gap-1 text-xs font-semibold">Description<Textarea id="group-settings-description" name="description" rows={4} maxLength={2000} defaultValue={group.description} /></label>
-        {can.canChangeEnrollment ? <label htmlFor="group-settings-mode" className="grid gap-1 text-xs font-semibold">How members join<select id="group-settings-mode" name="enrollment_mode" defaultValue={group.enrollment_mode} className="h-11 border border-[var(--line)] bg-[var(--paper)] px-3 text-sm">{(Object.keys(modeLabels) as EnrollmentMode[]).map((mode) => <option key={mode} value={mode}>{modeLabels[mode]}</option>)}</select></label> : <p className="m-0 text-xs text-[#70818c]">How members join: {modeLabels[group.enrollment_mode]}. Only executives can change this.</p>}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {can.canArchive ? <Button variant={group.archived_at ? "secondary" : "danger"} onClick={() => { setShowSettings(false); setPending({ kind: "archive" }); }}>{group.archived_at ? "Restore group" : "Archive group"}</Button> : <span />}
-          <div className="flex gap-2"><Button variant="secondary" onClick={() => setShowSettings(false)}>Cancel</Button><Button type="submit" disabled={busyKey === "settings"}>{busyKey === "settings" ? "Saving…" : "Save"}</Button></div>
-        </div>
-      </form>
-    </Dialog>
+    <GroupSettingsDialog open={showSettings} group={group} canChangeEnrollment={can.canChangeEnrollment} canArchive={can.canArchive} saving={busyKey === "settings"} onClose={() => setShowSettings(false)} onSubmit={saveSettings} onArchive={() => { setShowSettings(false); setPending({ kind: "archive" }); }} />
 
-    <Dialog open={showAdd} onClose={() => setShowAdd(false)} className="max-w-[520px]">
-      <h2 className="m-0 text-2xl">Add a member to {group.name}</h2>
-      <label htmlFor="group-add-search" className="mt-4 grid gap-1 text-xs font-semibold">Search club members<Input id="group-add-search" value={candidateQuery} onChange={(event) => setCandidateQuery(event.target.value)} placeholder="Name or email" /></label>
-      <ul className="m-0 mt-3 max-h-[320px] list-none overflow-y-auto p-0">
-        {filteredCandidates.map((candidate) => <li key={candidate.id} className="flex items-center justify-between gap-3 border-b border-[var(--line)] py-2">
-          <div className="min-w-0"><b className="block truncate text-sm">{candidate.full_name || candidate.email}</b><small className="block truncate text-xs text-[#70818c]">{candidate.email}</small></div>
-          <Button size="sm" variant="secondary" disabled={Boolean(busyKey)} onClick={() => addMember(candidate)}>{busyKey === `add-${candidate.id}` ? "Adding…" : "Add"}</Button>
-        </li>)}
-        {filteredCandidates.length === 0 && <li className="py-3 text-sm text-[#70818c]">{candidates.length ? "No matching members who are not already in this group." : "Loading members…"}</li>}
-      </ul>
-      <div className="mt-4 flex justify-end"><Button variant="secondary" onClick={() => setShowAdd(false)}>Done</Button></div>
-    </Dialog>
+    <AddMemberDialog open={showAdd} group={group} query={candidateQuery} onQueryChange={setCandidateQuery} candidates={candidates} filteredCandidates={filteredCandidates} busyKey={busyKey} onAdd={addMember} onClose={() => setShowAdd(false)} />
   </section>;
 }
