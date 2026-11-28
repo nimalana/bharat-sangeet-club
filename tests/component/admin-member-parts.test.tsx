@@ -11,10 +11,7 @@ import { ContactDialog } from "../../features/members/components/contact-dialog"
 import { MemberCard } from "../../features/members/components/member-card";
 import type { AuditEntry } from "../../lib/api/admin";
 import type { MemberProfile, Subgroup, SubgroupMembership } from "../../lib/portal-types";
-import { userOf } from "../support/helpers";
-import { notifySpy } from "../support/toast-spy";
-
-vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
+import { notifySpy, userOf } from "../support/helpers";
 
 const member = (id: string, name: string, over: Partial<MemberProfile> = {}): MemberProfile => ({ id, full_name: name, email: `${id}@x.test`, role: "member", status: "active", phone: "919", class_year: "2028", specialty: "Veena", joined_at: "2025-08-01", ...over });
 const group = (id: number, name: string): Subgroup => ({ id, name, description: "", enrollment_mode: "open", archived_at: null });

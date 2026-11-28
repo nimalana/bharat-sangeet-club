@@ -3,17 +3,26 @@
 // 1. lib/supabase is replaced by the fake client in tests/support/fake-supabase.ts, so the real
 //    screens run without a network. This path is the only place that knows where the client
 //    module lives: if it moves, change it here.
-// 2. Browser APIs jsdom does not provide are stubbed.
-// 3. Every test starts clean: fake client, in-memory cache, URL, storage, timers.
+// 2. components/ui/toast is wrapped by tests/support/toast-spy.ts: `notifySpy()` (tests/support/helpers.ts) makes `useToast()` answer a
+//    spy for the rest of the test, so a screen rendered on its own, with no ToastProvider, shows its toasts to the test. With no spy
+//    made, `useToast()` is the real one. No test file mocks the toast module itself.
+// 3. Browser APIs jsdom does not provide are stubbed.
+// 4. Every test starts clean: fake client, in-memory cache, URL, storage, timers, toast spy.
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { clearCache, setCacheOwner } from "../../lib/cache";
 import { fake } from "../support/fake-supabase";
+import { forgetToastSpy } from "../support/toast-spy";
 
 vi.mock("../../lib/supabase", async () => {
   const { fake: shared } = await import("../support/fake-supabase");
   return { supabase: shared.client };
+});
+
+vi.mock("../../components/ui/toast", async (importOriginal) => {
+  const { withToastSpy } = await import("../support/toast-spy");
+  return withToastSpy(await importOriginal<typeof import("../../components/ui/toast")>());
 });
 
 // jsdom builds a form's FormData from files it holds itself, so a file a test puts into a file input
@@ -51,6 +60,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   fake.reset();
+  forgetToastSpy();
   clearCache();
   setCacheOwner(null);
   window.localStorage.clear();

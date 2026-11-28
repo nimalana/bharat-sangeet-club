@@ -1,26 +1,39 @@
-// For tests that render a screen on its own (no shell around it) and want to read the toasts it shows through a spy.
+// The one way a component test reads the toasts a screen shows. `notifySpy()` is re-exported by tests/support/helpers.ts; nothing
+// else needs to be imported or mocked per test file.
 //
-// A screen that has moved onto the toast context asks `useToast()` for its `notify` instead of receiving it as a prop. Rendered
-// directly, with no ToastProvider above it, that would throw. A test file that renders such screens says
+// Every screen asks `useToast()` for its `notify`. Rendered on its own, with no ToastProvider above it, that would throw.
+// tests/component/setup.ts mocks components/ui/toast for every test file with `withToastSpy`, so that
 //
-//   vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
-//   import { notifySpy } from "../support/toast-spy";      // instead of "../support/helpers"
+//   const notify = notifySpy();      // before rendering
+//   notify.find("Saved").tone        // after: "error", "success" or undefined (untagged)
 //
-// and `notifySpy()` is then both what a test passes as the `notify` prop (screens that still take it) and what `useToast()` answers
-// (screens that moved), so `notify.find(...)`, `notify.toasts()` and the tone assertions read the same calls either way. In a test
-// that made no spy, `useToast()` is the real one: a screen rendered through the shell still shows its toast in the real viewport.
-import { afterEach } from "vitest";
+// makes `useToast()` answer that spy until the test ends (the setup file forgets it in afterEach). The spy keeps the toasts as
+// { message, tone } in the order they were asked for, and `find` throws when there is none, so a missing toast is a clear failure.
+// In a test that made no spy, `useToast()` is the real one: a screen rendered through the shell (or inside a ToastProvider the test
+// renders) still shows its toast in the real viewport.
+import { vi } from "vitest";
 import type { Notify } from "../../lib/toast";
-import { notifySpy as plainNotifySpy } from "./helpers";
 
 let target: Notify | null = null;
-afterEach(() => { target = null; });
 
-/** The `notify` a screen is given, which is also what `useToast()` answers until the test ends. */
+/** Called by the setup file after every test: the spy of a test does not leak into the next one. */
+export function forgetToastSpy() { target = null; }
+
+/** The `notify` a screen shows its toasts through for the rest of this test; `toasts()`, `messages()` and `find()` read what it was asked to show. */
 export function notifySpy() {
-  const spy = plainNotifySpy();
+  const spy = vi.fn<Notify>();
   target = spy;
-  return spy;
+  return Object.assign(spy, {
+    /** Every toast, as { message, tone }; tone is undefined when the caller passed none. */
+    toasts: () => spy.mock.calls.map(([message, tone]) => ({ message, tone })),
+    messages: () => spy.mock.calls.map(([message]) => message),
+    /** The toast with exactly this message (throws if there is none, so a missing toast is a clear failure). */
+    find(message: string | RegExp) {
+      const hit = spy.mock.calls.find(([text]) => (typeof message === "string" ? text === message : message.test(text)));
+      if (!hit) throw new Error(`no toast matching ${String(message)}; toasts were: ${JSON.stringify(spy.mock.calls.map(([text]) => text))}`);
+      return { message: hit[0], tone: hit[1] };
+    },
+  });
 }
 
 // One function for every render, as the real notify is (screens list it in effect dependencies).

@@ -4,7 +4,7 @@
 // once), only the newest answer counts, and a reload never starts by itself.
 import type { User } from "@supabase/supabase-js";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { useAdminData } from "../../features/admin/hooks/use-admin-data";
 import { countRequestsByGroup, useGroupSpaces } from "../../features/groups/hooks/use-group-spaces";
 import { useGroupRoster } from "../../features/groups/hooks/use-group-roster";
@@ -12,10 +12,7 @@ import { useMemberDirectory } from "../../features/members/hooks/use-member-dire
 import { setCacheOwner } from "../../lib/cache";
 import type { SubgroupMembership } from "../../lib/portal-types";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
-import { userOf } from "../support/helpers";
-import { notifySpy } from "../support/toast-spy";
-
-vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
+import { notifySpy, userOf } from "../support/helpers";
 
 // A hook that notifies reads useToast(); with no provider around a bare hook, the spy answers (and a test that reads the toasts makes its own).
 beforeEach(() => { notifySpy(); });

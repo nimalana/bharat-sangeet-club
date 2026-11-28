@@ -40,13 +40,9 @@ import { ResourceActions, type ManagedResource } from "../../features/resources/
 import { GroupPeople } from "../../features/groups/components/group-people";
 import { setCacheOwner } from "../../lib/cache";
 import { FILE_NOT_DELETED } from "../../lib/storage-remove";
-import { advance, flush, userOf } from "../support/helpers";
-import { notifySpy } from "../support/toast-spy";
+import { advance, flush, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, rejects } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";
-
-// The screens read the toast from useToast(); rendered on their own they answer this file's notifySpy() (tests/support/toast-spy.ts).
-vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
 
 // The waveform player draws on a canvas that jsdom does not have. Only this third-party library is replaced.
 vi.mock("wavesurfer.js", () => ({

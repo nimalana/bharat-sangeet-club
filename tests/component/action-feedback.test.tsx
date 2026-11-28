@@ -6,12 +6,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import { MemberAccessActions } from "../../features/admin/components/member-access";
 import { AnnouncementActions } from "../../features/announcements/components/announcement-actions";
-import { userOf } from "../support/helpers";
-import { notifySpy } from "../support/toast-spy";
+import { notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
-
-// The screens read the toast from useToast(); rendered on their own they answer this file's notifySpy() (tests/support/toast-spy.ts).
-vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
 
 const RLS = 'new row violates row-level security policy for table "announcements"';
 

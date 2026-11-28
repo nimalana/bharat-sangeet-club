@@ -18,10 +18,7 @@ import type { Pending } from "../../features/groups/model";
 import type { RosterRow } from "../../lib/api/groups";
 import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../lib/portal-types";
 import { fake, ok } from "../support/fake-supabase";
-import { userOf } from "../support/helpers";
-import { notifySpy } from "../support/toast-spy";
-
-vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
+import { notifySpy, userOf } from "../support/helpers";
 
 const MEMBER = "member" as const;
 const EXECUTIVE = "executive" as const;

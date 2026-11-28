@@ -2,11 +2,9 @@
 // notifySpy() is what useToast() answers; without a spy the real toast is used (a screen in the shell still shows its toast in the
 // viewport); and the spy is forgotten when the test ends.
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ToastProvider, ToastViewport, useToast } from "../../components/ui/toast";
-import { notifySpy } from "../support/toast-spy";
-
-vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
+import { notifySpy } from "../support/helpers";
 
 let seen: unknown[] = [];
 function Screen() {
