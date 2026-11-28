@@ -1,4 +1,4 @@
-import Home from "./portal";
+import Home from "../features/shell/components/home";
 import { loadPublicConcerts } from "../lib/public-concerts";
 
 // The signed-out page is rendered on the server, with the public concert list

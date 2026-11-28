@@ -1,7 +1,7 @@
 // Opens the whole portal (the signed-in shell) against the fake client. The one place the shell is imported:
 // if the shell moves, change the import below.
 import { render } from "@testing-library/react";
-import Home from "../../app/portal";
+import Home from "../../features/shell/components/home";
 import type { ClubRole } from "../../lib/sections";
 import { fake, ok } from "./fake-supabase";
 

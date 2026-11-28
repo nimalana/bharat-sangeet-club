@@ -1,48 +1,48 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { AdminPage } from "../features/admin/components/admin-page";
-import { DeactivatedScreen } from "../features/admin/components/member-access";
-import { setCacheOwner } from "../lib/cache";
-import { runBootstrap, type ShellState } from "../lib/bootstrap";
-import { canManageClub } from "../lib/permissions";
-import type { ClubRole } from "../lib/db";
-import type { AccountStatus, Announcement, ArchiveItem, ClubEvent, ScopeFilter, Subgroup, SubgroupMembership } from "../lib/portal-types";
-import type { PublicConcert } from "../lib/public-concerts";
-import { countOrKeep, listOrKeep } from "../lib/refresh";
-import { createRequestGate } from "../lib/request-gate";
-import { SECTION_LABELS, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../lib/sections";
-import { supabase } from "../lib/supabase";
-import { LoadingBlock } from "../components/ui/loading-block";
-import { PageTitle } from "../components/ui/page-title";
-import { SectionBoundary } from "../components/ui/section-boundary";
-import { ToastProvider, ToastViewport, useToast } from "../components/ui/toast";
-import { ScopeFilterBar } from "../features/announcements/components/scope-filter-bar";
-import { CalendarView } from "../features/calendar/components/calendar-view";
-import { EventModal } from "../features/calendar/components/event-modal";
-import { ClubDashboard } from "../features/dashboard/components/club-dashboard";
 import dynamic from "next/dynamic";
-import { SubgroupSpaces } from "../features/groups/components/subgroup-spaces";
-import { MembersPage } from "../features/members/components/members-page";
-import { LoginScreen, pendingSignupNameKey } from "../features/public/components/login-screen";
-import { PublicSite } from "../features/public/components/public-site";
-import { ArchiveModal } from "../features/recordings/components/archive-modal";
-import { BootstrapFailedScreen } from "../features/shell/components/bootstrap-failed-screen";
-import { LoadingScreen } from "../features/shell/components/loading-screen";
-import { PortalPageMenu } from "../features/shell/components/portal-page-menu";
-import { SectionRefused } from "../features/shell/components/section-refused";
-import { SetupScreen } from "../features/shell/components/setup-screen";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { setCacheOwner } from "../../../lib/cache";
+import { runBootstrap, type ShellState } from "../../../lib/bootstrap";
+import { canManageClub } from "../../../lib/permissions";
+import type { ClubRole } from "../../../lib/db";
+import type { AccountStatus, Announcement, ArchiveItem, ClubEvent, ScopeFilter, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
+import type { PublicConcert } from "../../../lib/public-concerts";
+import { countOrKeep, listOrKeep } from "../../../lib/refresh";
+import { createRequestGate } from "../../../lib/request-gate";
+import { SECTION_LABELS, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../../../lib/sections";
+import { supabase } from "../../../lib/supabase";
+import { LoadingBlock } from "../../../components/ui/loading-block";
+import { PageTitle } from "../../../components/ui/page-title";
+import { SectionBoundary } from "../../../components/ui/section-boundary";
+import { ToastViewport, useToast } from "../../../components/ui/toast";
+import { AdminPage } from "../../admin/components/admin-page";
+import { DeactivatedScreen } from "../../admin/components/member-access";
+import { ScopeFilterBar } from "../../announcements/components/scope-filter-bar";
+import { CalendarView } from "../../calendar/components/calendar-view";
+import { EventModal } from "../../calendar/components/event-modal";
+import { ClubDashboard } from "../../dashboard/components/club-dashboard";
+import { SubgroupSpaces } from "../../groups/components/subgroup-spaces";
+import { MembersPage } from "../../members/components/members-page";
+import { LoginScreen, pendingSignupNameKey } from "../../public/components/login-screen";
+import { PublicSite } from "../../public/components/public-site";
+import { ArchiveModal } from "../../recordings/components/archive-modal";
+import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
+import { LoadingScreen } from "./loading-screen";
+import { PortalPageMenu } from "./portal-page-menu";
+import { SectionRefused } from "./section-refused";
+import { SetupScreen } from "./setup-screen";
 
 // Each heavy screen is its own bundle, loaded when it is first opened, so the
 // audio libraries and finance code are not downloaded to read the calendar.
 // A screen whose file cannot be fetched is caught by SectionBoundary in the shell.
 const SectionLoading = () => <LoadingBlock role="status">Loading…</LoadingBlock>;
-const AttendancePage = dynamic(() => import("../features/attendance/components/attendance-page").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
-const FinancePage = dynamic(() => import("../features/finance/components/finance-page").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
-const ResourceLibrary = dynamic(() => import("../features/resources/components/resource-library").then((module) => module.ResourceLibrary), { ssr: false, loading: SectionLoading });
-const RecordingWorkspace = dynamic(() => import("../features/recordings/components/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
-const ClubArchiveManager = dynamic(() => import("../features/recordings/components/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
+const AttendancePage = dynamic(() => import("../../attendance/components/attendance-page").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
+const FinancePage = dynamic(() => import("../../finance/components/finance-page").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
+const ResourceLibrary = dynamic(() => import("../../resources/components/resource-library").then((module) => module.ResourceLibrary), { ssr: false, loading: SectionLoading });
+const RecordingWorkspace = dynamic(() => import("../../recordings/components/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
+const ClubArchiveManager = dynamic(() => import("../../recordings/components/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
 
 type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: AccountStatus } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
 
@@ -65,11 +65,7 @@ function hasSavedSession() {
   try { return Object.keys(window.localStorage).some((key) => /^sb-.+-auth-token$/.test(key)); } catch { return false; }
 }
 
-export default function Home(props: { publicConcerts?: PublicConcert[] | null }) {
-  return <ToastProvider><Portal {...props} /></ToastProvider>;
-}
-
-function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | null }) {
+export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | null }) {
   const savedSession = useSyncExternalStore(subscribeNothing, hasSavedSession, () => false);
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
