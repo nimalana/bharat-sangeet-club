@@ -3,15 +3,22 @@ create schema test;
 grant usage on schema test to anon, authenticated;
 
 -- Creates an auth user (the signup trigger creates the profile) and sets its
--- club role. Returns the new id.
-create function test.make_user(p_name text, p_role public.club_role default 'member')
+-- club role and account status. Returns the new id.
+--
+-- Since the membership gate (20261128010100) the signup trigger makes every new
+-- profile 'pending', so the helper activates the account unless the test asks
+-- for another state: test.make_user('Applicant', p_status => 'pending') is a
+-- fresh sign-up exactly as the trigger leaves it; 'deactivated' and 'rejected'
+-- are set directly. A pending or rejected account is always a plain member
+-- (profiles_unapproved_are_members), so p_role must stay 'member' for those.
+create function test.make_user(p_name text, p_role public.club_role default 'member', p_status text default 'active')
 returns uuid language plpgsql as $$
 declare new_id uuid;
 begin
   insert into auth.users (email, raw_user_meta_data)
   values (lower(replace(p_name, ' ', '.')) || '@test.invalid', jsonb_build_object('full_name', p_name))
   returning id into new_id;
-  update public.profiles set role = p_role where id = new_id;
+  update public.profiles set role = p_role, status = p_status where id = new_id;
   return new_id;
 end $$;
 

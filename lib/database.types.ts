@@ -1832,6 +1832,45 @@ export type Database = {
           },
         ]
       }
+      signup_reviews: {
+        Row: {
+          decided_at: string
+          decided_by: string | null
+          decision: string
+          member_id: string
+          reason: string
+        }
+        Insert: {
+          decided_at?: string
+          decided_by?: string | null
+          decision: string
+          member_id: string
+          reason?: string
+        }
+        Update: {
+          decided_at?: string
+          decided_by?: string | null
+          decision?: string
+          member_id?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signup_reviews_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signup_reviews_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subgroup_memberships: {
         Row: {
           added_by: string | null
@@ -2369,6 +2408,19 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      list_pending_members: {
+        Args: never
+        Returns: {
+          decided_at: string
+          decided_by_name: string
+          email: string
+          full_name: string
+          member_id: string
+          reason: string
+          requested_at: string
+          status: string
+        }[]
+      }
       list_subgroup_roster: {
         Args: { p_subgroup_id: number }
         Returns: {
@@ -2558,6 +2610,26 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "attendance_excuses"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      review_pending_member: {
+        Args: { p_approved: boolean; p_member_id: string; p_reason?: string }
+        Returns: {
+          class_year: string
+          email: string
+          full_name: string
+          id: string
+          joined_at: string
+          phone: string
+          role: Database["public"]["Enums"]["club_role"]
+          specialty: string
+          status: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
           isOneToOne: true
           isSetofReturn: false
         }
