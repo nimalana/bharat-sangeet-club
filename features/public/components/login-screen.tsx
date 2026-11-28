@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import { publicSiteAvailable, signInWithGoogle as startGoogleSignIn } from "../../../lib/api/public";
+import { ApiError } from "../../../lib/errors";
 import { heroPhotos } from "../hero-photos";
 
 export const pendingSignupNameKey = "bharat-sangeet-pending-signup-name";
@@ -13,7 +14,7 @@ export function LoginScreen({ onBack }: { onBack: () => void }) {
   const [errorMessage, setErrorMessage] = useState("");
 
   async function signInWithGoogle() {
-    if (!supabase) return;
+    if (!publicSiteAvailable()) return;
     const signupName = preferredName.trim();
     if (mode === "signup" && !signupName) {
       setErrorMessage("Please enter the name you would like the club to call you.");
@@ -23,11 +24,11 @@ export function LoginScreen({ onBack }: { onBack: () => void }) {
     else window.sessionStorage.removeItem(pendingSignupNameKey);
     setSending(true);
     setErrorMessage("");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin },
-    });
-    if (error) {
+    try {
+      await startGoogleSignIn(window.location.origin);
+    } catch (error) {
+      // Supabase answering with an error is shown; anything else is not this screen's to hide.
+      if (!(error instanceof ApiError)) throw error;
       window.sessionStorage.removeItem(pendingSignupNameKey);
       setErrorMessage(error.message);
       setSending(false);

@@ -3,19 +3,24 @@
 import type { User } from "@supabase/supabase-js";
 import { ResourceActions } from "./resource-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  countArchivedResources, countFolderChildren, countLiveResources, createImportedFolder, createPendingResourceFile, createResourceFolder, createResourceImport, createResourceLink,
+  failResourceImport, fetchResource, finishResourceImport, listArchivedAmong, listChildFolderIds, listResourcesPage, markResourceFailed, markResourceReady, resourcesAvailable, signResourceFile,
+  signResourceThumbnails, uploadResourceFile,
+} from "../../../lib/api/resources";
 import { clearCachePrefix, readCache, writeCache } from "../../../lib/cache";
 import type { ClubRole, Tables } from "../../../lib/db";
+import { ApiError, toApiError } from "../../../lib/errors";
 import { formatDateOrNone } from "../../../lib/format";
 import { useDebounced } from "../../../lib/hooks/use-debounced";
 import { canManageGroupResources, isExecutive } from "../../../lib/permissions";
 import { keepRowsOnFailure } from "../../../lib/refresh";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
 import {
-  RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS, applyListPlan, buildListPlan, chainFromKnown, crumbCacheKey, folderUrl, isFlatListing, listCacheKey,
+  RESOURCE_PAGE_SIZE, buildListPlan, chainFromKnown, crumbCacheKey, folderUrl, isFlatListing, listCacheKey,
   mergePage, orderForDisplay, parseFolderParam, resolveFolderChain, resolveSubtreeFolderIds, subtreeCacheKey, thumbnailCacheKey, thumbnailExpiry, thumbnailsToSign,
   type LibraryTab, type ScopeFilter, type SortKey, type ThumbnailEntry,
 } from "../../../lib/resources-query";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import styles from "./resources.module.css";
 
@@ -35,8 +40,6 @@ export type ResourceLibraryProps = {
 
 type ComposerMode = "menu" | "folder" | "link" | "files" | "folder-upload" | null;
 type UploadEntry = { file: File; relativePath: string; state: "queued" | "uploading" | "ready" | "failed"; error?: string };
-
-const RESOURCE_FIELDS = "id,node_kind,media_kind,title,description,parent_id,subgroup_id,visibility,storage_bucket,storage_path,external_url,original_filename,mime_type,byte_size,checksum_sha256,event_id,occurred_on,season_label,status,is_pinned,import_id,created_by,created_at,updated_at";
 
 function Icon({ name, size = 18 }: { name: "search" | "plus" | "folder" | "file" | "link" | "image" | "chevron" | "arrow" | "close" | "upload" | "grid" | "list" | "lock" | "external" | "refresh"; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
@@ -86,19 +89,26 @@ type ListSnapshot = { rows: ResourceItem[]; hasMore: boolean; total: number | nu
 
 // Signs the thumbnails of what is on screen: one request per bucket, only for
 // images with no fresh link in the cache. Opening any other file signs on click.
-async function attachThumbnails(client: NonNullable<typeof supabase>, userId: string, list: ResourceItem[]): Promise<ResourceItem[]> {
+async function attachThumbnails(userId: string, list: ResourceItem[]): Promise<ResourceItem[]> {
   const now = Date.now();
   const lookup = (key: string) => readCache<ThumbnailEntry>(userId, key);
   const toSign = thumbnailsToSign(list, lookup, now);
   await Promise.all([...toSign].map(async ([bucket, paths]) => {
-    const signed = await client.storage.from(bucket).createSignedUrls(paths, THUMBNAIL_TTL_SECONDS);
-    for (const entry of signed.data || []) if (entry.signedUrl && entry.path) writeCache<ThumbnailEntry>(userId, thumbnailCacheKey(bucket, entry.path), { url: entry.signedUrl, expires: thumbnailExpiry(now) });
+    for (const entry of await signResourceThumbnails(bucket, paths)) if (entry.signedUrl && entry.path) writeCache<ThumbnailEntry>(userId, thumbnailCacheKey(bucket, entry.path), { url: entry.signedUrl, expires: thumbnailExpiry(now) });
   }));
   return list.map((item) => {
     if (!item.storage_path || item.node_kind !== "file" || !isImage(item)) return item;
     const hit = lookup(thumbnailCacheKey(item.storage_bucket || "club-resources", item.storage_path));
     return hit && hit.expires > now ? { ...item, signedUrl: hit.url } : item;
   });
+}
+
+// What the screen shows of a failure it caught: the sentence of an Error. A database answer that is not an Error (PostgREST sends a
+// plain object) is not shown, the caller's own sentence is: the old code tested `instanceof Error` on the raw answer, and an
+// ApiError remembers that answer as its `cause`.
+function shownMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof ApiError ? error.cause : error;
+  return raw instanceof Error ? raw.message : fallback;
 }
 
 function normalizeUrl(value: string) {
@@ -203,14 +213,12 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   const replaceRow = useCallback((id: number, change: (item: ResourceItem) => ResourceItem) => setItems((current) => current.map((item) => item.id === id ? change(item) : item)), []);
 
   const fetchOneFolder = useCallback(async (id: number) => {
-    if (!supabase) return null;
-    const { data } = await supabase.from("resources").select(RESOURCE_FIELDS).eq("id", id).maybeSingle();
-    return (data as ResourceItem | null) || null;
+    // A row that cannot be read is a row that is not there (the breadcrumb then says the folder was not found).
+    try { return await fetchResource(id) || null; } catch { return null; }
   }, []);
 
   const loadPage = useCallback(async (more: boolean) => {
-    const client = supabase;
-    if (!client) {
+    if (!resourcesAvailable()) {
       setItems([]); setHasMore(false); setLoading(false);
       setLoadError("Resource storage is not configured in this environment.");
       return;
@@ -237,31 +245,24 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
       if (!showArchived && folderId !== null && isFlatListing(listParams)) {
         subtreeIds = readCache<number[]>(user.id, subtreeCacheKey(folderId)) || null;
         if (!subtreeIds) {
-          subtreeIds = await resolveSubtreeFolderIds(folderId, async (parentIds) => {
-            const { data, error } = await client.from("resources").select("id").eq("node_kind", "folder").neq("status", "archived").in("parent_id", parentIds);
-            if (error) throw error;
-            return (data || []).map((row: { id: number }) => row.id);
-          });
+          subtreeIds = await resolveSubtreeFolderIds(folderId, listChildFolderIds);
           writeCache(user.id, subtreeCacheKey(folderId), subtreeIds);
         }
       }
       const offset = more ? fetchedRef.current : 0;
       const plan = buildListPlan({ ...listParams, subtreeIds, offset, limit: RESOURCE_PAGE_SIZE });
-      const { data, error, count } = await applyListPlan(client.from("resources").select(RESOURCE_FIELDS, { count: more ? undefined : "exact" }), plan);
-      if (error) throw error;
-      let page = (data || []) as ResourceItem[];
+      const { rows, count } = await listResourcesPage(plan, !more);
+      let page: ResourceItem[] = rows;
       const fetched = page.length;
       if (showArchived) {
         // Only the top-most archived items, so a folder is restored as one.
         const parentIds = [...new Set(page.map((item) => item.parent_id).filter((id): id is number => id !== null))];
         if (parentIds.length) {
-          const parents = await client.from("resources").select("id,status").in("id", parentIds);
-          if (parents.error) throw parents.error;
-          const archivedParents = new Set((parents.data || []).filter((row: { status: string }) => row.status === "archived").map((row: { id: number }) => row.id));
+          const archivedParents = new Set(await listArchivedAmong(parentIds));
           page = page.filter((item) => item.parent_id === null || !archivedParents.has(item.parent_id));
         }
       }
-      const withThumbs = await attachThumbnails(client, user.id, page);
+      const withThumbs = await attachThumbnails(user.id, page);
       if (requestId !== requestRef.current) return;
       const nextTotal = more ? total : count ?? null;
       const moreAvailable = fetched === RESOURCE_PAGE_SIZE && (count === null || count === undefined || offset + fetched < count);
@@ -308,17 +309,14 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
 
   // Whether anything is archived, and how many live items there are, without loading the library.
   useEffect(() => {
-    const client = supabase;
-    if (!client) return;
+    if (!resourcesAvailable()) return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
-      const [archived, live] = await Promise.all([
-        client.from("resources").select("id", { count: "exact", head: true }).eq("status", "archived"),
-        client.from("resources").select("id", { count: "exact", head: true }).neq("status", "archived"),
-      ]);
+      // A count that cannot be read changes nothing on screen; the other one is still used.
+      const [archived, live] = await Promise.allSettled([countArchivedResources(), countLiveResources()]);
       if (cancelled) return;
-      if (!archived.error) setHasArchivedItems((archived.count || 0) > 0);
-      if (!live.error && live.count !== null) onResourceCountChange?.(live.count);
+      if (archived.status === "fulfilled") setHasArchivedItems((archived.value || 0) > 0);
+      if (live.status === "fulfilled" && live.value !== null) onResourceCountChange?.(live.value);
     }, 0);
     return () => { cancelled = true; window.clearTimeout(timer); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -361,12 +359,11 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   // A folder's contents are not loaded, so how many it holds is asked on its own.
   const selectedFolderId = selected?.node_kind === "folder" ? selected.id : null;
   useEffect(() => {
-    const client = supabase;
-    if (!client || selectedFolderId === null) return;
+    if (!resourcesAvailable() || selectedFolderId === null) return;
     let cancelled = false;
-    void client.from("resources").select("id", { count: "exact", head: true }).eq("parent_id", selectedFolderId).then(({ count, error }) => {
-      if (!cancelled && !error) setChildCountState({ id: selectedFolderId, count: count || 0 });
-    });
+    countFolderChildren(selectedFolderId).then((count) => {
+      if (!cancelled) setChildCountState({ id: selectedFolderId, count: count || 0 });
+    }, () => { /* a count that cannot be read leaves the folder as "not empty" */ });
     return () => { cancelled = true; };
   }, [selectedFolderId, version]);
 
@@ -392,27 +389,31 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
 
   async function createFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !canWriteScope(destinationScope) || saving) return;
+    if (!resourcesAvailable() || !canWriteScope(destinationScope) || saving) return;
     if (!folderTitle.trim()) { setComposerError("Give this folder a clear name."); return; }
     setSaving(true);
-    const { data, error } = await supabase.from("resources").insert({ node_kind: "folder", media_kind: null, title: folderTitle.trim(), description: folderDescription.trim(), parent_id: folderId, subgroup_id: destinationScope, visibility: currentFolder?.visibility || (canManageClub ? folderVisibility : "members"), status: "ready", is_pinned: false, created_by: user.id }).select(RESOURCE_FIELDS).single();
+    let data: ResourceItem | null = null;
+    let error: ApiError | null = null;
+    try { data = await createResourceFolder({ title: folderTitle.trim(), description: folderDescription.trim(), parentId: folderId, subgroupId: destinationScope, visibility: currentFolder?.visibility || (canManageClub ? folderVisibility : "members"), userId: user.id }); } catch (caught) { error = toApiError(caught); }
     setSaving(false);
     if (error || !data) { setComposerError(error?.message || "This folder could not be created."); return; }
-    addRow(data as ResourceItem); refreshAll();
+    addRow(data); refreshAll();
     setFolderTitle(""); setFolderDescription(""); setComposer(null); notify("Folder created");
   }
 
   async function createLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !canWriteScope(destinationScope) || saving) return;
+    if (!resourcesAvailable() || !canWriteScope(destinationScope) || saving) return;
     if (!linkTitle.trim()) { setComposerError("Give this link a clear title."); return; }
     let normalized: string;
     try { normalized = normalizeUrl(linkUrl); } catch { setComposerError("Enter a complete web address, such as docs.google.com/document/…"); return; }
     setSaving(true);
-    const { data, error } = await supabase.from("resources").insert({ node_kind: "link", media_kind: null, title: linkTitle.trim(), description: linkDescription.trim(), parent_id: folderId, subgroup_id: destinationScope, visibility: currentFolder?.visibility || (canManageClub ? linkVisibility : "members"), external_url: normalized, status: "ready", is_pinned: false, created_by: user.id }).select(RESOURCE_FIELDS).single();
+    let data: ResourceItem | null = null;
+    let error: ApiError | null = null;
+    try { data = await createResourceLink({ title: linkTitle.trim(), description: linkDescription.trim(), parentId: folderId, subgroupId: destinationScope, visibility: currentFolder?.visibility || (canManageClub ? linkVisibility : "members"), externalUrl: normalized, userId: user.id }); } catch (caught) { error = toApiError(caught); }
     setSaving(false);
     if (error || !data) { setComposerError(error?.message || "This link could not be saved."); return; }
-    addRow(data as ResourceItem); refreshAll();
+    addRow(data); refreshAll();
     setLinkTitle(""); setLinkUrl(""); setLinkDescription(""); setComposer(null); notify("Link added to Resources");
   }
 
@@ -426,7 +427,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   }
 
   async function ensureFolderPath(path: string, importId: string, folderCache: Map<string, number>) {
-    if (!supabase) throw new Error("Resource storage is unavailable");
+    if (!resourcesAvailable()) throw new Error("Resource storage is unavailable");
     const segments = path.split("/").filter(Boolean);
     let parentId = folderId;
     let parentPath = "";
@@ -434,40 +435,45 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
       parentPath = parentPath ? `${parentPath}/${segment}` : segment;
       const existing = folderCache.get(parentPath);
       if (existing) { parentId = existing; continue; }
-      const { data, error } = await supabase.from("resources").insert({ node_kind: "folder", media_kind: null, title: segment.slice(0, 160), description: "", parent_id: parentId, subgroup_id: destinationScope, visibility: uploadDestinationVisibility, status: "ready", is_pinned: false, import_id: importId, created_by: user.id }).select(RESOURCE_FIELDS).single();
-      if (error || !data) throw error || new Error(`Folder “${segment}” could not be created`);
-      const created = data as ResourceItem;
+      const created: ResourceItem | null = await createImportedFolder({ title: segment.slice(0, 160), description: "", parentId, subgroupId: destinationScope, visibility: uploadDestinationVisibility, importId, userId: user.id });
+      if (!created) throw new Error(`Folder “${segment}” could not be created`);
       folderCache.set(parentPath, created.id); addRow(created); parentId = created.id;
     }
     return parentId;
   }
 
   async function uploadOne(entry: UploadEntry, index: number, importId: string, folderCache: Map<string, number>) {
-    const client = supabase;
-    if (!client) throw new Error("Resource storage is unavailable");
+    if (!resourcesAvailable()) throw new Error("Resource storage is unavailable");
     const parts = entry.relativePath.split("/").filter(Boolean);
     const fileName = parts.pop() || entry.file.name;
     const parentPath = parts.join("/");
     const parentId = await ensureFolderPath(parentPath, importId, folderCache);
     const path = `${user.id}/${importId}/${parts.map(safeSegment).join("/")}${parts.length ? "/" : ""}${safeSegment(fileName)}`;
     const mediaKind = entry.file.type.startsWith("image/") ? "image" : entry.file.type.startsWith("text/") || entry.file.type === "application/pdf" || Boolean(entry.file.name.match(/\.(docx?|xlsx?|pptx?|csv)$/i)) ? "document" : "other";
-    const pending = await client.from("resources").insert({ node_kind: "file", media_kind: mediaKind, title: fileName.slice(0, 160), description: "", parent_id: parentId, subgroup_id: destinationScope, visibility: uploadDestinationVisibility, storage_bucket: "club-resources", storage_path: path, original_filename: fileName, mime_type: entry.file.type || "application/octet-stream", byte_size: entry.file.size, status: "pending_upload", is_pinned: false, import_id: importId, created_by: user.id }).select(RESOURCE_FIELDS).single();
-    if (pending.error || !pending.data) throw pending.error || new Error("File record could not be created");
-    const pendingItem = pending.data as ResourceItem;
+    const mimeType = entry.file.type || "application/octet-stream";
+    const pendingItem: ResourceItem | null = await createPendingResourceFile({ mediaKind, title: fileName.slice(0, 160), description: "", parentId, subgroupId: destinationScope, visibility: uploadDestinationVisibility, storagePath: path, originalFilename: fileName, mimeType, byteSize: entry.file.size, importId, userId: user.id });
+    if (!pendingItem) throw new Error("File record could not be created");
     addRow(pendingItem);
-    const uploaded = await client.storage.from("club-resources").upload(path, entry.file, { contentType: entry.file.type || "application/octet-stream", upsert: false });
-    if (uploaded.error) {
-      await client.from("resources").update({ status: "failed" }).eq("id", pendingItem.id);
+    // The marks below are best effort: what the person is told is why the upload itself failed.
+    const markFailed = () => markResourceFailed(pendingItem.id).catch(() => undefined);
+    try { await uploadResourceFile(path, entry.file, mimeType); } catch (uploadError) {
+      await markFailed();
       replaceRow(pendingItem.id, (item) => ({ ...item, status: "failed" }));
-      throw uploaded.error;
+      throw uploadError;
     }
-    const ready = await client.from("resources").update({ status: "ready", updated_at: new Date().toISOString() }).eq("id", pendingItem.id).select(RESOURCE_FIELDS).single();
-    if (ready.error || !ready.data) {
-      await client.from("resources").update({ status: "failed" }).eq("id", pendingItem.id);
+    let ready: ResourceItem | null;
+    try { ready = await markResourceReady(pendingItem.id); } catch (readyError) {
+      await markFailed();
       replaceRow(pendingItem.id, (item) => ({ ...item, status: "failed" }));
-      throw ready.error || new Error("File record could not be finalized");
+      throw readyError;
     }
-    replaceRow(pendingItem.id, () => ready.data as ResourceItem);
+    if (!ready) {
+      await markFailed();
+      replaceRow(pendingItem.id, (item) => ({ ...item, status: "failed" }));
+      throw new Error("File record could not be finalized");
+    }
+    const finished = ready;
+    replaceRow(pendingItem.id, () => finished);
     return index;
   }
 
@@ -484,11 +490,12 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
       return;
     }
     setUploading(true); setComposerError("");
-    const client = supabase;
-    if (!client) { setUploading(false); setComposerError("Resource storage is not configured in this environment."); return; }
-    const importRecord = await client.from("resource_imports").insert({ name: entriesToUpload.length === 1 ? entriesToUpload[0].file.name : `${entriesToUpload.length} uploaded resources`, root_parent_id: folderId, subgroup_id: destinationScope, visibility: uploadDestinationVisibility, status: "uploading", total_files: entriesToUpload.length, completed_files: 0, failed_files: 0, total_bytes: entriesToUpload.reduce((total, entry) => total + entry.file.size, 0), uploaded_bytes: 0, created_by: user.id }).select("id").single();
-    if (importRecord.error || !importRecord.data) { setUploading(false); setComposerError(importRecord.error?.message || "The upload batch could not be started."); return; }
-    const importId = String(importRecord.data.id);
+    if (!resourcesAvailable()) { setUploading(false); setComposerError("Resource storage is not configured in this environment."); return; }
+    let importRecord: { id: string } | null = null;
+    let importError: ApiError | null = null;
+    try { importRecord = await createResourceImport({ name: entriesToUpload.length === 1 ? entriesToUpload[0].file.name : `${entriesToUpload.length} uploaded resources`, rootParentId: folderId, subgroupId: destinationScope, visibility: uploadDestinationVisibility, totalFiles: entriesToUpload.length, totalBytes: entriesToUpload.reduce((total, entry) => total + entry.file.size, 0), userId: user.id }); } catch (caught) { importError = toApiError(caught); }
+    if (importError || !importRecord) { setUploading(false); setComposerError(importError?.message || "The upload batch could not be started."); return; }
+    const importId = String(importRecord.id);
     const folderCache = new Map<string, number>();
     try {
       // Resolve the complete tree before workers start so concurrent files
@@ -499,9 +506,9 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
         await ensureFolderPath(parts.join("/"), importId, folderCache);
       }
     } catch (error) {
-      await client.from("resource_imports").update({ status: "failed", failed_files: entriesToUpload.length }).eq("id", importId);
+      await failResourceImport(importId, entriesToUpload.length).catch(() => undefined);
       setUploading(false);
-      setComposerError(error instanceof Error ? error.message : "The folder structure could not be created.");
+      setComposerError(shownMessage(error, "The folder structure could not be created."));
       return;
     }
     let next = 0; let processed = 0; let completed = 0; let failed = 0; let uploadedBytes = 0;
@@ -511,12 +518,12 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
         const index = next++;
         setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "uploading" } : entry));
         try { await uploadOne(entries[index], index, importId, folderCache); completed += 1; uploadedBytes += entries[index].file.size; setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "ready" } : entry)); }
-        catch (error) { failed += 1; const message = error instanceof Error ? error.message : "Upload failed"; setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "failed", error: message } : entry)); }
+        catch (error) { failed += 1; const message = shownMessage(error, "Upload failed"); setUploadEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, state: "failed", error: message } : entry)); }
         processed += 1; setUploadDone(processed); setFailedUploadCount(failed);
       }
     };
     await Promise.all(Array.from({ length: Math.min(3, entries.length) }, () => worker()));
-    await client.from("resource_imports").update({ completed_files: completed, failed_files: failed, uploaded_bytes: uploadedBytes, status: failed ? (completed > 0 ? "partial" : "failed") : "completed" }).eq("id", importId);
+    await finishResourceImport(importId, { completedFiles: completed, failedFiles: failed, uploadedBytes, status: failed ? (completed > 0 ? "partial" : "failed") : "completed" }).catch(() => undefined);
     setUploading(false);
     refreshAll();
     if (failed) { setComposerError(`${failed} file${failed === 1 ? "" : "s"} failed. You can retry the failed rows after checking their error details.`); notify(`${completed} file${completed === 1 ? "" : "s"} uploaded; ${failed} failed`, "error"); }
@@ -539,12 +546,12 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
 
   async function openFile(item: ResourceItem) {
     if (item.node_kind === "link" && item.external_url) { window.open(item.external_url, "_blank", "noopener,noreferrer"); return; }
-    if (!supabase || !item.storage_path) return;
+    if (!resourcesAvailable() || !item.storage_path) return;
     // Open the tab during the click, before waiting for the link, so browsers
     // that block pop-ups opened after a delay still allow it.
     const tab = window.open("about:blank", "_blank");
     if (tab) tab.opener = null;
-    const signed = (await supabase.storage.from(item.storage_bucket || "club-resources").createSignedUrl(item.storage_path, 300)).data?.signedUrl;
+    const signed = await signResourceFile(item.storage_bucket || "club-resources", item.storage_path);
     if (!signed) { tab?.close(); notify("This resource could not be opened"); return; }
     if (tab) tab.location.replace(signed); else window.location.assign(signed);
   }
@@ -567,7 +574,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   return <section className={styles.library} aria-label="Resources">
     <div className={styles.headingRow}>
       <div><p className={styles.kicker}>Club library</p><h1>Resources</h1><p className={styles.intro}>A shared shelf for rehearsal notes, repertoire, event material, and useful links.</p></div>
-      <button className={styles.addButton} type="button" onClick={() => openComposer("menu")} disabled={!supabase || !canAdd} title={!canAdd ? "You need an executive or subgroup manager role to add here" : undefined}><Icon name="plus" size={16} /> Add resource</button>
+      <button className={styles.addButton} type="button" onClick={() => openComposer("menu")} disabled={!resourcesAvailable() || !canAdd} title={!canAdd ? "You need an executive or subgroup manager role to add here" : undefined}><Icon name="plus" size={16} /> Add resource</button>
     </div>
 
     <div className={styles.toolbar}>

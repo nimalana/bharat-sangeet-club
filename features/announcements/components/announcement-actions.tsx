@@ -3,10 +3,9 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
 import type { Tables } from "../../../lib/db";
-import { friendlyError } from "../../../lib/errors";
-import { must } from "../../../lib/api/_core";
+import { announcementsAvailable, createAnnouncement, deleteAnnouncement, setAnnouncementPinned, updateAnnouncement } from "../../../lib/api/announcements";
+import { friendlyError, toApiError, type ApiError } from "../../../lib/errors";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -29,7 +28,7 @@ export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupI
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || saving) return;
+    if (!announcementsAvailable() || saving) return;
     const form = new FormData(event.currentTarget);
     const subgroupValue = lockedSubgroupId ? String(lockedSubgroupId) : String(form.get("subgroup_id") || "");
     const fields = {
@@ -39,12 +38,14 @@ export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupI
       subgroup_id: subgroupValue ? Number(subgroupValue) : null,
     };
     setSaving(true); setError("");
-    const result = announcement
-      ? await supabase.from("announcements").update(fields).eq("id", announcement.id).select("id")
-      : await supabase.from("announcements").insert({ ...fields, created_by: user.id }).select("id");
+    let written: Array<{ id: number }> = [];
+    let failure: ApiError | null = null;
+    try {
+      written = announcement ? await updateAnnouncement(announcement.id, fields) : await createAnnouncement(fields, user.id);
+    } catch (caught) { failure = toApiError(caught); }
     setSaving(false);
     // An update that matches no row returns no error, so check that something was written.
-    if (result.error || !result.data?.length) { setError(friendlyError(result.error, "This announcement could not be saved. It may have been deleted.")); return; }
+    if (failure || !written.length) { setError(friendlyError(failure, "This announcement could not be saved. It may have been deleted.")); return; }
     notify(announcement ? "Announcement updated" : "Announcement published");
     await onSaved();
     onClose();
@@ -73,16 +74,14 @@ export function AnnouncementActions({ user, groups, announcement, onChanged, not
   const { pending: busy, run } = useAsyncAction(notify);
 
   async function togglePin() {
-    const client = supabase;
-    if (!client || busy) return;
-    const done = await run(async () => must(await client.from("announcements").update({ is_pinned: !announcement.is_pinned }).eq("id", announcement.id)), { success: announcement.is_pinned ? "Announcement unpinned" : "Announcement pinned" });
+    if (!announcementsAvailable() || busy) return;
+    const done = await run(() => setAnnouncementPinned(announcement.id, !announcement.is_pinned), { success: announcement.is_pinned ? "Announcement unpinned" : "Announcement pinned" });
     if (done.ok) await onChanged();
   }
 
   async function remove() {
-    const client = supabase;
-    if (!client || busy) return;
-    const done = await run(async () => must(await client.from("announcements").delete().eq("id", announcement.id)), { success: "Announcement deleted" });
+    if (!announcementsAvailable() || busy) return;
+    const done = await run(() => deleteAnnouncement(announcement.id), { success: "Announcement deleted" });
     setConfirming(false);
     if (done.ok) await onChanged();
   }

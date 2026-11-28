@@ -725,3 +725,212 @@ describe("uploading a folder", () => {
     expect(fake.storage("club-resources", "upload").calls[0].args[0]).toBe("u-me/imp-1/Loose-notes.pdf");
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// What happens when a step of an upload, a read or a count fails (added with the move of the library's Supabase calls to
+// lib/api/resources.ts and the split of the screen into hooks and components; each case was first run against the code
+// that called Supabase directly)
+// ---------------------------------------------------------------------------------------------------------------
+
+describe("when a step of an upload fails", () => {
+  const insertOf = (kind: string) => (call: Call) => (call.payload as { node_kind: string }).node_kind === kind;
+
+  it("a file whose row cannot be created is listed as failed with a general sentence, and nothing is sent to storage", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    // A database answer is not shown to the person here, only that the upload failed.
+    fake.from("resources", "insert").reply(fail("permission denied for table resources", "42501"));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed").tone).toBe("error"));
+    expect(screen.getByText("Upload failed", { selector: "small" })).toBeInTheDocument();
+    expect(screen.queryByText(/permission denied/)).not.toBeInTheDocument();
+    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(fake.from("resource_imports", "update").calls[0].payload).toMatchObject({ status: "failed", completed_files: 0, failed_files: 1 });
+  });
+
+  it("a row that cannot be marked ready after its file went up is marked failed, and the list says so", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.from("resources", "update").reply((call) => ((call.payload as { status: string }).status === "ready" ? fail("could not serialize access") : ok({ id: call.uses("eq")[0][1], status: "failed" })));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed").tone).toBe("error"));
+    expect(fake.storage("club-resources", "upload").count).toBe(1);
+    const writes = fake.from("resources", "update").calls.map((call) => (call.payload as { status: string }).status);
+    expect(writes).toEqual(["ready", "failed"]);
+    expect(screen.getByText("Upload failed", { selector: "small" })).toBeInTheDocument();
+  });
+
+  it("the row is created first, then the file is sent, then a failed upload marks the row failed, in that order", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.storage("club-resources", "upload").reply(fail("Bucket not found"));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed")).toBeTruthy());
+    const [row] = fake.from("resources", "insert").calls;
+    const [sent] = fake.storage("club-resources", "upload").calls;
+    const [mark] = fake.from("resources", "update").calls;
+    expect(row.seq).toBeLessThan(sent.seq);
+    expect(sent.seq).toBeLessThan(mark.seq);
+    expect(mark.payload).toEqual({ status: "failed" });
+    // A storage sentence is shown as it is.
+    expect(screen.getByText("Bucket not found", { selector: "small" })).toBeInTheDocument();
+  });
+
+  it("a failure to mark the row failed changes nothing the person is told: the upload's own failure is shown", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.storage("club-resources", "upload").reply(fail("Bucket not found"));
+    fake.from("resources", "update").reply(fail("connection reset"));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed")).toBeTruthy());
+    expect(screen.getByText("Bucket not found", { selector: "small" })).toBeInTheDocument();
+  });
+
+  it("a folder of the selection that cannot be created stops the batch before any file, closes it as failed and says so", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.from("resources", "insert").reply((call) => (insertOf("folder")(call) ? fail("resource hierarchy cannot exceed three folder levels", "P0001") : ok({})));
+    renderLibrary();
+    await chooseFiles(/Upload folder/, [fileAt("Concert/a.pdf"), fileAt("Concert/b.pdf")]);
+    startUpload();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The folder structure could not be created.");
+    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(fake.from("resources", "insert").calls.filter(insertOf("file"))).toHaveLength(0);
+    expect(fake.from("resource_imports", "update").calls[0].payload).toEqual({ status: "failed", failed_files: 2 });
+    // The person can try again.
+    expect(screen.getByRole("button", { name: "Start upload" })).toBeEnabled();
+  });
+
+  it("Reset failed queues only the failed files again and uploads them as a new batch", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    let attempts = 0;
+    fake.storage("club-resources", "upload").reply((call) => (String(call.args[0]).endsWith("bad.pdf") && ++attempts === 1 ? fail("The object exceeded the maximum allowed size") : ok({ path: String(call.args[0]) })));
+    fake.from("resource_imports", "insert").replyOnce(ok({ id: "imp-1" })).replyOnce(ok({ id: "imp-2" }));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("good.pdf"), fileAt("bad.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("1 file uploaded; 1 failed")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Reset failed" }));
+    await waitFor(() => expect(notify.find("1 file uploaded")).toBeTruthy());
+    const batches = fake.from("resource_imports", "insert").calls;
+    expect(batches).toHaveLength(2);
+    expect(batches[1].payload).toMatchObject({ name: "bad.pdf", total_files: 1 });
+    expect(fake.storage("club-resources", "upload").calls.map((call) => String(call.args[0]))).toEqual(expect.arrayContaining(["u-me/imp-2/bad.pdf"]));
+    // Closed: the composer is gone once everything went up.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("while a batch is uploading the dialog cannot be closed and the files cannot be changed", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    const gate = deferred();
+    fake.storage("club-resources", "upload").reply(gate.reply);
+    renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(fake.storage("club-resources", "upload").count).toBe(1));
+    expect(screen.getByRole("button", { name: "Uploading…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Choose a different set/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close add resource" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await act(async () => { gate.resolve(ok({ path: "x" })); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("when a read of the library fails or answers little", () => {
+  it("a picture that cannot be signed leaves the row without its thumbnail, and the list is still shown", async () => {
+    scriptLibrary({ rows: [imageRow(1, "a.png"), res(2, "notes.pdf")] });
+    fake.storage("*", "createSignedUrls").reply(fail("Bucket not found"));
+    renderLibrary();
+    await rowButton("notes.pdf");
+    await rowButton("a.png");
+    expect(fake.storage("club-resources", "createSignedUrls").count).toBe(1);
+    expect(document.querySelectorAll("img[src*='files.test']")).toHaveLength(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("searching inside a folder reads its subfolders first, once, and a search that cannot read them fails as a whole", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [res(1, "Plan.pdf", { parent_id: 42 })], byId: { 42: folderRow(42, "Fall concert") } });
+    renderLibrary();
+    await rowButton("Plan.pdf");
+    const folderReads = () => fake.from("resources", "select").calls.filter((call) => call.used("eq", "node_kind", "folder"));
+    expect(folderReads()).toHaveLength(0);
+    fake.from("resources", "select").reply((call) => (call.used("eq", "node_kind", "folder") ? fail("canceling statement due to statement timeout") : ok([], { count: 0 })));
+    fireEvent.change(screen.getByPlaceholderText(SEARCH), { target: { value: "plan" } });
+    expect(await screen.findByText("Something interrupted the shelf")).toBeInTheDocument();
+    expect(folderReads()).toHaveLength(1);
+    expect(folderReads()[0].used("in", "parent_id", [42])).toBe(true);
+  });
+
+  it("the archived view lists only the top-most archived items: one inside an archived folder is left out", async () => {
+    scriptLibrary({ rows: [], archivedCount: 3 });
+    const archivedRows = [res(1, "Old folder", { node_kind: "folder", status: "archived", parent_id: null }), res(2, "Inside.pdf", { status: "archived", parent_id: 1 }), res(3, "Alone.pdf", { status: "archived", parent_id: 9 })];
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "status", "archived") ? withCount(3) : withCount(1);
+      if (call.used("in", "id")) return ok([{ id: 1, status: "archived" }, { id: 9, status: "ready" }]);
+      if (call.used("maybeSingle")) return ok(null);
+      return call.used("eq", "status", "archived") ? ok(archivedRows, { count: 3 }) : ok([], { count: 0 });
+    });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await rowButton("Old folder");
+    expect(screen.getByRole("button", { name: /Alone\.pdf/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Inside\.pdf/ })).not.toBeInTheDocument();
+    const parentsRead = fake.from("resources", "select").calls.find((call) => call.uses("select")[0]?.[0] === "id,status")!;
+    expect(parentsRead.used("in", "id", [1, 9])).toBe(true);
+  });
+
+  it("a failed read of the archived parents fails the whole load", async () => {
+    scriptLibrary({ rows: [], archivedCount: 1 });
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "status", "archived") ? withCount(1) : withCount(1);
+      if (call.used("in", "id")) return fail("boom");
+      return call.used("eq", "status", "archived") ? ok([res(3, "Alone.pdf", { status: "archived", parent_id: 9 })], { count: 1 }) : ok([], { count: 0 });
+    });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    expect(await screen.findByText("Something interrupted the shelf")).toBeInTheDocument();
+  });
+
+  it("the live count is still reported when the archived count cannot be read, and Show archived stays hidden", async () => {
+    scriptLibrary({ rows: [res(1, "Syllabus.pdf")] });
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "status", "archived") ? fail("boom") : withCount(12);
+      return ok([res(1, "Syllabus.pdf")], { count: 1 });
+    });
+    const { onResourceCountChange } = renderLibrary();
+    await waitFor(() => expect(onResourceCountChange).toHaveBeenCalledWith(12));
+    expect(screen.queryByRole("button", { name: "Show archived" })).not.toBeInTheDocument();
+  });
+
+  it("a folder's child count that cannot be read leaves the folder undeletable (it is treated as not empty)", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Fall concert") } });
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "parent_id", 42) ? fail("boom") : withCount(0);
+      if (call.used("maybeSingle")) return ok(folderRow(42, "Fall concert"));
+      return ok([], { count: 0 });
+    });
+    renderLibrary({ role: "admin" });
+    fireEvent.click(await screen.findByRole("button", { name: "Folder settings" }));
+    await screen.findByText("Manage this folder");
+    await waitFor(() => expect(fake.from("resources", "select").calls.some((call) => call.used("eq", "parent_id", 42) && (call.uses("select")[0][1] as { head?: boolean })?.head === true)).toBe(true));
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+});
