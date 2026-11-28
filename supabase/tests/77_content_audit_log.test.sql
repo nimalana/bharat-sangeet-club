@@ -218,9 +218,9 @@ begin
   m := test.m77c_mark();
   perform test.login(v_mgr);
   insert into public.resources(node_kind, media_kind, title, parent_id, subgroup_id, visibility, status, storage_bucket, storage_path, original_filename, mime_type, byte_size, import_id)
-    values ('file', 'document', 'F77c file one', v_folder, v_g, 'members', 'pending_upload', 'club-resources', 'f77c/one.pdf', 'one.pdf', 'application/pdf', 10, v_imp) returning id into v_file;
+    values ('file', 'document', 'F77c file one', v_folder, v_g, 'members', 'pending_upload', 'club-resources', v_mgr::text || '/f77c/one.pdf', 'one.pdf', 'application/pdf', 10, v_imp) returning id into v_file;
   insert into public.resources(node_kind, media_kind, title, parent_id, subgroup_id, visibility, status, storage_bucket, storage_path, original_filename, mime_type, byte_size, import_id)
-    values ('file', 'document', 'F77c file two', v_folder, v_g, 'members', 'pending_upload', 'club-resources', 'f77c/two.pdf', 'two.pdf', 'application/pdf', 10, v_imp);
+    values ('file', 'document', 'F77c file two', v_folder, v_g, 'members', 'pending_upload', 'club-resources', v_mgr::text || '/f77c/two.pdf', 'two.pdf', 'application/pdf', 10, v_imp);
   update public.resources set status = 'ready' where import_id = v_imp;
   update public.resource_imports set completed_files = 1, uploaded_bytes = 10 where id = v_imp;
   update public.resource_imports set completed_files = 2, uploaded_bytes = 20 where id = v_imp;

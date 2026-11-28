@@ -348,7 +348,7 @@ begin
   perform test.m77a_check('finance_documents forged insert by a member', m, 'finance_documents.uploaded_by must be the signed-in member');
   m := test.m77a_as_uid(v_exec, format('insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''F77a on behalf'', ''f77a/behalf.pdf'', ''application/pdf'', 10, %L)', v_mem));
   perform test.m77a_check('finance_documents an executive registers a file in a member''s name', m, 'finance_documents.uploaded_by must be the signed-in member');
-  m := test.m77a_as_uid(v_mem, 'insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes) values (''receipt'', ''F77a omitted'', ''f77a/omitted.pdf'', ''application/pdf'', 10)');
+  m := test.m77a_as_uid(v_mem, format('insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes) values (''receipt'', ''F77a omitted'', %L, ''application/pdf'', 10)', v_mem || '/f77a/omitted.pdf'));   -- own folder: 20261128032200 binds the path
   perform test.m77a_check('finance_documents omitted uploaded_by', m, null);
   assert (select uploaded_by from public.finance_documents where title = 'F77a omitted') = v_mem, 'finance_documents: the uploader is filled in';
   -- (the client holds no UPDATE on finance_documents, so this one is a definer's write, made as postgres with the executive signed in)
