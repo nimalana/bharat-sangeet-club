@@ -34,7 +34,7 @@ import { setCacheOwner } from "../../lib/cache";
 import type { GroupRole, MembershipStatus } from "../../lib/db";
 import { RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS } from "../../lib/resources-query";
 import { advance, notifySpy, userOf } from "../support/helpers";
-import { deferred, fail, fake, ok, withCount, type Call } from "../support/fake-supabase";
+import { deferred, fail, fake, ok, rejects, withCount, type Call } from "../support/fake-supabase";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Data and scripting
@@ -723,5 +723,873 @@ describe("uploading a folder", () => {
     await waitFor(() => expect(notify.find("1 file uploaded")).toBeTruthy());
     expect(fake.from("resources", "insert").calls.map((call) => (call.payload as { node_kind: string }).node_kind)).toEqual(["file"]);
     expect(fake.storage("club-resources", "upload").calls[0].args[0]).toBe("u-me/imp-1/Loose-notes.pdf");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// What happens when a step of an upload, a read or a count fails (added with the move of the library's Supabase calls to
+// lib/api/resources.ts and the split of the screen into hooks and components; each case was first run against the code
+// that called Supabase directly)
+// ---------------------------------------------------------------------------------------------------------------
+
+describe("when a step of an upload fails", () => {
+  const insertOf = (kind: string) => (call: Call) => (call.payload as { node_kind: string }).node_kind === kind;
+
+  it("a file whose row cannot be created is listed as failed with a general sentence, and nothing is sent to storage", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    // A database answer is not shown to the person here, only that the upload failed.
+    fake.from("resources", "insert").reply(fail("permission denied for table resources", "42501"));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed").tone).toBe("error"));
+    expect(screen.getByText("Upload failed", { selector: "small" })).toBeInTheDocument();
+    expect(screen.queryByText(/permission denied/)).not.toBeInTheDocument();
+    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(fake.from("resource_imports", "update").calls[0].payload).toMatchObject({ status: "failed", completed_files: 0, failed_files: 1 });
+  });
+
+  it("a row that cannot be marked ready after its file went up is marked failed, and the list says so", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.from("resources", "update").reply((call) => ((call.payload as { status: string }).status === "ready" ? fail("could not serialize access") : ok({ id: call.uses("eq")[0][1], status: "failed" })));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed").tone).toBe("error"));
+    expect(fake.storage("club-resources", "upload").count).toBe(1);
+    const writes = fake.from("resources", "update").calls.map((call) => (call.payload as { status: string }).status);
+    expect(writes).toEqual(["ready", "failed"]);
+    expect(screen.getByText("Upload failed", { selector: "small" })).toBeInTheDocument();
+  });
+
+  it("the row is created first, then the file is sent, then a failed upload marks the row failed, in that order", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.storage("club-resources", "upload").reply(fail("Bucket not found"));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed")).toBeTruthy());
+    const [row] = fake.from("resources", "insert").calls;
+    const [sent] = fake.storage("club-resources", "upload").calls;
+    const [mark] = fake.from("resources", "update").calls;
+    expect(row.seq).toBeLessThan(sent.seq);
+    expect(sent.seq).toBeLessThan(mark.seq);
+    expect(mark.payload).toEqual({ status: "failed" });
+    // A storage sentence is shown as it is.
+    expect(screen.getByText("Bucket not found", { selector: "small" })).toBeInTheDocument();
+  });
+
+  it("a failure to mark the row failed changes nothing the person is told: the upload's own failure is shown", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.storage("club-resources", "upload").reply(fail("Bucket not found"));
+    fake.from("resources", "update").reply(fail("connection reset"));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("0 files uploaded; 1 failed")).toBeTruthy());
+    expect(screen.getByText("Bucket not found", { selector: "small" })).toBeInTheDocument();
+  });
+
+  it("a folder of the selection that cannot be created stops the batch before any file, closes it as failed and says so", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.from("resources", "insert").reply((call) => (insertOf("folder")(call) ? fail("resource hierarchy cannot exceed three folder levels", "P0001") : ok({})));
+    renderLibrary();
+    await chooseFiles(/Upload folder/, [fileAt("Concert/a.pdf"), fileAt("Concert/b.pdf")]);
+    startUpload();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The folder structure could not be created.");
+    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(fake.from("resources", "insert").calls.filter(insertOf("file"))).toHaveLength(0);
+    expect(fake.from("resource_imports", "update").calls[0].payload).toEqual({ status: "failed", failed_files: 2 });
+    // The person can try again.
+    expect(screen.getByRole("button", { name: "Start upload" })).toBeEnabled();
+  });
+
+  it("Reset failed queues only the failed files again and uploads them as a new batch", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    let attempts = 0;
+    fake.storage("club-resources", "upload").reply((call) => (String(call.args[0]).endsWith("bad.pdf") && ++attempts === 1 ? fail("The object exceeded the maximum allowed size") : ok({ path: String(call.args[0]) })));
+    fake.from("resource_imports", "insert").replyOnce(ok({ id: "imp-1" })).replyOnce(ok({ id: "imp-2" }));
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("good.pdf"), fileAt("bad.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("1 file uploaded; 1 failed")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Reset failed" }));
+    await waitFor(() => expect(notify.find("1 file uploaded")).toBeTruthy());
+    const batches = fake.from("resource_imports", "insert").calls;
+    expect(batches).toHaveLength(2);
+    expect(batches[1].payload).toMatchObject({ name: "bad.pdf", total_files: 1 });
+    expect(fake.storage("club-resources", "upload").calls.map((call) => String(call.args[0]))).toEqual(expect.arrayContaining(["u-me/imp-2/bad.pdf"]));
+    // Closed: the composer is gone once everything went up.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("while a batch is uploading the dialog cannot be closed and the files cannot be changed", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    const gate = deferred();
+    fake.storage("club-resources", "upload").reply(gate.reply);
+    renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    startUpload();
+    await waitFor(() => expect(fake.storage("club-resources", "upload").count).toBe(1));
+    expect(screen.getByRole("button", { name: "Uploading…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Choose a different set/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close add resource" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await act(async () => { gate.resolve(ok({ path: "x" })); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("when a read of the library fails or answers little", () => {
+  it("a picture that cannot be signed leaves the row without its thumbnail, and the list is still shown", async () => {
+    scriptLibrary({ rows: [imageRow(1, "a.png"), res(2, "notes.pdf")] });
+    fake.storage("*", "createSignedUrls").reply(fail("Bucket not found"));
+    renderLibrary();
+    await rowButton("notes.pdf");
+    await rowButton("a.png");
+    expect(fake.storage("club-resources", "createSignedUrls").count).toBe(1);
+    expect(document.querySelectorAll("img[src*='files.test']")).toHaveLength(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("searching inside a folder reads its subfolders first, once, and a search that cannot read them fails as a whole", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [res(1, "Plan.pdf", { parent_id: 42 })], byId: { 42: folderRow(42, "Fall concert") } });
+    renderLibrary();
+    await rowButton("Plan.pdf");
+    const folderReads = () => fake.from("resources", "select").calls.filter((call) => call.used("eq", "node_kind", "folder"));
+    expect(folderReads()).toHaveLength(0);
+    fake.from("resources", "select").reply((call) => (call.used("eq", "node_kind", "folder") ? fail("canceling statement due to statement timeout") : ok([], { count: 0 })));
+    fireEvent.change(screen.getByPlaceholderText(SEARCH), { target: { value: "plan" } });
+    expect(await screen.findByText("Something interrupted the shelf")).toBeInTheDocument();
+    expect(folderReads()).toHaveLength(1);
+    expect(folderReads()[0].used("in", "parent_id", [42])).toBe(true);
+  });
+
+  it("the archived view lists only the top-most archived items: one inside an archived folder is left out", async () => {
+    scriptLibrary({ rows: [], archivedCount: 3 });
+    const archivedRows = [res(1, "Old folder", { node_kind: "folder", status: "archived", parent_id: null }), res(2, "Inside.pdf", { status: "archived", parent_id: 1 }), res(3, "Alone.pdf", { status: "archived", parent_id: 9 })];
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "status", "archived") ? withCount(3) : withCount(1);
+      if (call.used("in", "id")) return ok([{ id: 1, status: "archived" }, { id: 9, status: "ready" }]);
+      if (call.used("maybeSingle")) return ok(null);
+      return call.used("eq", "status", "archived") ? ok(archivedRows, { count: 3 }) : ok([], { count: 0 });
+    });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await rowButton("Old folder");
+    expect(screen.getByRole("button", { name: /Alone\.pdf/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Inside\.pdf/ })).not.toBeInTheDocument();
+    const parentsRead = fake.from("resources", "select").calls.find((call) => call.uses("select")[0]?.[0] === "id,status")!;
+    expect(parentsRead.used("in", "id", [1, 9])).toBe(true);
+  });
+
+  it("a failed read of the archived parents fails the whole load", async () => {
+    scriptLibrary({ rows: [], archivedCount: 1 });
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "status", "archived") ? withCount(1) : withCount(1);
+      if (call.used("in", "id")) return fail("boom");
+      return call.used("eq", "status", "archived") ? ok([res(3, "Alone.pdf", { status: "archived", parent_id: 9 })], { count: 1 }) : ok([], { count: 0 });
+    });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    expect(await screen.findByText("Something interrupted the shelf")).toBeInTheDocument();
+  });
+
+  it("the live count is still reported when the archived count cannot be read, and Show archived stays hidden", async () => {
+    scriptLibrary({ rows: [res(1, "Syllabus.pdf")] });
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "status", "archived") ? fail("boom") : withCount(12);
+      return ok([res(1, "Syllabus.pdf")], { count: 1 });
+    });
+    const { onResourceCountChange } = renderLibrary();
+    await waitFor(() => expect(onResourceCountChange).toHaveBeenCalledWith(12));
+    expect(screen.queryByRole("button", { name: "Show archived" })).not.toBeInTheDocument();
+  });
+
+  it("a folder's child count that cannot be read leaves the folder undeletable (it is treated as not empty)", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Fall concert") } });
+    fake.from("resources", "select").reply((call: Call) => {
+      const options = (call.uses("select")[0]?.[1] ?? {}) as { head?: boolean };
+      if (options.head) return call.used("eq", "parent_id", 42) ? fail("boom") : withCount(0);
+      if (call.used("maybeSingle")) return ok(folderRow(42, "Fall concert"));
+      return ok([], { count: 0 });
+    });
+    renderLibrary({ role: "admin" });
+    fireEvent.click(await screen.findByRole("button", { name: "Folder settings" }));
+    await screen.findByText("Manage this folder");
+    await waitFor(() => expect(fake.from("resources", "select").calls.some((call) => call.used("eq", "parent_id", 42) && (call.uses("select")[0][1] as { head?: boolean })?.head === true)).toBe(true));
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// The parts of the library, one behaviour at a time
+//
+// The screen is made of hooks and panels (features/resources/hooks, components). Each test below pins one thing one of them
+// does that no test above pins by itself. They were written against the screen before it was split and pass on it unchanged.
+// ---------------------------------------------------------------------------------------------------------------
+
+const GROUPS = [{ id: 7, name: "Hindustani Vocal" }];
+// Spread, not written as an attribute: the lint rule for ARIA roles takes the `role` prop of the library for an element role.
+const EXECUTIVE = { role: "executive" } as const;
+const isHead = (call: Call) => (call.uses("select")[0]?.[1] as { head?: boolean } | undefined)?.head === true;
+const popTo = (search: string) => act(async () => { window.history.pushState({}, "", `/${search}`); window.dispatchEvent(new PopStateEvent("popstate")); });
+const openForm = async (entry: RegExp) => { fireEvent.click(await screen.findByRole("button", { name: "Add resource" })); fireEvent.click(screen.getByRole("button", { name: entry })); };
+const submitFormOf = (label: string) => fireEvent.submit(screen.getByLabelText(label).closest("form")!);
+const pause = (ms = 40) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+
+describe("the open folder: address bar, audience and breadcrumb", () => {
+  it("going to the top when the address already says so adds no history entry; opening a folder adds one that carries its section", async () => {
+    window.history.replaceState({}, "", "/?page=documents");
+    scriptLibrary({ rows: [folderRow(42, "Fall concert")], byId: { 42: folderRow(42, "Fall concert") } });
+    const push = vi.spyOn(window.history, "pushState");
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Resources" }));
+    expect(push).not.toHaveBeenCalled();
+    fireEvent.click(await rowButton("Fall concert"));
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+    expect(push.mock.calls[0][0]).toEqual({ section: "documents" });
+    expect(String(push.mock.calls[0][2])).toBe("/?page=documents&folder=42");
+  });
+
+  it("a new initial audience (a group's Open resources) switches the audience and leaves the open folder", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Fall concert") } });
+    const { notify, rerender } = renderLibrary({ groups: GROUPS });
+    await screen.findByRole("button", { name: "Fall concert" });
+    rerender(<ResourceLibrary user={userOf("u-me")} {...EXECUTIVE} groups={GROUPS} memberships={[]} events={[]} notify={notify} initialScope={7} />);
+    await waitFor(() => expect(window.location.search).not.toContain("folder="));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Scope" })).toHaveValue("7"));
+  });
+
+  it("an archived folder named in the address bar is not found in the normal view, but opens in the archived view", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Old concert", { status: "archived" }) } });
+    const first = renderLibrary();
+    await waitFor(() => expect(first.notify.find("That folder could not be found")).toBeTruthy());
+    await waitFor(() => expect(window.location.search).not.toContain("folder="));
+    first.unmount();
+    fake.reset();
+
+    window.history.replaceState({}, "", "/?page=documents");
+    scriptLibrary({ rows: [], archivedCount: 1, byId: { 42: folderRow(42, "Old concert", { status: "archived" }) } });
+    const second = renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await popTo("?page=documents&folder=42");
+    expect(await screen.findByRole("button", { name: "Old concert" })).toBeInTheDocument();
+    expect(second.notify.messages()).not.toContain("That folder could not be found");
+  });
+
+  it("a breadcrumb that was read once shows at once when the folder is opened again, before it is read again", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Fall concert") } });
+    const first = renderLibrary();
+    await screen.findByRole("button", { name: "Fall concert" });
+    first.unmount();
+    const gate = deferred();
+    fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("maybeSingle") ? gate.reply : ok([], { count: 0 }));
+    renderLibrary();
+    expect(await screen.findByRole("button", { name: "Fall concert" })).toBeInTheDocument();
+  });
+
+  it("while another folder's breadcrumb is being read the previous folder's is not shown", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Fall concert"), 43: folderRow(43, "Winter concert") } });
+    renderLibrary();
+    await screen.findByRole("button", { name: "Fall concert" });
+    const gate = deferred();
+    fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("maybeSingle") ? gate.reply : ok([], { count: 0 }));
+    await popTo("?page=documents&folder=43");
+    await waitFor(() => expect(listReads().some((call) => call.used("eq", "parent_id", 43))).toBe(true));
+    expect(screen.queryByRole("button", { name: "Fall concert" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resources" })).toBeInTheDocument();
+  });
+
+  it("at the top nothing is read for a breadcrumb, nothing is said, and the address is left alone", async () => {
+    scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
+    const { notify } = renderLibrary();
+    await rowButton("Syllabus.pdf");
+    await pause();
+    expect(fake.from("resources", "select").calls.filter((call) => call.used("maybeSingle"))).toHaveLength(0);
+    expect(notify.messages()).not.toContain("That folder could not be found");
+    expect(window.location.search).toBe("");
+  });
+});
+
+describe("adding a folder or a link: who sees it, and what is left behind", () => {
+  it("at the top an executive chooses who sees a new folder or link; descriptions are saved trimmed", async () => {
+    scriptLibrary({ rows: [] });
+    fake.from("resources", "insert").replyOnce(ok(folderRow(50, "Programme"))).replyOnce(ok(res(60, "Repertoire", { node_kind: "link" })));
+    const { notify } = renderLibrary();
+    await openForm(/Create folder/);
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "Programme" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "  Concert notes  " } });
+    fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: "executives" } });
+    submitFormOf("Folder name");
+    await waitFor(() => expect(notify.find("Folder created")).toBeTruthy());
+    await openForm(/Add link/);
+    fireEvent.change(screen.getByLabelText("Link title"), { target: { value: "Repertoire" } });
+    fireEvent.change(screen.getByLabelText("Web address"), { target: { value: "example.com/rep" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "  The pieces  " } });
+    fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: "executives" } });
+    submitFormOf("Link title");
+    await waitFor(() => expect(notify.find("Link added to Resources")).toBeTruthy());
+    const [folder, link] = fake.from("resources", "insert").calls.map((call) => call.payload);
+    expect(folder).toMatchObject({ node_kind: "folder", title: "Programme", description: "Concert notes", visibility: "executives" });
+    expect(link).toMatchObject({ node_kind: "link", title: "Repertoire", description: "The pieces", visibility: "executives", external_url: "https://example.com/rep" });
+  });
+
+  it("inside a folder a new folder or link takes the folder's visibility", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Executive notes", { visibility: "executives" }) } });
+    fake.from("resources", "insert").replyOnce(ok(folderRow(50, "Inner", { parent_id: 42, visibility: "executives" }))).replyOnce(ok(res(60, "Repertoire", { node_kind: "link", parent_id: 42 })));
+    const { notify } = renderLibrary();
+    await screen.findByRole("button", { name: "Executive notes" });
+    await createFolderNamed("Inner");
+    await waitFor(() => expect(notify.find("Folder created")).toBeTruthy());
+    await openForm(/Add link/);
+    fireEvent.change(screen.getByLabelText("Link title"), { target: { value: "Repertoire" } });
+    fireEvent.change(screen.getByLabelText("Web address"), { target: { value: "example.com/rep" } });
+    expect(screen.getByLabelText("Visibility")).toBeDisabled();
+    submitFormOf("Link title");
+    await waitFor(() => expect(notify.find("Link added to Resources")).toBeTruthy());
+    const [folder, link] = fake.from("resources", "insert").calls.map((call) => call.payload);
+    expect(folder).toMatchObject({ parent_id: 42, visibility: "executives" });
+    expect(link).toMatchObject({ parent_id: 42, visibility: "executives" });
+  });
+
+  it("what was just added is listed at once, while the list is still being read again", async () => {
+    const gate = deferred();
+    let changed = false;
+    fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("range") ? (changed ? gate.reply : ok([], { count: 0 })) : ok([]));
+    fake.from("resources", "insert").replyOnce(() => { changed = true; return ok(folderRow(50, "Programme")); }).replyOnce(ok(res(60, "Repertoire", { node_kind: "link" })));
+    const { notify } = renderLibrary();
+    await createFolderNamed("Programme");
+    await waitFor(() => expect(notify.find("Folder created")).toBeTruthy());
+    expect(await rowButton("Programme")).toBeInTheDocument();
+    await openForm(/Add link/);
+    fireEvent.change(screen.getByLabelText("Link title"), { target: { value: "Repertoire" } });
+    fireEvent.change(screen.getByLabelText("Web address"), { target: { value: "example.com/rep" } });
+    submitFormOf("Link title");
+    await waitFor(() => expect(notify.find("Link added to Resources")).toBeTruthy());
+    expect(await rowButton("Repertoire")).toBeInTheDocument();
+  });
+
+  it("after a folder or a link is saved, its fields are empty when the form is opened again", async () => {
+    scriptLibrary({ rows: [] });
+    fake.from("resources", "insert").replyOnce(ok(folderRow(50, "Programme"))).replyOnce(ok(res(60, "Repertoire", { node_kind: "link" })));
+    const { notify } = renderLibrary();
+    await openForm(/Create folder/);
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "Programme" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Concert notes" } });
+    submitFormOf("Folder name");
+    await waitFor(() => expect(notify.find("Folder created")).toBeTruthy());
+    await openForm(/Create folder/);
+    expect(screen.getByLabelText("Folder name")).toHaveValue("");
+    expect(screen.getByLabelText(/Description/)).toHaveValue("");
+
+    await openForm(/Add link/);
+    fireEvent.change(screen.getByLabelText("Link title"), { target: { value: "Repertoire" } });
+    fireEvent.change(screen.getByLabelText("Web address"), { target: { value: "example.com/rep" } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "The pieces" } });
+    submitFormOf("Link title");
+    await waitFor(() => expect(notify.find("Link added to Resources")).toBeTruthy());
+    await openForm(/Add link/);
+    expect(screen.getByLabelText("Link title")).toHaveValue("");
+    expect(screen.getByLabelText("Web address")).toHaveValue("");
+    expect(screen.getByLabelText(/Description/)).toHaveValue("");
+  });
+
+  it("a folder or link that is being saved cannot be sent a second time", async () => {
+    scriptLibrary({ rows: [] });
+    const folderGate = deferred();
+    const linkGate = deferred();
+    fake.from("resources", "insert").replyOnce(folderGate.reply).replyOnce(linkGate.reply);
+    const { notify } = renderLibrary();
+    await openForm(/Create folder/);
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "Programme" } });
+    const folderForm = screen.getByLabelText("Folder name").closest("form")!;
+    fireEvent.submit(folderForm); fireEvent.submit(folderForm);
+    await waitFor(() => expect(fake.from("resources", "insert").count).toBe(1));
+    await act(async () => { folderGate.resolve(ok(folderRow(50, "Programme"))); });
+    await waitFor(() => expect(notify.find("Folder created")).toBeTruthy());
+    expect(fake.from("resources", "insert").count).toBe(1);
+
+    await openForm(/Add link/);
+    fireEvent.change(screen.getByLabelText("Link title"), { target: { value: "Repertoire" } });
+    fireEvent.change(screen.getByLabelText("Web address"), { target: { value: "example.com/rep" } });
+    const linkForm = screen.getByLabelText("Link title").closest("form")!;
+    fireEvent.submit(linkForm); fireEvent.submit(linkForm);
+    await waitFor(() => expect(fake.from("resources", "insert").count).toBe(2));
+    await act(async () => { linkGate.resolve(ok(res(60, "Repertoire", { node_kind: "link" }))); });
+    await waitFor(() => expect(notify.find("Link added to Resources")).toBeTruthy());
+    expect(fake.from("resources", "insert").count).toBe(2);
+  });
+
+  it("a refused folder shows the database's own sentence only, never a fixed one", async () => {
+    scriptLibrary({ rows: [] });
+    fake.from("resources", "insert").reply(fail("Folder names must be unique here"));
+    renderLibrary();
+    await createFolderNamed("Programme");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Folder names must be unique here$/);
+  });
+});
+
+describe("the selected item", () => {
+  it("entering a folder closes the details of the item that was open", async () => {
+    scriptLibrary({ rows: [folderRow(42, "Fall concert"), res(5, "Setlist.pdf")], byId: { 42: folderRow(42, "Fall concert") } });
+    renderLibrary();
+    fireEvent.click(await rowButton("Setlist.pdf"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Fall concert/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(window.location.search).toContain("folder=42");
+  });
+
+  it("an archived folder is opened for its details and is not entered", async () => {
+    scriptLibrary({ rows: [folderRow(42, "Old concert", { status: "archived" })], archivedCount: 1 });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    fireEvent.click(await rowButton("Old concert"));
+    expect(await screen.findByRole("heading", { name: "Old concert" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(window.location.search).not.toContain("folder=");
+  });
+
+  it("a file is signed from the bucket its row names, or the library's own when it names none", async () => {
+    scriptLibrary({ rows: [res(5, "Scan.pdf", { storage_bucket: "club-archive", storage_path: "x/scan.pdf" }), res(6, "Plain.pdf", { storage_bucket: null })] });
+    const tab = { opener: "x" as unknown, location: { replace: vi.fn() }, close: vi.fn() };
+    vi.mocked(window.open).mockReturnValue(tab as unknown as Window);
+    renderLibrary({ role: "member" });
+    fireEvent.click(await rowButton("Scan.pdf"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
+    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledTimes(1));
+    expect(fake.storage("club-archive", "createSignedUrl").calls[0].args).toEqual(["x/scan.pdf", 300]);
+    fireEvent.click(screen.getByRole("button", { name: "Close resource details" }));
+    fireEvent.click(await rowButton("Plain.pdf"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open file" }));
+    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledTimes(2));
+    expect(fake.storage("club-resources", "createSignedUrl").calls[0].args).toEqual(["u-1/6-Plain.pdf", 300]);
+  });
+
+  async function renameSyllabus(world: World) {
+    fake.from("resources", "update").reply(ok([{ id: 5 }]));
+    renderLibrary();
+    fireEvent.click(await rowButton("Syllabus.pdf"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const form = screen.getByRole("heading", { name: "Edit file" }).closest('[role="dialog"]')!.querySelector("form")!;
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Syllabus v2" } });
+    world.byId = { 5: res(5, "Syllabus v2") };
+    const readsBefore = listReads().length;
+    return { submit: () => fireEvent.submit(form), readsBefore };
+  }
+
+  it("after a change the open item keeps showing what was saved once the list was read again and no longer holds it", async () => {
+    const world = scriptLibrary({ rows: [res(5, "Syllabus.pdf")], byId: { 5: res(5, "Syllabus.pdf") } });
+    const edit = await renameSyllabus(world);
+    world.rows = [];
+    edit.submit();
+    await waitFor(() => expect(listReads().length).toBeGreaterThan(edit.readsBefore));
+    await pause();
+    expect(screen.getByRole("heading", { name: "Syllabus v2" })).toBeInTheDocument();
+  });
+
+  it("after a change the row in the list is the saved one at once, also when the list cannot be read again", async () => {
+    const world = scriptLibrary({ rows: [res(5, "Syllabus.pdf")], byId: { 5: res(5, "Syllabus.pdf") } });
+    const edit = await renameSyllabus(world);
+    world.listError = true;
+    edit.submit();
+    expect(await screen.findByText(/What is shown may be out of date/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Syllabus v2" })).toBeInTheDocument();
+  });
+
+  it("a folder's child count is asked again after a change", async () => {
+    const world = scriptLibrary({ rows: [], childCount: 0 });
+    openFolderUrl(42);
+    world.byId = { 42: folderRow(42, "Fall concert") };
+    fake.from("resources", "update").reply(ok([{ id: 42 }]));
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Folder settings" }));
+    await screen.findByText("Manage this folder");
+    const counts = () => fake.from("resources", "select").calls.filter((call) => isHead(call) && call.used("eq", "parent_id", 42));
+    await waitFor(() => expect(counts()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    await waitFor(() => expect(counts()).toHaveLength(2));
+  });
+});
+
+describe("uploading: what the batch records and what it leaves behind", () => {
+  it("inside a folder the batch is recorded with the folder, its visibility and the sizes, closed with what went up, and the list is read again", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Executive notes", { visibility: "executives" }) } });
+    scriptUploads();
+    const { notify } = renderLibrary();
+    await screen.findByRole("button", { name: "Executive notes" });
+    await chooseFiles(/Upload files/, [fileAt("a.pdf", 10), fileAt("b.pdf", 30)]);
+    await waitFor(() => expect(listReads().length).toBeGreaterThan(0));
+    const readsBefore = listReads().length;
+    startUpload();
+    await waitFor(() => expect(notify.find("2 files uploaded")).toBeTruthy());
+    expect(fake.from("resource_imports", "insert").calls[0].payload).toEqual({
+      name: "2 uploaded resources", root_parent_id: 42, subgroup_id: null, visibility: "executives", status: "uploading", total_files: 2, completed_files: 0, failed_files: 0, total_bytes: 40, uploaded_bytes: 0, created_by: "u-me",
+    });
+    expect(fake.from("resource_imports", "update").calls[0].payload).toEqual({ completed_files: 2, failed_files: 0, uploaded_bytes: 40, status: "completed" });
+    const files = fake.from("resources", "insert").calls.map((call) => call.payload as Record<string, unknown>);
+    expect(files.map((file) => [file.parent_id, file.visibility])).toEqual([[42, "executives"], [42, "executives"]]);
+    await waitFor(() => expect(listReads().length).toBeGreaterThan(readsBefore));
+  });
+
+  it("at the top an executive chooses who sees the uploaded files, and the batch and each row say so", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    const { notify } = renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: "executives" } });
+    startUpload();
+    await waitFor(() => expect(notify.find("1 file uploaded")).toBeTruthy());
+    expect(fake.from("resource_imports", "insert").calls[0].payload).toMatchObject({ name: "a.pdf", root_parent_id: null, visibility: "executives" });
+    expect(fake.from("resources", "insert").calls[0].payload).toMatchObject({ visibility: "executives" });
+  });
+
+  it("files chosen before the panel was closed with Escape are gone when it is opened again", async () => {
+    scriptLibrary({ rows: [] });
+    renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("a.pdf")]);
+    expect(screen.getByText("a.pdf")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add resource" }));
+    fireEvent.click(screen.getByRole("button", { name: /Upload files/ }));
+    expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Choose files/ })).toBeInTheDocument();
+  });
+
+  it("the file picker is emptied after a choice, so choosing the same file again is noticed", async () => {
+    scriptLibrary({ rows: [] });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+    fireEvent.click(screen.getByRole("button", { name: /Upload files/ }));
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const emptied = vi.fn();
+    Object.defineProperty(input, "value", { configurable: true, get: () => "", set: emptied });
+    fireEvent.change(input, { target: { files: [fileAt("a.pdf")] } });
+    expect(emptied).toHaveBeenCalledWith("");
+  });
+
+  it("choosing a different set of files after a failed batch starts the progress from nothing", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.storage("club-resources", "upload").reply((call) => String(call.args[0]).endsWith("bad.pdf") ? fail("too big") : ok({ path: "x" }));
+    const { notify } = renderLibrary();
+    const input = await chooseFiles(/Upload files/, [fileAt("good.pdf"), fileAt("bad.pdf")]);
+    startUpload();
+    await waitFor(() => expect(notify.find("1 file uploaded; 1 failed")).toBeTruthy());
+    expect(screen.getByText("2 of 2 complete")).toBeInTheDocument();
+    expect(screen.getByText("1 failed")).toBeInTheDocument();
+    fireEvent.change(input, { target: { files: [fileAt("next.pdf")] } });
+    expect(screen.getByText("0 of 1 complete")).toBeInTheDocument();
+    expect(screen.getByText("Ready to upload")).toBeInTheDocument();
+  });
+
+  it("a folder that cannot be made because the connection dropped says what the connection said, and one the database refused gets the general sentence", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    fake.from("resources", "insert").replyOnce(rejects(new TypeError("Failed to fetch")));
+    renderLibrary();
+    await chooseFiles(/Upload folder/, [fileAt("Concert/a.pdf")]);
+    startUpload();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Failed to fetch$/);
+    expect(fake.from("resource_imports", "update").calls[0].payload).toMatchObject({ status: "failed", failed_files: 1 });
+  });
+});
+
+describe("the lists: what stays, what is added, where the next page starts", () => {
+  const page = (from: number, count: number) => Array.from({ length: count }, (_, i) => res(from + i, `Item ${from + i}`));
+  const searchBox = () => screen.getByPlaceholderText(SEARCH);
+  const tabText = (name: RegExp) => screen.getByRole("button", { name });
+  const pendingLists = () => { const gate = deferred(); fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("range") ? gate.reply : ok([])); return gate; };
+
+  it("a row made while a search is active is not put among the rows of that search, and one that is already listed is not listed twice", async () => {
+    const gate = deferred();
+    let created = false;
+    fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("range") ? (created ? gate.reply : ok([], { count: 0 })) : ok([]));
+    fake.from("resources", "insert").reply(() => { created = true; return ok(folderRow(50, "Programme")); });
+    const { notify } = renderLibrary();
+    fireEvent.change(await screen.findByPlaceholderText(SEARCH), { target: { value: "zzz" } });
+    await waitFor(() => expect(listReads()).toHaveLength(2));
+    await createFolderNamed("Programme");
+    await waitFor(() => expect(notify.find("Folder created")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /Programme/ })).not.toBeInTheDocument();
+    // Without a search the same row is listed, once, however many times the database hands it back.
+    created = false;
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    await waitFor(() => expect(listReads()).toHaveLength(3));
+    await screen.findByText("Your resource shelf is empty");
+    await createFolderNamed("Programme");
+    await waitFor(() => expect(notify.messages().filter((message) => message === "Folder created")).toHaveLength(2));
+    await createFolderNamed("Programme");
+    await waitFor(() => expect(notify.messages().filter((message) => message === "Folder created")).toHaveLength(3));
+    expect(screen.getAllByRole("button", { name: /Programme/ })).toHaveLength(1);
+  });
+
+  it("a list that was read before shows at once when it is opened again, while it is read again", async () => {
+    scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
+    renderLibrary();
+    await rowButton("Syllabus.pdf");
+    pendingLists();
+    fireEvent.click(tabText(/Photos/));
+    await screen.findByText("Opening the library");
+    fireEvent.click(tabText(/^All/));
+    expect(await rowButton("Syllabus.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("Opening the library")).not.toBeInTheDocument();
+  });
+
+  it("the total of the open list stays after Show more, and each Show more continues where the last page ended", async () => {
+    scriptLibrary({ rows: page(1, RESOURCE_PAGE_SIZE), total: RESOURCE_PAGE_SIZE * 3, nextRows: page(RESOURCE_PAGE_SIZE + 1, RESOURCE_PAGE_SIZE) });
+    renderLibrary();
+    await rowButton(/^Item 1 /);
+    expect(tabText(/^All/)).toHaveTextContent(new RegExp(`All\\s*${RESOURCE_PAGE_SIZE * 3}`));
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await waitFor(() => expect(listReads().some((call) => call.used("range", RESOURCE_PAGE_SIZE, RESOURCE_PAGE_SIZE * 2 - 1))).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Show more" })).toBeEnabled());
+    expect(tabText(/^All/)).toHaveTextContent(new RegExp(`All\\s*${RESOURCE_PAGE_SIZE * 3}`));
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await waitFor(() => expect(listReads().some((call) => call.used("range", RESOURCE_PAGE_SIZE * 2, RESOURCE_PAGE_SIZE * 3 - 1))).toBe(true));
+  });
+
+  it("a full page that is all there is has no Show more", async () => {
+    scriptLibrary({ rows: page(1, RESOURCE_PAGE_SIZE), total: RESOURCE_PAGE_SIZE });
+    renderLibrary();
+    await rowButton(/^Item 1 /);
+    expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+  });
+
+  it("while another list is being read its total and Show more are not offered", async () => {
+    scriptLibrary({ rows: page(1, RESOURCE_PAGE_SIZE), total: RESOURCE_PAGE_SIZE + 5 });
+    renderLibrary();
+    await rowButton(/^Item 1 /);
+    expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
+    pendingLists();
+    fireEvent.click(tabText(/Photos/));
+    await screen.findByText("Opening the library");
+    expect(tabText(/Photos/)).toHaveTextContent(/^Photos$/);
+    expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+  });
+
+  it("rows kept after a failed refresh do not offer Show more", async () => {
+    const world = scriptLibrary({ rows: page(1, RESOURCE_PAGE_SIZE), total: RESOURCE_PAGE_SIZE + 5 });
+    fake.from("resources", "insert").reply(ok(folderRow(2000, "New shelf")));
+    renderLibrary();
+    await rowButton(/^Item 1 /);
+    world.listError = true;
+    await createFolderNamed("New shelf");
+    await screen.findByText(/may be out of date/);
+    expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+  });
+
+  it("the subfolders of a folder are read once for all the searches made in it, and not at all in the archived view", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [res(1, "Plan.pdf", { parent_id: 42 })], byId: { 42: folderRow(42, "Fall concert") } });
+    renderLibrary();
+    await rowButton("Plan.pdf");
+    const subfolderReads = () => fake.from("resources", "select").calls.filter((call) => call.used("eq", "node_kind", "folder"));
+    fireEvent.change(searchBox(), { target: { value: "plan" } });
+    await waitFor(() => expect(listReads()).toHaveLength(2));
+    expect(subfolderReads()).toHaveLength(1);
+    fireEvent.change(searchBox(), { target: { value: "plans" } });
+    await waitFor(() => expect(listReads()).toHaveLength(3));
+    expect(subfolderReads()).toHaveLength(1);
+  });
+
+  it("in the archived view a search inside a folder does not read the subfolders first", async () => {
+    scriptLibrary({ rows: [], archivedCount: 1, byId: { 42: folderRow(42, "Old concert", { status: "archived" }) } });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await popTo("?page=documents&folder=42");
+    await screen.findByRole("button", { name: "Old concert" });
+    const before = listReads().length;
+    fireEvent.change(searchBox(), { target: { value: "plan" } });
+    await waitFor(() => expect(listReads().length).toBeGreaterThan(before));
+    expect(fake.from("resources", "select").calls.filter((call) => call.used("eq", "node_kind", "folder"))).toHaveLength(0);
+  });
+
+  it("a folder that cannot be read for its breadcrumb is reported as not found", async () => {
+    openFolderUrl(42);
+    fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("maybeSingle") ? fail("boom") : ok([], { count: 0 }));
+    const { notify } = renderLibrary();
+    await waitFor(() => expect(notify.find("That folder could not be found")).toBeTruthy());
+    await waitFor(() => expect(window.location.search).not.toContain("folder="));
+  });
+});
+
+describe("the screen around the lists", () => {
+  it("Escape closes the details of the open item", async () => {
+    scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
+    renderLibrary();
+    fireEvent.click(await rowButton("Syllabus.pdf"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("a press inside a panel does not close it; a press on the dimmed area around it does", async () => {
+    scriptLibrary({ rows: [res(5, "Syllabus.pdf")] });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+    const composer = screen.getByRole("dialog");
+    fireEvent.mouseDown(within(composer).getByRole("heading", { name: "Add resource" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.mouseDown(composer.parentElement!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(await rowButton("Syllabus.pdf"));
+    const detail = await screen.findByRole("dialog");
+    fireEvent.mouseDown(within(detail).getByRole("heading", { name: "Syllabus.pdf" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.mouseDown(detail.parentElement!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("opening the add panel puts the focus in it; the empty shelf's button opens it", async () => {
+    scriptLibrary({ rows: [] });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close add resource" })).toHaveFocus());
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Add the first resource/ }));
+    expect(await screen.findByRole("heading", { name: "Add resource" })).toBeInTheDocument();
+  });
+
+  it("a group's leader does not manage that group's executives-only items", async () => {
+    scriptLibrary({ rows: [res(5, "Exec notes.pdf", { subgroup_id: 7, visibility: "executives" })] });
+    renderLibrary({ role: "member", groups: GROUPS, memberships: [{ subgroup_id: 7, status: "active", membership_role: "leader" }] });
+    fireEvent.click(await rowButton("Exec notes.pdf"));
+    await screen.findByRole("heading", { name: "Exec notes.pdf" });
+    expect(screen.queryByText("Manage this file")).not.toBeInTheDocument();
+  });
+
+  it("the audience list offers the groups the person is an active member of, and every group to an executive", async () => {
+    const groups = [...GROUPS, { id: 8, name: "Carnatic Strings" }];
+    scriptLibrary({ rows: [] });
+    const member = renderLibrary({ role: "member", groups, memberships: [{ subgroup_id: 7, status: "active", membership_role: "member" }, { subgroup_id: 8, status: "pending", membership_role: "member" }] });
+    const scope = await screen.findByRole("combobox", { name: "Scope" });
+    expect(within(scope).getByRole("option", { name: "Hindustani Vocal" })).toBeInTheDocument();
+    expect(within(scope).queryByRole("option", { name: "Carnatic Strings" })).not.toBeInTheDocument();
+    member.unmount();
+    renderLibrary({ groups });
+    expect(within(await screen.findByRole("combobox", { name: "Scope" })).getByRole("option", { name: "Carnatic Strings" })).toBeInTheDocument();
+  });
+
+  it("an audience that is not among the groups is named Group", async () => {
+    scriptLibrary({ rows: [] });
+    renderLibrary({ scope: 99 });
+    expect(await screen.findByText("Group")).toBeInTheDocument();
+  });
+
+  it("nothing can be added to a folder that has not been read yet", async () => {
+    openFolderUrl(42);
+    const gate = deferred();
+    fake.from("resources", "select").reply((call: Call) => isHead(call) ? withCount(0) : call.used("maybeSingle") ? gate.reply : ok([], { count: 0 }));
+    renderLibrary();
+    expect(await screen.findByRole("button", { name: "Add resource" })).toBeDisabled();
+    await act(async () => { gate.resolve(ok(folderRow(42, "Fall concert"))); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add resource" })).toBeEnabled());
+  });
+
+  it("changing the audience or the archived view leaves the open folder", async () => {
+    openFolderUrl(42);
+    scriptLibrary({ rows: [], archivedCount: 1, byId: { 42: folderRow(42, "Fall concert") } });
+    renderLibrary({ groups: GROUPS });
+    await screen.findByRole("button", { name: "Fall concert" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Scope" }), { target: { value: "club" } });
+    await waitFor(() => expect(window.location.search).not.toContain("folder="));
+    await popTo("?page=documents&folder=42");
+    await screen.findByRole("button", { name: "Fall concert" });
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await waitFor(() => expect(window.location.search).not.toContain("folder="));
+  });
+
+  it("an ancestor in the breadcrumb opens that folder; Folder settings is not offered in the archived view", async () => {
+    openFolderUrl(43);
+    scriptLibrary({ rows: [], archivedCount: 1, byId: { 43: folderRow(43, "Programme", { parent_id: 42 }), 42: folderRow(42, "Fall concert") } });
+    renderLibrary();
+    await screen.findByRole("button", { name: "Programme" });
+    fireEvent.click(screen.getByRole("button", { name: "Fall concert" }));
+    await waitFor(() => expect(window.location.search).toContain("folder=42"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Programme" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Folder settings" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await popTo("?page=documents&folder=42");
+    await screen.findByRole("button", { name: "Fall concert" });
+    expect(screen.queryByRole("button", { name: "Folder settings" })).not.toBeInTheDocument();
+  });
+
+  it("archiving the open folder takes the person up to the folder above it", async () => {
+    openFolderUrl(43);
+    scriptLibrary({ rows: [], byId: { 43: folderRow(43, "Programme", { parent_id: 42 }), 42: folderRow(42, "Fall concert") } });
+    fake.rpc("set_resource_archived").reply(ok(null));
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Folder settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    fireEvent.click(within(screen.getAllByRole("dialog")[1]).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(fake.rpc("set_resource_archived").count).toBe(1));
+    await waitFor(() => expect(window.location.search).toContain("folder=42"));
+    expect(window.location.search).not.toContain("folder=43");
+  });
+
+  it("an upload is refused by the depth of the open folder, counted from the breadcrumb", async () => {
+    openFolderUrl(44);
+    scriptLibrary({ rows: [], byId: { 44: folderRow(44, "Rehearsals", { parent_id: 43 }), 43: folderRow(43, "Programme", { parent_id: 42 }), 42: folderRow(42, "Fall concert") } });
+    scriptUploads();
+    renderLibrary();
+    await screen.findByRole("button", { name: "Rehearsals" });
+    await chooseFiles(/Upload folder/, [fileAt("Extra/a.pdf")]);
+    startUpload();
+    expect(await screen.findByRole("alert")).toHaveTextContent("destination is already 3 levels deep");
+    expect(fake.from("resource_imports", "insert").count).toBe(0);
+  });
+
+  it("the archived view's way back stays when the last archived item was restored", async () => {
+    const world = scriptLibrary({ rows: [res(5, "Old.pdf", { status: "archived" })], archivedCount: 1 });
+    fake.from("resources", "insert").reply(ok(folderRow(50, "Programme")));
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: "Show archived" }));
+    await rowButton("Old.pdf");
+    world.archivedCount = 0;
+    const archivedCounts = () => fake.from("resources", "select").calls.filter((call) => isHead(call) && call.used("eq", "status", "archived"));
+    const before = archivedCounts().length;
+    await createFolderNamed("Programme");
+    await waitFor(() => expect(archivedCounts().length).toBeGreaterThan(before));
+    await pause();
+    expect(screen.getByRole("button", { name: "Back to library" })).toBeInTheDocument();
+  });
+});
+
+describe("the add panel while files are going up", () => {
+  it("Reset failed is offered when the batch is over, not while files are still going up", async () => {
+    scriptLibrary({ rows: [] });
+    scriptUploads();
+    const gate = deferred();
+    fake.storage("club-resources", "upload").reply((call) => String(call.args[0]).endsWith("bad.pdf") ? fail("too big") : gate.reply);
+    renderLibrary();
+    await chooseFiles(/Upload files/, [fileAt("bad.pdf"), fileAt("slow.pdf")]);
+    startUpload();
+    expect(await screen.findByText("1 failed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset failed" })).not.toBeInTheDocument();
+    await act(async () => { gate.resolve(ok({ path: "x" })); });
+    expect(await screen.findByRole("button", { name: "Reset failed" })).toBeInTheDocument();
   });
 });

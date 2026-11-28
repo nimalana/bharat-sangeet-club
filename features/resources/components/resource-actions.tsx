@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { Tables, TablesUpdate } from "../../../lib/db";
-import { friendlyError } from "../../../lib/errors";
-import { removeStoredFile } from "../../../lib/storage";
-import { supabase } from "../../../lib/supabase";
+import { deleteResource, removeResourceFile, resourcesAvailable, setResourceArchived, setResourcePinned, setResourceVisibility, updateResourceDetails } from "../../../lib/api/resources";
+import type { Tables } from "../../../lib/db";
+import { ApiError } from "../../../lib/errors";
+import { useAsyncAction } from "../../../lib/hooks/use-async-action";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -17,6 +17,12 @@ export type ManagedResource = Pick<Tables<"resources">, "id" | "node_kind" | "ti
 
 type Pending = "edit" | "visibility" | "archive" | "restore" | "delete" | null;
 
+// A write that matched no row is not an error for the database, but nothing was written: it is shown as a refusal. The empty
+// message makes friendlyError answer with the action's own fallback sentence.
+function requireRows(rows: unknown[]) {
+  if (!rows.length) throw new ApiError("");
+}
+
 // Everything a manager can do to one library item. `canManage` mirrors the
 // database rule (executives, or a group's leaders and managers for that
 // group's member-visible items); the database enforces it either way.
@@ -25,7 +31,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
   notify: Notify; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
 }) {
   const [pending, setPending] = useState<Pending>(null);
-  const [busy, setBusy] = useState(false);
+  const { pending: busy, run } = useAsyncAction(notify);
   if (!canManage) return null;
   const noun = item.node_kind === "folder" ? "folder" : item.node_kind === "link" ? "link" : "file";
   const unfinished = item.status === "failed" || item.status === "pending_upload";
@@ -33,62 +39,55 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!resourcesAvailable()) return;
     const form = new FormData(event.currentTarget);
-    const changes: TablesUpdate<"resources"> = { title: String(form.get("title") || "").trim(), description: String(form.get("description") || "").trim() };
+    const details: { title: string; description: string; external_url?: string } = { title: String(form.get("title") || "").trim(), description: String(form.get("description") || "").trim() };
     if (item.node_kind === "link") {
       const raw = String(form.get("external_url") || "").trim();
       const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
       try { new URL(url); } catch { notify("Enter a complete web address."); return; }
-      changes.external_url = url;
+      details.external_url = url;
     }
-    setBusy(true);
-    const { data, error } = await supabase.from("resources").update(changes).eq("id", item.id).select("id");
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this resource."), "error"); return; }
-    setPending(null); notify("Resource updated"); await onChanged();
+    const done = await run(async () => requireRows(await updateResourceDetails(item.id, details)), { fallback: "You do not have permission to edit this resource.", success: "Resource updated" });
+    if (!done.ok) return;
+    setPending(null); await onChanged();
   }
 
   async function togglePin() {
-    if (!supabase) return;
-    setBusy(true);
-    const { data, error } = await supabase.from("resources").update({ is_pinned: !item.is_pinned }).eq("id", item.id).select("id");
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to pin this resource."), "error"); return; }
-    notify(item.is_pinned ? "Unpinned" : "Pinned to the top"); await onChanged();
+    if (!resourcesAvailable()) return;
+    const done = await run(async () => requireRows(await setResourcePinned(item.id, !item.is_pinned)), { fallback: "You do not have permission to pin this resource.", success: item.is_pinned ? "Unpinned" : "Pinned to the top" });
+    if (done.ok) await onChanged();
   }
 
   async function changeVisibility() {
-    if (!supabase) return;
-    setBusy(true);
-    const { error } = await supabase.rpc("set_resource_visibility", { p_resource_id: item.id, p_visibility: nextVisibility });
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "Visibility could not be changed."), "error"); return; }
-    setPending(null); notify(nextVisibility === "executives" ? "Now visible to executives only" : "Now visible to members"); await onChanged();
+    if (!resourcesAvailable()) return;
+    const done = await run(() => setResourceVisibility(item.id, nextVisibility), { fallback: "Visibility could not be changed.", success: nextVisibility === "executives" ? "Now visible to executives only" : "Now visible to members" });
+    if (!done.ok) return;
+    setPending(null); await onChanged();
   }
 
   async function setArchived(archived: boolean) {
-    if (!supabase) return;
-    setBusy(true);
-    const { error } = await supabase.rpc("set_resource_archived", { p_resource_id: item.id, p_archived: archived });
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
-    setPending(null); notify(archived ? `The ${noun} was archived` : `The ${noun} was restored`); await onRemoved();
+    if (!resourcesAvailable()) return;
+    const done = await run(() => setResourceArchived(item.id, archived), { fallback: "That change could not be saved.", success: archived ? `The ${noun} was archived` : `The ${noun} was restored` });
+    if (!done.ok) return;
+    setPending(null); await onRemoved();
   }
 
   async function deleteForGood() {
-    if (!supabase) return;
-    setBusy(true);
-    if (item.node_kind === "file" && item.storage_path) {
-      // File first: storage only allows the delete while the row exists.
-      const bucket = item.storage_bucket || "club-resources";
-      // An empty answer from storage is a refused delete, not a success (see lib/storage-remove.ts).
-      const problem = await removeStoredFile(bucket, item.storage_path, { confirmGone: true });
-      if (problem) { setBusy(false); notify(problem, "error"); return; }
-    }
-    const { data, error } = await supabase.from("resources").delete().eq("id", item.id).select("id");
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, `The ${noun} could not be deleted.`), "error"); return; }
+    if (!resourcesAvailable()) return;
+    const done = await run(async () => {
+      if (item.node_kind === "file" && item.storage_path) {
+        // File first: storage only allows the delete while the row exists.
+        const bucket = item.storage_bucket || "club-resources";
+        // An empty answer from storage is a refused delete, not a success (see lib/storage-remove.ts).
+        const problem = await removeResourceFile(bucket, item.storage_path);
+        if (problem) return problem;
+      }
+      requireRows(await deleteResource(item.id));
+      return null;
+    }, { fallback: `The ${noun} could not be deleted.` });
+    if (!done.ok) return;
+    if (done.value) { notify(done.value, "error"); return; }
     setPending(null); notify(unfinished ? "Upload discarded" : `The ${noun} was deleted`); await onRemoved();
   }
 
