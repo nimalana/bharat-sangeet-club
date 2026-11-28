@@ -2,7 +2,6 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import { AdminPage } from "../features/admin/components/admin-page";
 import { DeactivatedScreen } from "../features/admin/components/member-access";
 import { setCacheOwner } from "../lib/cache";
@@ -24,10 +23,10 @@ import { LoadingBlock } from "../components/ui/loading-block";
 import { PageTitle } from "../components/ui/page-title";
 import { SectionBoundary } from "../components/ui/section-boundary";
 import { ToastProvider, ToastViewport, useToast } from "../components/ui/toast";
-import { AnnouncementFeed, type AnnouncementManage } from "../features/announcements/components/announcement-feed";
 import { ScopeFilterBar } from "../features/announcements/components/scope-filter-bar";
 import { CalendarView } from "../features/calendar/components/calendar-view";
 import { EventModal } from "../features/calendar/components/event-modal";
+import { ClubDashboard } from "../features/dashboard/components/club-dashboard";
 import dynamic from "next/dynamic";
 import { SubgroupSpaces } from "../features/groups/components/subgroup-spaces";
 import { MembersPage } from "../features/members/components/members-page";
@@ -43,7 +42,6 @@ const RecordingWorkspace = dynamic(() => import("../components/recordings/record
 const ClubArchiveManager = dynamic(() => import("../components/recordings/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
 
 type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: AccountStatus } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
-type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
 
 function sectionFromUrl(): Section {
   if (typeof window === "undefined") return "home";
@@ -57,14 +55,6 @@ function attendanceTabFromUrl(): "overview" | "meetings" | "excuses" {
 }
 
 const pendingSignupNameKey = "bharat-sangeet-pending-signup-name";
-const talamPatterns: TalamPattern[] = [
-  { name: "Teentaal", tradition: "Hindustani", beats: 16, divisions: [4, 4, 4, 4] },
-  { name: "Dadra", tradition: "Hindustani", beats: 6, divisions: [3, 3] },
-  { name: "Keharwa", tradition: "Hindustani", beats: 8, divisions: [4, 4] },
-  { name: "Adi Talam", tradition: "Carnatic", beats: 8, divisions: [4, 2, 2] },
-  { name: "Misra Chapu", tradition: "Carnatic", beats: 7, divisions: [3, 2, 2] },
-  { name: "Khanda Chapu", tradition: "Carnatic", beats: 5, divisions: [2, 3] },
-];
 const heroPhotos = [
   { src: "https://asianartsagency.co.uk/wp-content/uploads/2021/08/Trio-WP.jpg", alt: "Indian classical musicians performing together" },
   { src: "https://static.wixstatic.com/media/08d671_184493ea312d46e89a838c34d1097f42~mv2.jpg/v1/fill/w_2500,h_1203,al_c/08d671_184493ea312d46e89a838c34d1097f42~mv2.jpg", alt: "Indian classical ensemble in concert" },
@@ -341,58 +331,6 @@ function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | 
       <ToastViewport />
     </main>
   );
-}
-
-function TalamMeasure({ next, nextWhen, onNavigate }: { next?: ClubEvent; nextWhen: string; onNavigate: (section: Section) => void }) {
-  const [pattern, setPattern] = useState<TalamPattern | null>(null);
-  const [beat, setBeat] = useState(0);
-  const [isActive, setIsActive] = useState(true);
-  const measureRef = useRef<HTMLElement>(null);
-  const reduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    setPattern(talamPatterns[Math.floor(Math.random() * talamPatterns.length)]);
-  }, []);
-
-  useEffect(() => {
-    const node = measureRef.current;
-    if (!node || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(([entry]) => setIsActive(entry.isIntersecting), { threshold: 0.05 });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    function handleVisibility() { setIsActive(document.visibilityState === "visible"); }
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
-
-  useEffect(() => {
-    if (!pattern || reduceMotion || !isActive) return;
-    const interval = window.setInterval(() => setBeat((current) => (current + 1) % pattern.beats), 700);
-    return () => window.clearInterval(interval);
-  }, [isActive, pattern, reduceMotion]);
-
-  const beatMarkers = pattern ? pattern.divisions.map((size, divisionIndex) => {
-    const offset = pattern.divisions.slice(0, divisionIndex).reduce((total, count) => total + count, 0);
-    return <span className="talam-division" key={`${pattern.name}-${divisionIndex}`}>{Array.from({ length: size }, (_, localIndex) => {
-      const markerIndex = offset + localIndex;
-      const isCurrent = markerIndex === beat;
-      return <motion.span className={`talam-track-beat ${markerIndex === 0 ? "downbeat" : ""}`} key={markerIndex} animate={reduceMotion ? { opacity: markerIndex === 0 ? 0.7 : 0.35, scaleY: 1 } : { opacity: isCurrent ? 1 : 0.28, scaleY: isCurrent ? 1.45 : 1 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} />;
-    })}</span>;
-  }) : <span className="talam-division"><span className="talam-track-beat downbeat" /></span>;
-  const beatLabel = pattern ? `Beat ${beat + 1} of ${pattern.beats}` : "Finding a talam";
-
-  return <section ref={measureRef} className="dashboard-measure" aria-labelledby="next-event-heading"><div className="measure-index"><span>TALA / TAAL</span><strong>{pattern?.beats ?? "—"}</strong><small>{pattern?.name ?? "Rhythm cycle"}</small><span>{pattern?.tradition ?? "Visual study"}</span></div><div className="measure-main"><span id="next-event-heading">Next on the calendar</span><h2>{next?.title || "The next gathering starts here"}</h2><p>{nextWhen}{next?.location ? ` · ${next.location}` : ""}</p><div className="measure-actions"><button type="button" onClick={() => onNavigate("calendar")}>View calendar</button><button type="button" onClick={() => onNavigate("groups")}>Open a group</button></div><div className="measure-track" aria-hidden="true"><div className="talam-track-beats">{beatMarkers}</div><motion.b animate={{ opacity: pattern ? 1 : 0.7 }} transition={{ duration: 0.25 }}>{beatLabel}</motion.b></div></div></section>;
-}
-
-function ClubDashboard({ name, role, events, resourceCount, announcements, onNavigate, manage }: { name: string; role: ClubRole; events: ClubEvent[]; resourceCount: number; announcements: Announcement[]; manage?: AnnouncementManage; onNavigate: (section: Section) => void }) {
-  const upcoming = events.filter((event) => new Date(event.starts_at) >= new Date()).slice(0, 4);
-  const next = upcoming[0];
-  const latest = announcements[0];
-  const nextWhen = next ? new Date(next.starts_at).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "No upcoming date scheduled";
-  return <>{(announcements.length > 0 || manage) && <AnnouncementFeed announcements={announcements} manage={manage} />}<section className="portal-dashboard"><div className="dashboard-intro"><div><h1>Welcome back, {name}.</h1><p>Carnatic and Hindustani musicians, one shared club home.</p></div><span>{role === "executive" ? "Executive view" : role === "admin" ? "Admin view" : "Member view"}</span></div><TalamMeasure next={next} nextWhen={nextWhen} onNavigate={onNavigate} /><div className="dashboard-beats"><article><span className="beat-number">1</span><h2>Announcements</h2><h3>{latest?.title || "Nothing new to review"}</h3><p>{latest?.body || "Club and group updates will appear here when an executive posts one."}</p><button type="button" onClick={() => onNavigate("home")}>{latest ? "Read update" : "Refresh overview"}</button></article><article><span className="beat-number">2</span><h2>Attendance</h2><h3>Ready for the next meeting</h3><p>Check in with a meeting code, review your history, or submit an absence excuse.</p><button type="button" onClick={() => onNavigate("attendance")}>Open attendance</button></article><article><span className="beat-number">3</span><h2>Resources</h2><h3>{resourceCount} available {resourceCount === 1 ? "resource" : "resources"}</h3><p>Repertoire, planning documents, shared links, and references for every tradition and group.</p><button type="button" onClick={() => onNavigate("documents")}>Open library</button></article></div></section></>;
 }
 
 function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
