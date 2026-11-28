@@ -32,3 +32,7 @@
 .scope-picker.roster-filter>span{font-size:12px}
 /* The sentence under the heading of the "Complete your profile" step. */
 .profile-intro{margin:-12px 0 8px;color:#4f5f6b;font-size:13px;line-height:1.55}
+/* The placeholder of the roster while the directory is read: the title, the toolbar and the cards, at their heights. */
+.roster-skeleton-title{height:150px;margin-bottom:34px}
+.roster-skeleton-toolbar{height:50px;margin-bottom:34px}
+.member-skeleton{min-height:270px}

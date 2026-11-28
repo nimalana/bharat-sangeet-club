@@ -7,7 +7,7 @@
 //  - the detail is a dialog: named by the date, Escape and Close close it, focus goes back to the date, axe finds nothing serious.
 // (The month grid, the agenda and the manager's small buttons themselves are in calendar-page.test.tsx; add, change and remove in calendar-flows.test.tsx.)
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { expectNoSeriousViolations } from "../support/a11y";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
 import { focusedName, keyboardUser, tabOrder } from "../support/keyboard";
@@ -165,17 +165,17 @@ describe("what a manager does from the detail", () => {
 });
 
 describe("the date that is open is in the address (?event=)", () => {
-  it("opening a date writes ?event=<id> without a new history entry, and closing it removes it", async () => {
+  it("opening a date writes ?event=<id> by rewriting the entry (no step for Back to reopen it), and closing it removes it", async () => {
     await open();
-    const before = window.history.length;
+    const push = vi.spyOn(window.history, "pushState"); const replace = vi.spyOn(window.history, "replaceState");
     fireEvent.click(dateButtons("Diwali concert")[0]);
     await waitFor(() => expect(search().get("event")).toBe("3"));
     expect(search().get("page")).toBe("calendar");
-    expect(window.history.length).toBe(before);
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(search().has("event")).toBe(false));
     expect(search().get("page")).toBe("calendar");
-    expect(window.history.length).toBe(before);
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledTimes(2);
   });
 
   it("a link with ?event= opens that date's detail at once", async () => {

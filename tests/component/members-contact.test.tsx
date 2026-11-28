@@ -61,14 +61,15 @@ describe("the search and the group filter", () => {
   it("the group filter keeps only those active in that group, and says so when there is nobody", async () => {
     await openMembers();
     const filter = screen.getByLabelText("Filter roster by subgroup");
+    // The group is in the address (?group=), which the page writes a moment after the choice: the list follows it.
     fireEvent.change(filter, { target: { value: "8" } });
+    await waitFor(() => expect(screen.queryByText("Bala Menon")).not.toBeInTheDocument());
     expect(screen.getByText("Chitra Iyer")).toBeInTheDocument();
-    expect(screen.queryByText("Bala Menon")).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("Search by name, year, or musical interest"), { target: { value: "zzz" } });
     expect(screen.getByText("No members found")).toBeInTheDocument();
     expect(screen.getByText("No members are active in this subgroup.")).toBeInTheDocument();
     fireEvent.change(filter, { target: { value: "all" } });
-    expect(screen.getByText("Try another search.")).toBeInTheDocument();
+    expect(await screen.findByText("Try another search.")).toBeInTheDocument();
   });
 });
 
