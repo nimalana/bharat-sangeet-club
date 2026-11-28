@@ -13,8 +13,9 @@ export const SCREEN_PATH = {
 // The labels the navigation shows, in order (lib/sections.ts menuPages).
 export const NAV = {
   member: ["Overview", "Calendar", "Members", "Recordings", "Resources", "My Groups", "Attendance", "Finances"],
-  executive: ["Overview", "Calendar", "Members", "Recordings", "Resources", "My Groups", "Attendance", "Finances"],
-  admin: ["Overview", "Calendar", "Members", "Recordings", "Resources", "My Groups", "Attendance", "Finances", "Admin"],
+  // Since the membership gate (Phase 4.1) executives and the administrator also have the Sign-up requests page.
+  executive: ["Overview", "Calendar", "Members", "Recordings", "Resources", "My Groups", "Attendance", "Finances", "Sign-up requests"],
+  admin: ["Overview", "Calendar", "Members", "Recordings", "Resources", "My Groups", "Attendance", "Finances", "Sign-up requests", "Admin"],
 };
 // What the executives and the administrator see in place of "My Groups" is the same label; kept for clarity.
 
