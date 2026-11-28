@@ -1,5 +1,7 @@
 # Bharat Sangeet Issue Register
 
+Status of every item below, what was done, where and how it is proven: [REMEDIATION_STATUS.md](./REMEDIATION_STATUS.md).
+
 Last updated: **August 19, 2026**
 
 This document tracks findings from the live Supabase security review, rollback-only functional QA, deployed-browser smoke testing, and static code review. It is intentionally separate from the product roadmap: roadmap items describe desired capabilities, while this register describes defects, risks, and verification gaps.
