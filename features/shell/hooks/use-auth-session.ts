@@ -12,22 +12,27 @@ const subscribeNothing = () => () => {};
  * Who is signed in. `authLoading` is true until the saved session has been read (or 7 seconds have passed: a session
  * that cannot be read must not keep the portal on its loading screen). `user` is null when nobody is signed in.
  *
+ * With no Supabase project configured there is no session to read: `authLoading` is false from the first render (the setup screen
+ * shows at once) instead of being set to false by an effect.
+ *
  * Supabase hands back a new user object on every token refresh. Keeping the old one while the id is unchanged stops
  * every screen from reloading, so `user` changes identity only when the account does.
  */
 export function useAuthSession() {
   const savedSession = useSyncExternalStore(subscribeNothing, hasSavedSession, () => false);
-  const [authLoading, setAuthLoading] = useState(true);
+  const configured = isSupabaseConfigured();
+  const [loadingSession, setLoadingSession] = useState(true);
+  const authLoading = configured && loadingSession;
   const [user, setUser] = useState<User | null>(null);
 
   const adoptUser = useCallback((next: User | null) => { setUser((current) => (current?.id === next?.id ? current : next)); }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) { setAuthLoading(false); return; }
+    if (!configured) return;
     let cancelled = false;
     const loadingTimeouts = new Set<number>();
     const hydrateAuth = async () => {
-      const loadingTimeout = window.setTimeout(() => { if (!cancelled) setAuthLoading(false); }, 7000);
+      const loadingTimeout = window.setTimeout(() => { if (!cancelled) setLoadingSession(false); }, 7000);
       loadingTimeouts.add(loadingTimeout);
       try {
         const sessionUser = await getSessionUser();
@@ -38,7 +43,7 @@ export function useAuthSession() {
       } finally {
         window.clearTimeout(loadingTimeout);
         loadingTimeouts.delete(loadingTimeout);
-        if (!cancelled) setAuthLoading(false);
+        if (!cancelled) setLoadingSession(false);
       }
     };
     void hydrateAuth();
@@ -46,10 +51,10 @@ export function useAuthSession() {
       if (cancelled) return;
       adoptUser(nextUser);
     });
-    const restore = (event: PageTransitionEvent) => { if (event.persisted) { setAuthLoading(true); void hydrateAuth(); } };
+    const restore = (event: PageTransitionEvent) => { if (event.persisted) { setLoadingSession(true); void hydrateAuth(); } };
     window.addEventListener("pageshow", restore);
     return () => { cancelled = true; loadingTimeouts.forEach((timeout) => window.clearTimeout(timeout)); window.removeEventListener("pageshow", restore); stopListening(); };
-  }, [adoptUser]);
+  }, [adoptUser, configured]);
 
   return { savedSession, authLoading, user };
 }
