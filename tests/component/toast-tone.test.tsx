@@ -34,9 +34,13 @@ import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordi
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { ResourceActions, type ManagedResource } from "../../features/resources/components/resource-actions";
 import { GroupPeople } from "../../features/groups/components/group-people";
-import { notifySpy, userOf } from "../support/helpers";
+import { userOf } from "../support/helpers";
+import { notifySpy } from "../support/toast-spy";
 import { fail, fake, ok } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";
+
+// The screens read the toast from useToast(); rendered on their own they answer this file's notifySpy() (tests/support/toast-spy.ts).
+vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));
 
 // A sentence the database really raises, with none of the words that make text read as a failure.
 const CHEERFUL = "Everything has been saved";

@@ -11,6 +11,7 @@ import { canRemoveGroupMember, groupCapabilities } from "../../../lib/permission
 import { createRequestGate } from "../../../lib/request-gate";
 import { createSingleFlight } from "../../../lib/single-flight";
 import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
@@ -28,10 +29,12 @@ type Pending =
 const roleLabels: Record<GroupRole, string> = { member: "Member", leader: "Leader", manager: "Manager" };
 const modeLabels: Record<EnrollmentMode, string> = { open: "Open — anyone can join", approval: "Request approval", invite: "Invitation only" };
 
-export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft, notify }: {
+// `notify` is kept until the cleanup step removes it from every caller; the screen reads the toast from useToast().
+export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft }: {
   user: User; role: ClubRole; group: ManagedGroup; myRole: GroupRole | null; isMember: boolean;
-  onGroupChanged: () => void | Promise<void>; onLeft: () => void; notify: Notify;
+  onGroupChanged: () => void | Promise<void>; onLeft: () => void; notify?: Notify;
 }) {
+  const { notify } = useToast();
   const can = groupCapabilities(role, myRole);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(true);

@@ -9,13 +9,16 @@ import { useQuery } from "../../../lib/hooks/use-query";
 import type { ScopeFilter } from "../../../lib/portal-types";
 import type { Notify } from "../../../lib/toast";
 import { Badge } from "../../../components/ui/badge";
+import { useToast } from "../../../components/ui/toast";
 import { Button } from "../../../components/ui/button";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { PageTitle } from "../../../components/ui/page-title";
 
-export function MembersPage({ user, notify }: { user: User; notify: Notify }) {
+// `notify` is kept until the cleanup step removes it from every caller; the page reads the toast from useToast().
+export function MembersPage({ user }: { user: User; notify?: Notify }) {
+  const { notify } = useToast();
   // Reopening the directory shows the last data at once and refreshes behind it; a failed refresh keeps the directory already
   // shown instead of emptying it (lib/hooks/use-query.ts).
   const directory = useQuery<MemberDirectory>({

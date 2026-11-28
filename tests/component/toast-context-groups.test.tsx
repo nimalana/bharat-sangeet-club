@@ -1,0 +1,72 @@
+// The group, member and admin screens take their toasts from the toast context (useToast), not from the `notify` prop that the shell
+// still passes until the cleanup step removes it. Rendered inside a real ToastProvider, a screen that was given no notify, or a spy
+// it must ignore, still shows its toast in the viewport and never calls the prop. (The other tests of these screens read the same
+// toasts through notifySpy(): tests/support/toast-spy.ts.)
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { MemberAccessActions } from "../../features/admin/components/member-access";
+import { GroupPeople } from "../../features/groups/components/group-people";
+import { ToastProvider, ToastViewport } from "../../components/ui/toast";
+import type { Notify } from "../../lib/toast";
+import { fail, fake, ok } from "../support/fake-supabase";
+import { userOf } from "../support/helpers";
+
+const EXECUTIVE = "executive" as const;
+const GROUP = { id: 7, name: "Hindustani Vocal", description: "", enrollment_mode: "approval" as const, archived_at: null };
+const dev = { member_id: "u-dev", full_name: "Dev Nair", email: "dev@x.test", status: "pending", membership_role: "member", joined_at: "2026-01-01T00:00:00Z", status_updated_at: "2026-01-01T00:00:00Z" };
+const toast = () => document.querySelector(".toast") as HTMLElement | null;
+const inProvider = (screenUnderTest: React.ReactElement) => render(<ToastProvider>{screenUnderTest}<ToastViewport /></ToastProvider>);
+
+describe("GroupPeople", () => {
+  it("shows its toast in the viewport and does not call a notify prop it is given", async () => {
+    fake.rpc("list_subgroup_roster").reply(ok([dev]));
+    fake.rpc("review_subgroup_request").reply(ok(null));
+    const propNotify = vi.fn<Notify>();
+    inProvider(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} notify={propNotify} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Waitlist" }));
+    await waitFor(() => expect(toast()).toHaveTextContent("✓ Dev Nair was waitlisted"));
+    expect(toast()).toHaveAttribute("role", "status");
+    expect(propNotify).not.toHaveBeenCalled();
+  });
+
+  it("a refusal is an alert with the database's own words, with no notify prop at all", async () => {
+    fake.rpc("list_subgroup_roster").reply(ok([dev]));
+    fake.rpc("review_subgroup_request").reply(fail("This request was already reviewed"));
+    inProvider(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(toast()).toHaveTextContent("! This request was already reviewed"));
+    expect(toast()).toHaveAttribute("role", "alert");
+  });
+
+  it("a members list that cannot be loaded for the add dialog is an alert", async () => {
+    fake.rpc("list_subgroup_roster").reply(ok([]));
+    fake.from("profiles", "select").reply(fail("permission denied for table profiles", "42501"));
+    inProvider(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "＋ Add member" }));
+    await waitFor(() => expect(toast()).toHaveTextContent("! You do not have permission to do that."));
+    expect(within(screen.getByRole("dialog")).getByText("Loading members…")).toBeInTheDocument();
+  });
+});
+
+describe("MemberAccessActions", () => {
+  it("shows its toast in the viewport and does not call a notify prop it is given", async () => {
+    fake.rpc("admin_deactivate_member").reply(ok(null));
+    const propNotify = vi.fn<Notify>();
+    const onChanged = vi.fn();
+    inProvider(<MemberAccessActions member={{ id: "u-2", full_name: "Bala Menon", email: "bala@x.test", status: "active" }} isSelf={false} onChanged={onChanged} notify={propNotify} />);
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Deactivate" }));
+    await waitFor(() => expect(toast()).toHaveTextContent("✓ Bala Menon was deactivated"));
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(propNotify).not.toHaveBeenCalled();
+  });
+
+  it("a refusal is an alert, with no notify prop at all", async () => {
+    fake.rpc("admin_delete_member").reply(fail("This account has finance history"));
+    inProvider(<MemberAccessActions member={{ id: "u-2", full_name: "Bala Menon", email: "bala@x.test", status: "deactivated" }} isSelf={false} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete account" }));
+    await waitFor(() => expect(toast()).toHaveTextContent("! This account has finance history"));
+    expect(toast()).toHaveAttribute("role", "alert");
+  });
+});

@@ -12,6 +12,7 @@ import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "..
 import { listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
 import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { Button } from "../../../components/ui/button";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { LoadingBlock } from "../../../components/ui/loading-block";
@@ -19,7 +20,9 @@ import { PageTitle } from "../../../components/ui/page-title";
 import { AnnouncementActions } from "../../announcements/components/announcement-actions";
 import { GroupPeople } from "./group-people";
 
-export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources, notify }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify: Notify }) {
+// `notify` is kept until the cleanup step removes it from every caller; the page reads the toast from useToast().
+export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify?: Notify }) {
+  const { notify } = useToast();
   const [groups, setGroups] = useState<Subgroup[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [items, setItems] = useState<ArchiveItem[]>([]);
@@ -118,7 +121,7 @@ export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, 
         <section><div className="dashboard-section-title"><h2>Resources</h2><span>Library</span></div><p className="workspace-empty">Documents, links, and photos live in the shared resource library.</p><Button variant="secondary" onClick={() => onOpenResources(active.id)}>Open resources</Button></section>
         <section><div className="dashboard-section-title"><h2>Recordings</h2><span>Room</span></div><p className="workspace-empty">Capture rehearsals, lessons, and takes in the subgroup recording room.</p><Button variant="secondary" onClick={() => onOpenRecordings(active.id)}>Open recording room →</Button></section>
       </div>
-      <GroupPeople key={active.id} user={user} role={role} group={active} myRole={activeMembership(active.id)?.membership_role ?? null} isMember={Boolean(activeMembership(active.id))} onGroupChanged={async () => { await load(); onGroupsChanged(); }} onLeft={() => setSelectedGroupId(null)} notify={notify} />
+      <GroupPeople key={active.id} user={user} role={role} group={active} myRole={activeMembership(active.id)?.membership_role ?? null} isMember={Boolean(activeMembership(active.id))} onGroupChanged={async () => { await load(); onGroupsChanged(); }} onLeft={() => setSelectedGroupId(null)} />
     </> : <>
       <div className="group-list-heading"><div><h2>{!canManageClub(role) ? "Your groups" : "Groups you manage"}</h2><p>Open a group to see its latest activity.</p></div><div><span>{joinedGroups.length}</span>{canManageClub(role) && <Button onClick={() => setShowCreate(true)}>＋ New group</Button>}</div></div>
       {joinedGroups.length ? <div className="group-list">{joinedGroups.map((group) => { const resourceCount = items.filter((item) => item.subgroup_id === group.id).length; const updateCount = announcements.filter((item) => item.subgroup_id === group.id).length; return <button type="button" key={group.id} onClick={() => setSelectedGroupId(group.id)}><span className="workspace-seal subgroup">{initials(group.name)}</span><span><b>{group.name}{group.archived_at ? " (archived)" : ""}</b><small>{requestCounts[group.id] ? `${requestCounts[group.id]} ${requestCounts[group.id] === 1 ? "request" : "requests"} to review` : group.description || "Bharat Sangeet group"}</small></span><span><b>{updateCount}</b><small>updates</small></span><span><b>{resourceCount}</b><small>resources</small></span><i>Open →</i></button>; })}</div> : <EmptyState title="No groups yet" text={!canManageClub(role) ? "Join an open group or ask an executive for an invitation." : "Create the first group to organize rehearsals and resources."} />}
