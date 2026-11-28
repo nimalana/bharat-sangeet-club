@@ -5,7 +5,7 @@
 //
 // The table, function and bucket names stay literal here because the contract check (scripts/contract-check) reads them.
 import { ApiError, toApiError } from "../errors";
-import type { AttendanceStatus, EligibilityStatus, RemediationStatus, RpcArgs, RpcReturns } from "../db";
+import type { AttendanceStatus, EligibilityStatus, RemediationStatus, RpcArgs, RpcReturns, Tables } from "../db";
 import { supabase } from "../supabase";
 import { must, safeFileName } from "./_core";
 
@@ -35,6 +35,30 @@ export async function getAttendanceRoster(sessionId: number): Promise<RpcReturns
 export async function getAttendancePulse(view: AttendanceViewArgs): Promise<RpcReturns<"get_attendance_pulse">> {
   const client = db();
   return must(await client.rpc("get_attendance_pulse", view));
+}
+
+/** One member's marks on some meetings and their eligibility for a term, for an executive's summary of that member. */
+export type MemberAttendance = {
+  records: Array<Pick<Tables<"attendance_records">, "session_id" | "status" | "minutes_late" | "unexcused_units" | "marked_at">>;
+  /** null: no row, which means eligible. */
+  eligibility: Pick<Tables<"attendance_eligibility">, "term_key" | "status" | "reason"> | null;
+};
+
+/**
+ * The marks of ONE member on the meetings given (the overview sends an executive no marks, only totals for the flagged), and their
+ * eligibility row for `termKey` (null: no term to ask about). Two plain reads of tables an executive may select under row-level
+ * security (attendance_records, attendance_eligibility); the answer is the whole value or it throws, never half of it.
+ */
+export async function getMemberAttendance(memberId: string, sessionIds: number[], termKey: string | null): Promise<MemberAttendance> {
+  const client = db();
+  const readRecords = async (): Promise<MemberAttendance["records"]> => sessionIds.length
+    ? must(await client.from("attendance_records").select("session_id,status,minutes_late,unexcused_units,marked_at").eq("member_id", memberId).in("session_id", sessionIds)) ?? []
+    : [];
+  const readEligibility = async (): Promise<MemberAttendance["eligibility"]> => termKey
+    ? must(await client.from("attendance_eligibility").select("term_key,status,reason").eq("member_id", memberId).eq("term_key", termKey).maybeSingle())
+    : null;
+  const [records, eligibility] = await Promise.all([readRecords(), readEligibility()]);
+  return { records, eligibility };
 }
 
 // ---------------------------------------------------------------- check-in and meetings

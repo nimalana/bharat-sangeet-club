@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   cancelAttendanceSession, checkInAttendance, clearAttendanceStatus, closeAttendanceSession, createAttendanceSession, createExcuseProofUrl, deleteAttendanceSession, getAttendanceOverview,
-  getAttendancePulse, getAttendanceRoster, openAttendanceSession, removeExcuseProof, reviewAttendanceExcuse, rotateAttendanceCode, setAttendanceEligibility, setAttendanceRemediation,
+  getAttendancePulse, getAttendanceRoster, getMemberAttendance, openAttendanceSession, removeExcuseProof, reviewAttendanceExcuse, rotateAttendanceCode, setAttendanceEligibility, setAttendanceRemediation,
   setAttendanceStatus, setAttendanceThresholds, submitAttendanceExcuse, updateAttendanceSession, uploadExcuseProof, voidAttendanceSession, withdrawAttendanceExcuse,
 } from "../../lib/api/attendance";
 import { ApiError } from "../../lib/errors";
@@ -162,6 +162,45 @@ describe("the proof image of an absence form", () => {
     expect(await createExcuseProofUrl("a")).toBeNull();
     fake.storage("attendance-excuses", "createSignedUrl").replyOnce(fail("Object not found"));
     expect(await caught(createExcuseProofUrl("a"))).toBeInstanceOf(ApiError);
+  });
+});
+
+describe("one member's marks (an executive's summary of a member)", () => {
+  const MARKS = [{ session_id: 1, status: "present", minutes_late: 0, unexcused_units: 0, marked_at: "2026-10-01T23:05:00Z" }, { session_id: 2, status: "tardy", minutes_late: 9, unexcused_units: 0.5, marked_at: "2026-10-08T23:09:00Z" }];
+
+  it("reads that member's marks on those meetings and their eligibility row for the term, and returns both", async () => {
+    fake.from("attendance_records", "select").reply(ok(MARKS));
+    fake.from("attendance_eligibility", "select").reply(ok({ term_key: "2026-fall", status: "under_review", reason: "Two unexcused" }));
+    expect(await getMemberAttendance("u-dev", [1, 2], "2026-fall")).toEqual({ records: MARKS, eligibility: { term_key: "2026-fall", status: "under_review", reason: "Two unexcused" } });
+    const records = fake.from("attendance_records", "select").calls[0];
+    expect(records.uses("select")).toEqual([["session_id,status,minutes_late,unexcused_units,marked_at"]]);
+    expect(records.uses("eq")).toEqual([["member_id", "u-dev"]]);
+    expect(records.uses("in")).toEqual([["session_id", [1, 2]]]);
+    const eligibility = fake.from("attendance_eligibility", "select").calls[0];
+    expect(eligibility.uses("select")).toEqual([["term_key,status,reason"]]);
+    expect(eligibility.uses("eq")).toEqual([["member_id", "u-dev"], ["term_key", "2026-fall"]]);
+    expect(eligibility.used("maybeSingle")).toBe(true);
+  });
+
+  it("a member with no eligibility row is null (eligible), and no meetings or no term means no read of that table", async () => {
+    fake.from("attendance_records", "select").reply(ok(MARKS));
+    fake.from("attendance_eligibility", "select").reply(ok(null));
+    expect(await getMemberAttendance("u-dev", [1, 2], "2026-fall")).toMatchObject({ eligibility: null });
+    fake.reset();
+    expect(await getMemberAttendance("u-dev", [], null)).toEqual({ records: [], eligibility: null });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("an error from either read is thrown as an ApiError that keeps the database's message, never half an answer", async () => {
+    fake.from("attendance_records", "select").reply(fail("permission denied for table attendance_records", "42501"));
+    fake.from("attendance_eligibility", "select").reply(ok(null));
+    const error = await caught(getMemberAttendance("u-dev", [1], "2026-fall"));
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ message: "permission denied for table attendance_records", code: "42501" });
+    fake.reset();
+    fake.from("attendance_records", "select").reply(ok(MARKS));
+    fake.from("attendance_eligibility", "select").reply(fail("boom"));
+    expect(await caught(getMemberAttendance("u-dev", [1], "2026-fall"))).toMatchObject({ message: "boom" });
   });
 });
 

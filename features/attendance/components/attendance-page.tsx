@@ -20,6 +20,7 @@ import { CheckInCard } from "./check-in-card";
 import { ExcusesTab } from "./excuses-tab";
 import { LiveSessionCard } from "./live-session-card";
 import { MeetingsTab } from "./meetings-tab";
+import { MemberSummaryDialog, type SummaryMember } from "./member-summary-dialog";
 import { MemberView } from "./member-view";
 import { NewMeetingDialog } from "./new-meeting-dialog";
 import { OverviewTab } from "./overview-tab";
@@ -38,10 +39,15 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   const url = useAttendanceUrl({ initialScope, groups });
   const { scopeFilter, termFilter } = url;
   const [chosenTab, setTab] = useState<AttendanceTab | null>(null);
+  // The member whose attendance summary is open (an executive opens it from the roster or the list of members needing attention).
+  const [summaryFor, setSummaryFor] = useState<SummaryMember | null>(null);
   const tab: AttendanceTab = chosenTab ?? (initialTab !== "overview" ? initialTab : canManage && url.sessionParam !== null ? "meetings" : "overview");
   // What is read and kept fresh (overview, roster, poll), and what the person does (check in, open, mark, review).
   const attendance = useAttendanceData({ user, canManage, scopeFilter, termFilter, sessionParam: url.sessionParam, tab });
   const { data, view, failedKey, cacheKey, load, loadingMore, showMore, roster, rosterFailed, loadRoster, selectedSessionId } = attendance;
+  // A summary is of the meetings of one view: another view (Back, a link) closes it.
+  const [summaryView, setSummaryView] = useState(cacheKey);
+  if (summaryView !== cacheKey) { setSummaryView(cacheKey); setSummaryFor(null); }
   const actions = useAttendanceActions({ user, groups, summaryTerm: view.summary_term, load, rereadRoster: attendance.rereadRoster, setTab });
   const { saving, active, dialog, setDialog } = actions;
   const sessions = view.sessions;
@@ -101,15 +107,17 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       <AttendanceTabs tab={tab} onTab={setTab} pendingExcuseCount={view.excuses_pending} />
       <div role="tabpanel" id={ATTENDANCE_PANEL_ID} aria-labelledby={attendanceTabId(tab)}>
         {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} profileName={profileName}
-          onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} />}
+          onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} onSummary={setSummaryFor} />}
         {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={url.chooseSession} roster={roster} rosterFailed={rosterFailed} saving={saving} openingSessionId={active?.startsWith("open:") ? Number(active.slice(5)) : null}
-          onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} />}
+          onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} onSummary={setSummaryFor} />}
         {tab === "excuses" && <ExcusesTab view={view} sessions={sessions} viewLabel={viewLabel} saving={saving} profileName={profileName} onDialog={setDialog} onOpenProof={actions.openProof} openingProofId={actions.openingProofId} showMore={showMore} loadingMore={loadingMore} />}
       </div>
     </> : <MemberView view={view} sessions={sessions} user={user} scopeLabel={scopeLabel} termFilter={termFilter} onSubmitExcuse={() => actions.setShowExcuse(true)} onWithdrawn={() => load(true)} />}
 
     {actions.showNewSession && <NewMeetingDialog scopeFilter={scopeFilter} scopeInGroups={scopeInGroups} groups={groups} saving={saving} onSubmit={actions.createSession} onClose={() => actions.setShowNewSession(false)} />}
     {actions.showExcuse && <AbsenceFormDialog sessions={sessions} saving={saving} onSubmit={actions.submitExcuse} onClose={() => actions.setShowExcuse(false)} />}
+
+    {summaryFor && canManage && <MemberSummaryDialog userId={user.id} member={summaryFor} sessions={sessions} summaryTerm={view.summary_term} periodLabel={viewLabel} onClose={() => setSummaryFor(null)} />}
 
     <ActionDialogs dialog={dialog} saving={saving} onSubmit={actions.submitDialog} onConfirm={actions.confirmSession} onCancel={() => setDialog(null)} />
   </section>;

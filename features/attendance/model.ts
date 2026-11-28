@@ -161,6 +161,33 @@ export function overallRate(attended: number, absent: number) {
   return attended + absent ? Math.round((attended / (attended + absent)) * 100) : 100;
 }
 
+/** What one person's marks add up to over the meetings in view. */
+export type MarkCounts = { present: number; excused: number; tardy: number; absent: number; rate: number | null };
+
+// The four counts are every mark on the meetings in view (what a member has always seen of their own). The rate is worked out as the
+// flagged list works it out: over the closed meetings that count toward attendance, present and tardy against absent, an excused
+// absence left out; null when no such mark exists yet (so a screen does not say 100% for nothing).
+export function summarizeMarks(sessions: Array<Pick<AttendanceSession, "id" | "status" | "counts_toward_metrics">>, records: Array<{ session_id: number; status: string }>): MarkCounts {
+  const count = (status: string) => records.filter((record) => record.status === status).length;
+  const counted = new Set(sessions.filter((session) => session.status === "closed" && session.counts_toward_metrics).map((session) => session.id));
+  const inRate = records.filter((record) => counted.has(record.session_id));
+  const attended = inRate.filter((record) => record.status === "present" || record.status === "tardy").length;
+  const absent = inRate.filter((record) => record.status === "absent").length;
+  return { present: count("present"), excused: count("excused"), tardy: count("tardy"), absent: count("absent"), rate: attended + absent ? Math.round((attended / (attended + absent)) * 100) : null };
+}
+
+/** One line of a person's history: a meeting and the mark on it, or, with no mark, the meeting's own status. */
+export type HistoryRow = { session: AttendanceSession; status: string; minutesLate: number | null };
+
+/** The meetings that have begun (not drafts), in the order given, each with the person's mark on it. */
+export function historyRows(sessions: AttendanceSession[], records: Array<{ session_id: number; status: string; minutes_late: number }>): HistoryRow[] {
+  const bySession = new Map(records.map((record) => [record.session_id, record]));
+  return sessions.filter((session) => session.status !== "draft").map((session) => {
+    const record = bySession.get(session.id);
+    return { session, status: record?.status || session.status, minutesLate: record?.status === "tardy" ? record.minutes_late : null };
+  });
+}
+
 export function openSessionIds(sessions: Array<{ id: number; status: SessionStatus }>) {
   return sessions.filter((session) => session.status === "open").map((session) => session.id).sort((a, b) => a - b);
 }
