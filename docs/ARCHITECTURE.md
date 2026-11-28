@@ -4,9 +4,10 @@ How the app is put together and where code goes. The browser talks to Supabase d
 person may read and write); the only server-side read is the public concert list that `app/page.tsx` fetches with the anon key.
 Everything else is client code, laid out by area.
 
-State of the code: Phase 2.5 (R2, R3) is done: generated database types, a data layer per area (`lib/api/<area>.ts`), shared
+State of the code: Phase 2.5 (R2, R3, R4) is done: generated database types, a data layer per area (`lib/api/<area>.ts`), shared
 hooks and UI blocks, the screens moved into `features/<area>/` and split into hooks and components, the toast taken from a
-context. Still to come: the CSS split, dependency and dead-code cleanup (`app/chatgpt-auth.ts` is imported by nothing).
+context, the global stylesheet split into one file per area (see "CSS"). Still to come: dependency and dead-code cleanup
+(`app/chatgpt-auth.ts` is imported by nothing).
 
 ## Data flow
 
@@ -43,9 +44,11 @@ comparing `role === "..."`. Dates, money, initials and the value of a date-time 
 
 ```
 app/                     routing only: layout.tsx, page.tsx (loads the public concerts on the server, renders Home), error.tsx,
-                         globals.css, meetings/page.tsx (redirect), chatgpt-auth.ts (imported by nothing; to be removed)
-features/<area>/         one folder per area (below); each has components/, and hooks/, model.ts and other files as it needs them
-components/ui/           primitives shared by every area
+                         globals.css (Tailwind, tokens, base rules, the stylesheet imports), meetings/page.tsx (redirect),
+                         chatgpt-auth.ts (imported by nothing; to be removed)
+features/<area>/         one folder per area (below); each has components/, and hooks/, model.ts, <area>.css and other files as it needs them
+components/ui/           primitives shared by every area (and ui.css, their rules)
+styles/                  shared.css (rules several areas use) and late.css (rules that must come last); see "CSS"
 lib/                     logic that renders nothing (below)
 lib/api/<area>.ts        every Supabase call (below)
 lib/hooks/               hooks that are not about one area
@@ -152,6 +155,44 @@ person something calls `const { notify } = useToast()`; there is no `notify` pro
 takes the function, as an injection point of a shared hook). `notify(message, "error")` for a failure, always for text that comes
 from the database; an untagged message is a fixed sentence read for the ordinary words of a failure (`lib/toast.ts`). In tests,
 `notifySpy()` (tests/support/helpers.ts) is what `useToast()` answers.
+
+## CSS
+
+The styling is plain global class rules in stylesheets that sit next to the code that uses them. `app/globals.css` is the entry (the
+only app stylesheet `app/layout.tsx` imports, besides the font files): it holds Tailwind's `@import "tailwindcss"`, `@theme`,
+`@layer base`, the colour tokens (`:root`), the base element rules, and then one `@import` per stylesheet, in a set order. `features/resources` also has a CSS module
+(`components/resources.module.css`, imported by its components), which is scoped and outside this scheme.
+
+| File | What is in it |
+|---|---|
+| `app/globals.css` | Tailwind, tokens, base rules, the `@import` list below |
+| `styles/shared.css` | Rules several areas use: brand mark, buttons, modals, page titles, card grids, base elements the first block does not cover; a rule whose area is unclear stays here |
+| `components/ui/ui.css` | Rules of the primitives in `components/ui` |
+| `features/<area>/<area>.css` | The rules of the classes that area's components write: `shell`, `public`, `dashboard`, `calendar`, `groups`, `members`, `admin`, `announcements`, `recordings`, `resources`, `attendance`, `finance` |
+| `styles/late.css` | The 49 rules that must stay after another area's rule (see below), in their original order, grouped under `/* area */` comments |
+
+The order of the `@import` lines is the order of the rules: Tailwind inlines each file where its `@import` stands, so two rules of equal
+specificity are decided by which file comes later. That is why the order is `shared`, `ui`, `shell`, `public`, `dashboard`, `calendar`,
+`groups`, `members`, `admin`, `announcements`, `recordings`, `resources`, `attendance`, `finance`, `late`, and why a file is never moved
+in that list on a hunch. The custom rule that fixes the member check-in button is in `@layer utilities` (in the attendance file); the
+minifier merges it into Tailwind's `utilities` layer, so it ends up after Tailwind's utilities wherever it is written.
+
+Adding or changing styles:
+
+1. A class one area uses goes in that area's file, named so that no other area could pick it up (prefix it with the area or the
+   component: `calendar-event-row`, not `row`). Keep one rule per line like its neighbours and add it next to the rules of the same block.
+2. A class two areas use goes in `styles/shared.css`; one a `components/ui` primitive writes goes in `components/ui/ui.css`.
+3. Do not make a rule depend on the file order across areas. If a rule must beat another of equal specificity, give it more
+   specificity (`.page .thing`), or put it in the same file after the other. A new rule that really needs to come after a rule of
+   another area goes at the end of `styles/late.css` under its area's comment.
+4. A new area file is added to the `@import` list at the position its rules need (before `late.css`, after any file whose rules it must
+   override); say so in the commit.
+5. A class no file under `features/`, `components/`, `app/` or `lib/` mentions (not even as the fixed part of a template such as
+   `` `status-${x}` ``) styles nothing: delete its rule.
+6. After moving rules or changing the order, build before and after and compare the CSS the build produces:
+   `node scripts/css-split/compare-built.mjs <before .next> <after .next>` lists every declaration only one side has and every pair that
+   changed order and could disagree about one element. The tool and what it assumes are in `scripts/css-split/README.md`; it is the
+   proof the split was made with (an exact pixel check is `npm run test:browser:compare`).
 
 ## Dependency rules
 
