@@ -9,6 +9,7 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 
 - [1. Toast](#1-toast)
 - [2. Dialog](#2-dialog) (and the list of every dialog in the portal, with who migrates it)
+- [3. Confirm](#3-confirm) (and how every destructive action confirms today)
 
 ---
 
@@ -115,3 +116,69 @@ Hand-rolled, NOT on the primitive: no role, no name, no focus trap, no Escape, n
 | resources | `resource-composer.tsx`, `resource-detail-panel.tsx` | side panels with their own scrim, `role="dialog"` and Escape handling (`resources.module.css`): they have a role; check name, focus trap, focus return, inert page, and move them onto `Dialog` with a panel class if the look allows (a slide-in panel may keep its own markup if it meets the same rules) |
 
 Nothing in `features/shell` or `components/ui` is hand-rolled any more. The tests of the primitive are `tests/component/dialog.test.tsx`.
+
+---
+
+## 3. Confirm
+
+One way to ask "are you sure?" for a destructive or hard-to-undo action. Three pieces, one dialog underneath (`Dialog` > `ConfirmDialog`):
+
+| You need | Use |
+|---|---|
+| A yes or a no, then the screen runs the action | `useConfirm()` (`components/ui/confirm.tsx`) |
+| A yes or a no, and the action runs INSIDE the dialog (a "Working..." button, the failure shown before it closes) | `ConfirmDialog` (`components/ui/confirm-dialog.tsx`), controlled: `open`, `busy`, `onConfirm`, `onCancel` |
+| A reason or a few values with the yes | `FormDialog` (`components/ui/form-dialog.tsx`); with no fields it is a plain confirmation |
+
+```tsx
+const { confirm } = useConfirm();
+const sure = await confirm({ title: "Delete this announcement?", message: "It disappears for everyone.", confirmLabel: "Delete announcement", tone: "destructive" });
+if (!sure) return;
+await save.run(() => deleteAnnouncement(id), { success: "Announcement deleted" });
+```
+
+`confirm({ title, message, confirmLabel?, tone? })` returns `Promise<boolean>`: `true` only on Confirm; Cancel, Escape and a click on the backdrop are
+`false`. `message` is a string or any node (say what happens and what is kept); `confirmLabel` names the action ("Delete announcement", not
+"OK"; default "Confirm"); `tone: "destructive"` makes Confirm the danger button (default `"default"`). Focus starts on Cancel for every tone, so
+Enter never confirms by accident; focus goes back to the button that asked. Two questions asked together are asked one after the other. The
+dialog is closed before the promise resolves: show the pending state on the button that asked (section 4).
+
+`ConfirmProvider` is mounted once, in `features/shell/components/home.tsx` next to `ToastProvider`. `useConfirm()` outside a provider throws.
+In a test render the screen with `withConfirm(<Screen />)` (`tests/support/confirm.tsx`), then click the Confirm button by its label.
+
+Rules for a screen:
+
+- Every action that deletes, removes, voids, archives, declines, deactivates, moves money or cannot be undone asks first, with the wording of what
+  happens ("It cannot be undone", "Its expenses are released"). An action that only changes a setting and can be changed back does not.
+- Name the action on the Confirm button; do not use "OK" or "Yes".
+- Never use `window.confirm`, `window.alert` or `window.prompt` (tests stub them to say yes).
+
+### How every destructive action confirms today
+
+Checked in the code (`lib/api/*` functions that delete, remove, void, decline, archive, deactivate, clear, withdraw, cancel, leave, and where the
+screens call them). "ok" = it asks with the shared dialogs already (they get the new Dialog behaviour for free); the area keeps the call site
+and may move a plain yes/no onto `useConfirm()` where that is shorter, but does not have to.
+
+**Replace (not on the shared dialogs):**
+
+| Area | Action | Where | Today | To do |
+|---|---|---|---|---|
+| calendar | Remove a date | `features/calendar/hooks/use-calendar-page.ts` `remove()` | `window.confirm("Remove this date from the calendar?")` (the only one in the portal) | `useConfirm()`: title "Remove this date from the calendar?", `tone: "destructive"` |
+| admin | Change a member's role (a `<select>`, `admin-page.tsx` `changeRole` -> `changeMemberRole`) | `features/admin/components/admin-page.tsx`, `admin-members-panel.tsx` | changes at once, no question; the person's access changes | ask first, at least for a change to or from administrator or executive; say what the role may do |
+
+**Ok (they ask, with `ConfirmDialog`, `FormDialog` or a `Dialog` with a reason):**
+
+| Area | Actions | Where |
+|---|---|---|
+| admin | deactivate a member (`Dialog` with a reason), reactivate, delete an account (`ConfirmDialog`), decline a sign-up (`FormDialog` with a reason) | `member-access.tsx`, `signup-requests-panel.tsx` |
+| announcements | delete an announcement | `announcement-actions.tsx` |
+| attendance | delete a meeting, clear a mark, withdraw an absence form (`ConfirmDialog`); void a meeting (`Dialog` with a reason); close or cancel a session, review an absence form, set eligibility (`FormDialog`, `ConfirmDialog` through `use-attendance-dialogs.ts`) | `attendance-corrections.tsx`, `action-dialogs.tsx` |
+| finance | pay a reimbursement, mark a claim submitted (`ConfirmDialog`: `use-one-click-changes.ts`); void a payment, expense or funding claim, withdraw or decline a reimbursement, remove a claim expense or a document, record a claim decision (`FormDialog`: `corrections.ts` with `danger` and a reason where the person must say why) | `change-dialogs.tsx`, `corrections.ts` |
+| groups | decline a request, remove a member, leave, archive or restore a group (`ConfirmDialog`) | `group-confirm-dialogs.tsx` |
+| recordings | archive, restore, delete a recording; delete a notation; delete a club-archive item (`ConfirmDialog`) | `recording-manage.tsx`, `club-archive-manager.tsx` |
+| resources | change visibility, archive, restore, delete or discard a file (`ConfirmDialog`) | `resource-actions.tsx` |
+
+**One click, not destructive (no question needed):** pin or unpin an announcement; approve or waitlist a group request; approve a sign-up; mark a
+claim ready or back to editing (`updateClaimStatus`); sign out (`use-portal-session.ts`; plan 3.2 turns it into an account menu).
+
+A `ConfirmDialog` that is open while its action runs (`busy`) cannot be dismissed; its failure is a toast that stays (section 1), the dialog
+stays open for another try or Cancel.

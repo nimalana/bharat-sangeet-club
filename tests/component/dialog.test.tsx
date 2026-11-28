@@ -299,6 +299,19 @@ describe("Dialog: the page behind", () => {
     expect(screen.getByTestId("was")).toHaveAttribute("inert");
   });
 
+  it("a live region deep inside another part of the page stays reachable: only what is around it is inert", () => {
+    render(<div>
+      <header data-testid="header"><p data-testid="nav">Navigation</p></header>
+      <main data-testid="main"><p data-testid="content">Content</p><div aria-live="polite" data-testid="toasts"><div data-testid="one-toast">Saved</div></div></main>
+      <Dialog open onClose={() => {}} label="Over it"><button>ok</button></Dialog>
+    </div>);
+    expect(screen.getByTestId("header")).toHaveAttribute("inert");
+    expect(screen.getByTestId("main")).not.toHaveAttribute("inert");
+    expect(screen.getByTestId("content")).toHaveAttribute("inert");
+    expect(screen.getByTestId("toasts")).not.toHaveAttribute("inert");
+    expect(screen.getByTestId("one-toast").closest("[inert]")).toBeNull();
+  });
+
   it("a toast announced from inside an open dialog is still reachable (the live region is not inert)", () => {
     render(<Page startOpen />);
     const live = screen.getByTestId("live");

@@ -82,20 +82,25 @@ function lockScroll() {
 }
 
 // Only the topmost dialog is reachable: every sibling of it and of its ancestors becomes inert, which includes a dialog under it. A live
-// region stays reachable, because the toast that says the dialog's action failed must still be announced. What was inert before the
-// dialog opened is not touched (and stays inert after).
+// region (aria-live) stays reachable, because the toast that says the dialog's action failed must still be announced: a part of the page
+// that holds one is not made inert as a whole, only what is around the region is. What was inert before the dialog opened is not touched
+// (and stays inert after).
 const NOT_CONTENT = /^(SCRIPT|STYLE|LINK|TEMPLATE|NOSCRIPT)$/;
 let inerted: Element[] = [];
+function inertAround(parent: Element, keep: Element | null) {
+  for (const child of Array.from(parent.children)) {
+    if (child === keep || NOT_CONTENT.test(child.tagName) || child.hasAttribute("inert") || child.hasAttribute("aria-live")) continue;
+    if (child.querySelector("[aria-live]")) { inertAround(child, null); continue; }
+    child.setAttribute("inert", "");
+    inerted.push(child);
+  }
+}
 function refreshIsolation() {
   for (const element of inerted) element.removeAttribute("inert");
   inerted = [];
   const top = openDialogs[openDialogs.length - 1];
   for (let node: HTMLElement | null = top?.root ?? null; node && node !== document.body; node = node.parentElement) {
-    for (const sibling of Array.from(node.parentElement?.children ?? [])) {
-      if (sibling === node || NOT_CONTENT.test(sibling.tagName) || sibling.hasAttribute("aria-live") || sibling.hasAttribute("inert")) continue;
-      sibling.setAttribute("inert", "");
-      inerted.push(sibling);
-    }
+    if (node.parentElement) inertAround(node.parentElement, node);
   }
 }
 
