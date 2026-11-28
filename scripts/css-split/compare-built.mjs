@@ -7,11 +7,13 @@
 // static/chunks). Each stylesheet is flattened to one item per declaration: `@media ... || selector || property: value`, selector
 // lists split, so that the minifier merging or splitting rules does not show. Then:
 //   1. the items only one side has (added / removed);
-//   2. for the items both have, whether the sequence is the same; if not, every pair whose order changed is checked: the pair is
-//      harmless when the two items cannot disagree about one element (different specificity, no common property, or no element can
-//      carry both: the same test the split used, scripts/css-split/conflicts.mjs). A changed pair that may conflict is reported.
-// With --removed the items only `before` has must all need a class that no source file uses (the unused-rule commit).
-// The exit code is 1 when anything was added, a conflicting pair changed order, or (with --removed) an item left that was not unused.
+//   2. items that need a class no source file mentions match nothing: they are compared as a set (--removed: they must all be gone,
+//      otherwise none may be gone), the others in order: whether the sequence is the same; if not, every pair whose order changed is
+//      checked: the pair is harmless when the two items cannot disagree about one element (different specificity, no common property,
+//      or no element can carry both: the same test the split used, scripts/css-split/conflicts.mjs). A changed pair that may conflict
+//      is reported.
+// The exit code is 1 when a used item was added or removed, a conflicting pair changed order, an unused item appeared, or the unused
+// items did not behave as asked (kept without --removed; at least one gone with it).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,7 +48,7 @@ export function findCss(target) {
 
 const squash = (s) => s.replace(/\s+/g, " ").trim();
 
-/** Flattens a stylesheet to items { context, selector, prop, value, important, text }, in order. */
+/** Flattens a stylesheet to items { context, selector, prop, value, important }, in order (dropShadowed() then removes the dead ones). */
 export function flatten(css) {
   const items = [];
   const walk = (nodes, context, parentSelector) => {
@@ -71,15 +73,15 @@ export function flatten(css) {
     }
   };
   walk(postcss.parse(css).nodes, "", null);
-  return dropShadowed(items);
+  return items;
 }
 
 /**
  * A declaration that a later declaration of the same property in a rule with the same selector and context always overrides does
  * nothing, and the minifier removes it when the two rules end up next to each other. Both builds are normalised the same way, so that
- * a rule that stopped being adjacent to its twin does not look like an addition.
+ * a rule that stopped being adjacent to its twin does not look like an addition. (Applied to the used and the unused items apart.)
  */
-function dropShadowed(items) {
+export function dropShadowed(items) {
   const later = new Map(); // context|selector|prop -> { any, important }
   const keep = [];
   for (let i = items.length - 1; i >= 0; i -= 1) {
@@ -151,17 +153,49 @@ function pair(before, after) {
   return { matched, removed, added };
 }
 
-export function compare(beforeCss, afterCss, { usage, index, removedMode = false }) {
-  const before = flatten(beforeCss);
-  const after = flatten(afterCss);
+export function compare(beforeCss, afterCss, { usage, index }) {
+  const infoOf = makeSelectorInfo(usage, index);
+  // An item whose selector needs a class that no source file mentions matches nothing: its place does not matter (the unused rules
+  // sit wherever the split left them until they are removed). Those items are compared as a set, the others in order.
+  const flatBefore = flatten(beforeCss);
+  const flatAfter = flatten(afterCss);
+  // an animation is unused when only unused rules (and no source file) name it
+  const animated = new Set();
+  const isUnusedSelector = (item) => {
+    const info = infoOf(item.selector);
+    return Boolean(info.parsed) && requiredNames(info.parsed).some(({ name }) => usage.areasOf(name).size === 0);
+  };
+  for (const item of [...flatBefore, ...flatAfter]) {
+    if (!item.whole && (item.prop === "animation" || item.prop === "animation-name") && !isUnusedSelector(item)) {
+      for (const w of item.value.match(/[A-Za-z_][\w-]*/g) ?? []) animated.add(w);
+    }
+  }
+  const isUnused = (item) => {
+    if (item.whole) {
+      const m = /^@(?:-webkit-)?keyframes (.+)$/.exec(item.selector);
+      return Boolean(m) && !animated.has(m[1]) && usage.areasOf(m[1]).size === 0;
+    }
+    return isUnusedSelector(item);
+  };
+  const before = dropShadowed(flatBefore.filter((i) => !isUnused(i)));
+  const after = dropShadowed(flatAfter.filter((i) => !isUnused(i)));
+  // (which selector sets which property: the minifier may or may not have dropped an overridden value, and the order is moot)
+  const unusedKey = (i) => `${i.context}|${i.selector}|${i.prop}`;
+  const unusedBefore = [...new Set(flatBefore.filter(isUnused).map(unusedKey))].sort();
+  const unusedAfter = [...new Set(flatAfter.filter(isUnused).map(unusedKey))].sort();
   const { matched, removed, added } = pair(before, after);
   const report = { beforeItems: before.length, afterItems: after.length, matched: matched.length, removed: removed.length, added: added.length };
+  report.unusedItemsBefore = unusedBefore.length;
+  report.unusedItemsAfter = unusedAfter.length;
+  const afterSet = new Set(unusedAfter);
+  const beforeSet = new Set(unusedBefore);
+  report.unusedItemsRemoved = unusedBefore.filter((k) => !afterSet.has(k)).length;
+  report.unusedItemsAdded = unusedAfter.filter((k) => !beforeSet.has(k)).length;
 
   // order: pairs of matched items whose order changed
   const byAfter = [...matched].sort((x, y) => x.b - y.b); // in before order, with their after position
   const sameOrder = byAfter.every((m, i) => i === 0 || byAfter[i - 1].a < m.a);
   report.sameOrder = sameOrder;
-  const infoOf = makeSelectorInfo(usage, index);
   let inversions = 0;
   const conflicts = [];
   if (!sameOrder) {
@@ -194,18 +228,6 @@ export function compare(beforeCss, afterCss, { usage, index, removedMode = false
   report.conflictingPairsReordered = conflicts.length;
   report.conflicts = conflicts.slice(0, 20).map(([a, b]) => `${key(a)}  <>  ${key(b)}`);
 
-  // removed items must need a class no source file mentions
-  const notUnused = [];
-  if (removedMode) {
-    for (const item of removed) {
-      if (item.whole) continue;
-      const info = infoOf(item.selector);
-      const names = info.parsed ? requiredNames(info.parsed) : [];
-      if (!names.some(({ name }) => usage.areasOf(name).size === 0)) notUnused.push(key(item));
-    }
-  }
-  report.removedNotUnused = notUnused.slice(0, 20);
-  report.removedNotUnusedCount = notUnused.length;
   report.addedSample = added.slice(0, 10).map(key);
   report.removedSample = removed.slice(0, 10).map(key);
   report.removedSelectors = [...new Set(removed.map((i) => i.selector))].length;
@@ -225,13 +247,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const index = buildElementIndex(ROOT);
   const beforeFile = findCss(files[0]);
   const afterFile = findCss(files[1]);
-  const report = compare(fs.readFileSync(beforeFile, "utf8"), fs.readFileSync(afterFile, "utf8"), { usage, index, removedMode });
+  const report = compare(fs.readFileSync(beforeFile, "utf8"), fs.readFileSync(afterFile, "utf8"), { usage, index });
   report.before = beforeFile;
   report.after = afterFile;
   report.beforeBytes = fs.statSync(beforeFile).size;
   report.afterBytes = fs.statSync(afterFile).size;
   console.log(JSON.stringify(report, null, 2));
   if (jsonIdx !== -1) fs.writeFileSync(args[jsonIdx + 1], JSON.stringify(report, null, 2));
-  const bad = report.added > 0 || report.conflictingPairsReordered > 0 || (removedMode ? report.removedNotUnusedCount > 0 : report.removed > 0);
+  const bad =
+    report.added > 0 ||
+    report.removed > 0 ||
+    report.conflictingPairsReordered > 0 ||
+    report.unusedItemsAdded > 0 ||
+    (removedMode ? report.unusedItemsRemoved === 0 : report.unusedItemsRemoved > 0);
   process.exit(bad ? 1 : 0);
 }
