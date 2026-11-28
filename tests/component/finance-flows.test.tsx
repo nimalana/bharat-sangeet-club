@@ -7,11 +7,15 @@
 // (the database function and its arguments), WHAT the person is told, and what happens to the dialog and the lists afterwards. Written
 // when features/finance was split into hooks and components: every one of these passes on the old single-file screen too.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { FinancePage } from "../../features/finance/components/finance-page";
 import { setCacheOwner } from "../../lib/cache";
 import { flush, notifySpy, userOf } from "../support/helpers";
 import { fail, fake, never, ok } from "../support/fake-supabase";
+import { routeUploads } from "./finance-xhr";
+
+// The finance upload goes through XMLHttpRequest (uploadWithProgress); finance-xhr.ts answers each request from `fake.storage(...)`, so a test scripts uploads as before.
+beforeEach(() => { routeUploads(); });
 
 const expense = (over: Record<string, unknown> = {}) => ({
   id: 1, description: "Tabla repair", vendor: "Raj Music", amount: 80, purchase_date: "2026-10-01", category: "Instruments", paid_by: "member", paid_by_member_id: "member-9",
@@ -48,7 +52,8 @@ function renderFinance(options: { role?: "member" | "executive" | "admin"; userI
 
 const card = (label: string) => screen.getByText(label).parentElement!.querySelector("strong")!.textContent;
 const waitForLoad = () => waitFor(() => expect(screen.getByText("Available cash")).toBeInTheDocument());
-const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
+// The open tab is kept in the address, which is written a moment after the click (a microtask): the async act lets it land.
+const tab = async (name: string) => { await act(async () => { fireEvent.click(screen.getByRole("tab", { name })); }); };
 const dialog = () => screen.getByRole("dialog");
 const field = (label: string | RegExp) => within(dialog()).getByLabelText(label);
 const type = (label: string | RegExp, value: string) => fireEvent.change(field(label), { target: { value } });
@@ -64,7 +69,7 @@ describe("finance: an executive answers a member's request", () => {
     scriptFinance(data);
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: buttonName }));
     return notify;
   }
@@ -105,7 +110,7 @@ describe("finance: an executive answers a member's request", () => {
     scriptFinance({ reimbursements: [reimbursement({ member_id: "exec-1" })] });
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     expect(await screen.findByText("Another executive must review your own request.")).toBeInTheDocument();
     for (const name of ["Approve", "Decline", "Request changes"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
   });
@@ -125,7 +130,7 @@ describe("finance: voiding and editing expenses", () => {
     scriptFinance(data);
     const notify = renderFinance();
     await waitForLoad();
-    tab("expenses");
+    await tab("expenses");
     fireEvent.click(await screen.findByRole("button", { name: buttonName }));
     return notify;
   }
@@ -170,19 +175,19 @@ describe("finance: voiding and editing expenses", () => {
     expect((field("Category") as HTMLSelectElement).value).toBe("Hospitality");
   });
 
-  it("an expense on a claim the funder has cannot be edited, only voided; a voided one has no buttons", async () => {
+  it("an expense on a claim the funder has cannot be edited, only voided; a voided one has only Details", async () => {
     scriptFinance({
       expenses: [expense(), expense({ id: 2, description: "Harmonium" }), expense({ id: 3, description: "Cables", status: "voided" })],
       claims: [claim({ status: "submitted" })], claimExpenses: [{ claim_id: 3, expense_id: 1, claimed_amount: 80 }],
     });
     renderFinance();
     await waitForLoad();
-    tab("expenses");
+    await tab("expenses");
     const row = (text: string) => screen.getByText(text).closest(".finance-table-row") as HTMLElement;
     expect(within(row("Tabla repair")).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(within(row("Tabla repair")).getByRole("button", { name: "Void" })).toBeInTheDocument();
     expect(within(row("Harmonium")).getByRole("button", { name: "Edit" })).toBeInTheDocument();
-    expect(within(row("Cables")).queryAllByRole("button")).toHaveLength(0);
+    expect(within(row("Cables")).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(["Details of Cables"]);
   });
 });
 
@@ -260,7 +265,7 @@ describe("finance: the funder's answers and a claim's expenses", () => {
     scriptFinance(data);
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     await screen.findByText("Fall concert");
     return notify;
   }
@@ -437,7 +442,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     // Nothing chosen: the button is off and says what it would create.
     expect(within(dialog()).getByRole("button", { name: "Create claim · $0.00" })).toBeDisabled();
@@ -463,7 +468,7 @@ describe("finance: the forms that save a record", () => {
     scriptFinance();
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     attach("funding_approval");
     submit();
@@ -476,7 +481,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /Document/ }));
     type("Document type", "bank_statement");
     type("Title", "October statement");
@@ -492,7 +497,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: /Add receipt/ }));
     attach("file");
     submit();
@@ -505,7 +510,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("create_funding_claim").reply(ok({ id: 24 }));
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     fireEvent.click(within(dialog()).getByLabelText("Include Tabla repair"));
     submit();
@@ -515,30 +520,56 @@ describe("finance: the forms that save a record", () => {
   });
 });
 
-describe("finance: opening a stored document", () => {
+describe("finance: previewing a stored document", () => {
   const WITH_RECEIPT = {
-    documents: [{ id: 11, document_type: "receipt", title: "Taxi receipt", storage_path: "member-9/taxi.pdf", uploaded_by: "member-9" }],
+    documents: [{ id: 11, document_type: "receipt", title: "Taxi receipt", storage_path: "member-9/taxi.pdf", uploaded_by: "member-9", mime_type: "application/pdf" }],
     reimbursementDocuments: [{ reimbursement_id: 5, document_id: 11 }],
   };
 
-  it("opens it in a new tab through a link that lasts 90 seconds", async () => {
+  it("opens it in a preview: the link lasts 90 seconds, a PDF is shown in the frame, and Open in a new tab is a link of the preview", async () => {
     scriptFinance(WITH_RECEIPT);
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "▤ Taxi receipt" }));
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith("https://files.test/finance-private/member-9/taxi.pdf?signed", "_blank", "noopener,noreferrer"));
+    const preview = await screen.findByRole("dialog", { name: "Taxi receipt" });
+    await waitFor(() => expect(within(preview).getByTitle("Taxi receipt (PDF)")).toHaveAttribute("src", "https://files.test/finance-private/member-9/taxi.pdf?signed"));
     expect(fake.storage("finance-private", "createSignedUrl").calls[0].args).toEqual(["member-9/taxi.pdf", 90]);
+    const link = within(preview).getByRole("link", { name: "Open in a new tab" });
+    expect(link).toHaveAttribute("href", "https://files.test/finance-private/member-9/taxi.pdf?signed");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    // Nothing is opened behind the person's back: the old window.open of the chip is gone.
+    expect(window.open).not.toHaveBeenCalled();
   });
 
-  it("when no link can be made the person is told, as an error, and nothing opens", async () => {
-    scriptFinance(WITH_RECEIPT);
-    fake.storage("finance-private", "createSignedUrl").reply(fail("Object not found"));
-    const notify = renderFinance();
+  it("a photo of a receipt is shown as an image; Close closes the preview and focus is back on the chip", async () => {
+    scriptFinance({ ...WITH_RECEIPT, documents: [{ ...WITH_RECEIPT.documents[0], mime_type: "image/png", storage_path: "member-9/taxi.png" }] });
+    renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
+    const chip = await screen.findByRole("button", { name: "▤ Taxi receipt" });
+    chip.focus();
+    fireEvent.click(chip);
+    const preview = await screen.findByRole("dialog", { name: "Taxi receipt" });
+    await waitFor(() => expect(within(preview).getByRole("img", { name: "Taxi receipt" })).toHaveAttribute("src", "https://files.test/finance-private/member-9/taxi.png?signed"));
+    fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(chip).toHaveFocus();
+  });
+
+  it("when no link can be made the preview says so with Try again, and a second try makes a new link; nothing opens", async () => {
+    scriptFinance(WITH_RECEIPT);
+    fake.storage("finance-private", "createSignedUrl").replyOnce(fail("Object not found"));
+    renderFinance();
+    await waitForLoad();
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "▤ Taxi receipt" }));
-    await waitFor(() => expect(notify.find("This finance document could not be opened").tone).toBe("error"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Object not found");
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByTitle("Taxi receipt (PDF)")).toBeInTheDocument());
+    expect(fake.storage("finance-private", "createSignedUrl").count).toBe(2);
     expect(window.open).not.toHaveBeenCalled();
   });
 

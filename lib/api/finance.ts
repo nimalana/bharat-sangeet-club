@@ -15,22 +15,24 @@ import { ApiError, toApiError } from "../errors";
 import type { Profile, Tables } from "../db";
 import { removeStoredFile } from "../storage";
 import { supabase } from "../supabase";
-import { must } from "./_core";
+import { must, uploadWithProgress, type UploadProgress } from "./_core";
 
 // ---------------------------------------------------------------- row types (what the screen reads of each table)
 
 // paid_by and direction are text columns with a CHECK constraint, so the generated type is `string`; the UI knows the two values.
 export type Expense = Pick<Tables<"finance_expenses">, "id" | "description" | "vendor" | "amount" | "purchase_date" | "category" | "paid_by_member_id"
   | "payment_card_last4" | "subgroup_id" | "club_event_id" | "event_related" | "event_name" | "event_starts_at"
-  | "event_attendee_count" | "event_schedule" | "status" | "created_by"> & { paid_by: "club" | "member" };
+  | "event_attendee_count" | "event_schedule" | "status" | "created_by"> & { paid_by: "club" | "member" }
+  // Who did what and when, for the detail dialog (the read is select "*", so these are in every row; a row without them reads as "not yet").
+  & Partial<Pick<Tables<"finance_expenses">, "created_at" | "approved_by" | "approved_at" | "rejected_by" | "rejected_at" | "voided_by" | "voided_at" | "void_reason">>;
 export type Reimbursement = Pick<Tables<"personal_reimbursements">, "id" | "expense_id" | "member_id" | "requested_amount" | "approved_amount" | "status"
-  | "member_note" | "review_note" | "created_at"> & Partial<Pick<Tables<"personal_reimbursements">, "void_reason">>;
+  | "member_note" | "review_note" | "created_at"> & Partial<Pick<Tables<"personal_reimbursements">, "void_reason" | "reviewed_by" | "reviewed_at" | "paid_at" | "voided_by" | "voided_at">>;
 export type Payment = Pick<Tables<"finance_payments">, "id" | "purpose" | "amount" | "description" | "category" | "account_name" | "counterparty"
-  | "payment_date" | "status" | "reimbursement_id" | "funding_claim_id"> & Partial<Pick<Tables<"finance_payments">, "expense_id">> & { direction: "inflow" | "outflow" };
+  | "payment_date" | "status" | "reimbursement_id" | "funding_claim_id"> & Partial<Pick<Tables<"finance_payments">, "expense_id" | "created_at" | "created_by" | "cleared_date" | "voided_by" | "voided_at" | "void_reason">> & { direction: "inflow" | "outflow" };
 export type FundingClaim = Pick<Tables<"funding_claims">, "id" | "title" | "funder_name" | "award_reference" | "heellife_reference" | "requested_amount"
   | "approved_amount" | "received_amount" | "submission_deadline" | "status" | "notes">;
 export type ClaimExpense = Pick<Tables<"funding_claim_expenses">, "claim_id" | "expense_id" | "claimed_amount">;
-export type FinanceDocument = Pick<Tables<"finance_documents">, "id" | "document_type" | "title" | "storage_path" | "uploaded_by">;
+export type FinanceDocument = Pick<Tables<"finance_documents">, "id" | "document_type" | "title" | "storage_path" | "uploaded_by"> & Partial<Pick<Tables<"finance_documents">, "mime_type">>;
 export type ExpenseDocument = Pick<Tables<"finance_expense_documents">, "expense_id" | "document_id">;
 export type ReimbursementDocument = Pick<Tables<"finance_reimbursement_documents">, "reimbursement_id" | "document_id">;
 export type ClaimDocument = Pick<Tables<"finance_claim_documents">, "claim_id" | "document_id">;
@@ -85,7 +87,7 @@ export async function loadFinanceWave(canManage: boolean): Promise<FinanceWave> 
     db.from("finance_expenses").select("*").order("purchase_date", { ascending: false }).order("id", { ascending: false }).limit(LIST_LIMIT).then((r) => answered<Expense[]>(r)),
     db.from("personal_reimbursements").select("*").order("created_at", { ascending: false }).limit(LIST_LIMIT).then((r) => answered<Reimbursement[]>(r)),
     db.from("finance_payments").select("*").order("payment_date", { ascending: false }).order("id", { ascending: false }).limit(LIST_LIMIT).then((r) => answered<Payment[]>(r)),
-    db.from("finance_documents").select("id,document_type,title,storage_path,uploaded_by").order("created_at", { ascending: false }).limit(LIST_LIMIT * 4).then((r) => answered<FinanceDocument[]>(r)),
+    db.from("finance_documents").select("id,document_type,title,storage_path,uploaded_by,mime_type").order("created_at", { ascending: false }).limit(LIST_LIMIT * 4).then((r) => answered<FinanceDocument[]>(r)),
     db.from("finance_expense_documents").select("expense_id,document_id").limit(LIST_LIMIT * 4).then((r) => answered<ExpenseDocument[]>(r)),
     db.from("finance_reimbursement_documents").select("reimbursement_id,document_id").limit(LIST_LIMIT * 4).then((r) => answered<ReimbursementDocument[]>(r)),
     db.rpc("get_finance_summary").then((r) => answered<unknown>(r)),
@@ -296,10 +298,15 @@ export type DocumentLinks = { expenseId?: number; reimbursementId?: number; clai
 export async function uploadFinanceDocument(upload: {
   file: File; storagePath: string; mimeType: string; documentType: string; title: string;
   cardLast4: string | null; links: DocumentLinks;
-}): Promise<number> {
+}, onProgress?: (progress: UploadProgress) => void): Promise<number> {
   const db = connected();
-  const uploaded = await db.storage.from("finance-private").upload(upload.storagePath, upload.file, { contentType: upload.mimeType, upsert: false });
-  if (uploaded.error) throw toApiError(uploaded.error);
+  // The same request supabase-js sent, through XMLHttpRequest so the bytes sent are known (uploadWithProgress, docs/UI_PATTERNS.md section 5).
+  // supabase-js ignored the `contentType` option for a File (the file part carries the file's own type), so a file the browser gave no type
+  // (a .pdf on a system that does not know the extension) reached the bucket as application/octet-stream and was refused. The type the checks
+  // settled on (lib/finance-upload.ts) is now the type of the part: a file that already has it is sent as it is.
+  const body = upload.file.type === upload.mimeType ? upload.file : new File([upload.file], upload.file.name, { type: upload.mimeType });
+  const uploaded = await uploadWithProgress(db, "finance-private", upload.storagePath, body, { upsert: false }, onProgress);
+  if (uploaded.error) throw uploaded.error;
   let documentId: number | null;
   try {
     documentId = must(await db.rpc("register_finance_document", {
@@ -343,4 +350,21 @@ export async function removeFinanceDocument(documentId: number, sentences: { ref
   if (typeof storagePath !== "string") return { fileLeft: null };
   const fileLeft = await removeStoredFile("finance-private", storagePath, { refusedMessage: sentences.refusedMessage, failedMessage: sentences.failedMessage });
   return { fileLeft };
+}
+
+// ---------------------------------------------------------------- the audit history (executives only)
+
+/** One row of finance_audit_log: what happened to a record, who did it, and the row before and after (the database's own copy). */
+export type FinanceAuditRow = Pick<Tables<"finance_audit_log">, "id" | "entity_type" | "entity_id" | "action" | "actor_id" | "created_at" | "before_data" | "after_data">;
+export type FinanceAuditEntity = "personal_reimbursements" | "finance_expenses" | "finance_payments";
+
+/**
+ * The newest FINANCE_AUDIT_LIMIT audit rows of the given records of one kind (their ids), newest first. Row-level security lets only an
+ * executive read finance_audit_log: for anyone else this is an empty list, not an error, so the screen asks only for an executive.
+ */
+export const FINANCE_AUDIT_LIMIT = 100;
+export async function listFinanceAudit(entityType: FinanceAuditEntity, entityIds: number[]): Promise<FinanceAuditRow[]> {
+  if (!entityIds.length) return [];
+  return must(await connected().from("finance_audit_log").select("id,entity_type,entity_id,action,actor_id,created_at,before_data,after_data")
+    .eq("entity_type", entityType).in("entity_id", entityIds).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(FINANCE_AUDIT_LIMIT));
 }

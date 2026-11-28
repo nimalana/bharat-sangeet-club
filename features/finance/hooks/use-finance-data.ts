@@ -31,6 +31,8 @@ export function useFinanceData({ userId, canManage }: { userId: string; canManag
   const [loadFailed, setLoadFailed] = useState(false);
   const [loaded, setLoaded] = useState(Boolean(cached));
   const [loadGate] = useState(createRequestGate);
+  // Try again after a failure is a read in flight that the button shows (busy) and cannot start twice.
+  const [retrying, setRetrying] = useState(false);
 
   const loadFinance = useCallback(async () => {
     if (!financeAvailable()) return;
@@ -68,5 +70,10 @@ export function useFinanceData({ userId, canManage }: { userId: string; canManag
     if (result === "timeout") { if (saved) notify(REFRESH_SLOW_NOTICE, "success"); else notify(REFRESH_SLOW_NOTICE_UNSAVED, "error"); }
   }, [loadFinance, notify]);
 
-  return { snapshot, loading, loaded, loadFailed, loadFinance, refreshAfterChange };
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    try { await loadFinance(); } finally { setRetrying(false); }
+  }, [loadFinance]);
+
+  return { snapshot, loading, loaded, loadFailed, retrying, retry, loadFinance, refreshAfterChange };
 }
