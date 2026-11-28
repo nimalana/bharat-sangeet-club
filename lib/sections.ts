@@ -3,7 +3,7 @@
 // tested without a browser (tests/sections.test.mjs).
 //
 // Everything that decides "can this person reach this screen" lives here. The
-// menu, the ?page= handling and the screen switch in app/portal.tsx all read
+// menu, the ?page= handling and the screen switch in features/shell/components/portal.tsx all read
 // the same table, so a screen cannot be built and then left unreachable.
 
 // Type-only import: lib modules that tests load directly import nothing at run time.

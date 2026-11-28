@@ -1,8 +1,8 @@
 # Architecture
 
-How the app is put together and where code goes. The refactor that moves the screens into this layout is Phase 2.5
-(R2 to R5 in the implementation plan); until it is finished some code still lives in the old places (`app/*.tsx`,
-`components/<area>/`). New code follows this page. "Where things are today" below says what already exists.
+How the app is put together and where code goes. The screens now live in the layout below (Phase 2.5, R3: moved
+without changing any code). Still to come in Phase 2.5: the per-area data layer (`lib/api/<area>.ts`), the extraction of the
+large screen files, the CSS split. "Where things are today" below says what already exists.
 
 ## Data flow
 
@@ -39,32 +39,55 @@ Each has tests under `tests/` and is used by the screens where the old behaviour
 
 | Piece | Used by | Not used (and why) |
 |---|---|---|
-| `format` | portal, resources, recording-workspace, finance | `lib/dates.ts` (club time zone), attendance's own `formatDateTime` (viewer time zone, other wording), `formatBytes` |
-| `permissions` | portal, group-people, attendance, finance, resources | labels such as "Administrator", the role counts on the Admin page, `lib/sections.ts` (a menu table, not a permission) |
+| `format` | announcement-feed, subgroup-spaces, admin-page, members-page, resource-library, recording-workspace, finance-page | `lib/dates.ts` (club time zone), attendance's own `formatDateTime` (viewer time zone, other wording), `formatBytes` |
+| `permissions` | the shell (`portal`), subgroup-spaces, group-people, attendance-page, finance-page, resource-library | labels such as "Administrator", the role counts on the Admin page, `lib/sections.ts` (a menu table, not a permission) |
 | `use-async-action` | announcement pin and delete, member access | handlers that read `{ data, error }` and branch on rows changed, or that return early between the call and the flag |
 | `use-debounced` | resources and recordings search boxes | |
 | `use-polling` | attendance meeting poll | the beat animation and the recording timer (not polls) |
-| `use-query` | the Members page (pilot) | every other screen: they key several reads together or have writes that clear the cache by prefix; each is moved when its area is |
-| `ToastProvider` / `useToast` | the shell (`Home`) | the screens still receive `notify` as a prop; it goes away area by area |
-| `ui/*` blocks | portal, attendance, finance | the finance title row, `section-boundary`'s empty state, recordings' own empty state |
+| `use-query` | the Members page (`features/members`, pilot) | every other screen: they key several reads together or have writes that clear the cache by prefix; each is moved when its area is |
+| `ToastProvider` / `useToast` | the shell (`features/shell`: `Home` provides, `Portal` reads) | the screens still receive `notify` as a prop; it goes away area by area |
+| `ui/*` blocks | the shell, admin-page, members-page, subgroup-spaces, public-site, attendance-page, finance-page | the finance title row, `section-boundary`'s empty state, recordings' own empty state |
 
-Not built yet: `features/<area>/` and the per-area `lib/api/<area>.ts` modules. Until they exist the screens still import
+Not built yet: the per-area `lib/api/<area>.ts` modules. Until they exist the screens (now under `features/`) still import
 `lib/supabase` and call it directly (the contract check reads those calls); a few already wrap the answer in `must()`.
 
 ## Folders
 
-| Folder | Holds |
-|---|---|
-| `app/` | routing, layout, the shell. `app/page.tsx` stays small |
-| `features/<area>/components`, `features/<area>/hooks` | one folder per area: shell, calendar, announcements, groups, members, admin, recordings, resources, attendance, finance, public |
-| `components/ui/` | primitives shared by every area |
-| `lib/` | pure logic (dates, sections, permissions, format, errors, cache, request gate) and nothing that renders |
-| `lib/api/<area>.ts` | every Supabase call of an area |
-| `lib/hooks/` | hooks that are not about one area (`use-query`, `use-async-action`, `use-debounced`, `use-polling`) |
-| `supabase/migrations/` | the database; applied migrations are never edited |
-| `tests/` | see `tests/README.md` |
+```
+app/                     routing only: layout.tsx, page.tsx (loads the public concerts on the server, renders Home),
+                         error.tsx, globals.css, meetings/page.tsx (redirect), chatgpt-auth.ts (not imported by anything; R5 removes it)
+features/<area>/         one folder per area; components/ holds the screens, hooks/ is created when an area gets one
+  shell/                 Home (toast provider + Portal), Portal (auth, bootstrap, navigation state, layout, the lazy
+                         screens), PortalPageMenu, SectionRefused, LoadingScreen, SetupScreen, BootstrapFailedScreen
+  dashboard/             ClubDashboard, TalamMeasure (the Overview page)
+  calendar/              CalendarView, EventModal
+  announcements/         AnnouncementFeed, AnnouncementActions, AnnouncementEditor, ScopeFilterBar
+  groups/                SubgroupSpaces, GroupPeople
+  members/               MembersPage
+  admin/                 AdminPage, AdminMemberEditor, MemberAccessActions, DeactivatedScreen
+  recordings/            RecordingWorkspace, RecordingManageBar, NoteActions, ClubArchiveManager, ArchiveModal
+  resources/             ResourceLibrary, ResourceActions (and resources.module.css)
+  attendance/            AttendancePage, SessionCorrections and the other correction buttons; model.ts (pure helpers)
+  finance/               FinancePage
+  public/                PublicSite, LoginScreen, hero-photos.ts
+components/ui/           primitives shared by every area (button, dialog, toast, empty-state, content-scope-label ...)
+lib/                     pure logic and nothing that renders (dates, sections, permissions, format, errors, cache,
+                         request gate); lib/portal-types.ts holds the row types several areas share
+lib/api/<area>.ts        every Supabase call of an area (to come)
+lib/hooks/               hooks that are not about one area (use-query, use-async-action, use-debounced, use-polling)
+supabase/migrations/     the database; applied migrations are never edited
+tests/                   see tests/README.md
+```
 
-Files are kebab-case; a component file stays under about 600 lines.
+Imports go one way: `app` -> `features/shell` -> the other features -> `components/ui` -> `lib`. A feature never imports
+the shell or `app/`, and two features do not import each other, with one exception that exists today: `admin`, `groups`
+and `dashboard` import the announcement components (`features/announcements`). The shell imports every feature (it is the
+one place that knows them all). There were no import cycles when the files were moved; keep it so.
+`features/shell/components/portal.tsx` loads attendance, finance, resources and the two recording screens with
+`next/dynamic`, so each stays its own chunk: keep it that way when moving code.
+
+Files are kebab-case; a component file stays under about 600 lines (three screens, `attendance-page`, `finance-page` and
+`resource-library`, are at or just over it and are split by their area's refactor).
 
 ## Database types
 

@@ -30,7 +30,7 @@ Several runs can go in parallel (the port only names a socket file inside each c
 Nothing depends on a file name, a folder or a variable name. Every file the `tsconfig.json` compiles is scanned (except
 `node_modules`, tests, `scripts`, `supabase`, `docs`, build output and `*.test.*`), a receiver counts as a client by its
 **type** (`SupabaseClient`), and row types are found by their TypeScript name wherever they are declared. Moving a
-component, splitting `app/page.tsx` or putting every call behind `lib/api/*.ts` keeps the check working.
+component, splitting a screen or putting every call behind `lib/api/*.ts` keeps the check working.
 
 ## What fails the build (FAIL)
 
@@ -71,7 +71,7 @@ On the current code, 6 are unresolved:
 
 | Where | Why |
 |---|---|
-| `storage.from(bucket)` x5 (`lib/storage-remove`, `app/resources`, `components/recordings/recording-workspace`) | the bucket comes from data (`storage_bucket` column, a map key). Checked anyway against every value a `*bucket*` column may hold (`club-resources`, `club-archive`, `recordings`) plus the literals seen |
+| `storage.from(bucket)` x5 (`lib/storage-remove`, `features/resources/components/resource-library`, `features/recordings/components/recording-workspace`) | the bucket comes from data (`storage_bucket` column, a map key). Checked anyway against every value a `*bucket*` column may hold (`club-resources`, `club-archive`, `recordings`) plus the literals seen |
 | `from("resources")` passed to `applyListPlan(query, plan)` | the resources list filters are applied by a generic helper from a plan object; the columns named in `lib/resources-query` are not checked |
 
 ## Known blind spots

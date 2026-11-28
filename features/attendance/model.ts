@@ -1,4 +1,4 @@
-// Types and pure helpers for the attendance screen (app/attendance.tsx).
+// Types and pure helpers for the attendance screen (features/attendance/components/attendance-page.tsx).
 // Kept free of React and Supabase so they run under `node --test`.
 
 // Type-only import: this file is loaded by node's test runner, so it imports nothing at run time.

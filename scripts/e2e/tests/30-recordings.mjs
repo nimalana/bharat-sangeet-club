@@ -5,7 +5,7 @@ import { mark } from "../lib/ctx.mjs";
 import { wav, pdf, sha256 } from "../lib/fixtures.mjs";
 import { put, sign, download, listed, putAndVerify, freshUrl, proveGone, uid } from "../lib/storage.mjs";
 
-// The row the recording studio writes (components/recordings/recording-workspace.tsx save()).
+// The row the recording studio writes (features/recordings/components/recording-workspace.tsx save()).
 const payload = (over) => ({
   title: mark("Take"), description: "e2e recording", subgroup_id: null, storage_path: "", mime_type: "audio/wav", media_kind: "audio",
   status: "draft", audience: "subgroup", recording_kind: "practice", raga: "Bhairavi", tala: "Adi", sruthi: "C", tempo: "Madhyama",

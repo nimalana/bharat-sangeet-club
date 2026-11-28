@@ -4,7 +4,7 @@ Layers, from cheapest to most real. `npm test` runs the first two.
 
 | Layer | Where | Run with | What it checks |
 | --- | --- | --- | --- |
-| Pure logic | `tests/*.test.mjs` | `npm run test:unit` (`node --test`) | Functions in `lib/` and the pure helpers in `components/`: dates, section rules, request gates, bootstrap parsing, query planning, toast tone for the database's own messages. No browser, no React. |
+| Pure logic | `tests/*.test.mjs` | `npm run test:unit` (`node --test`) | Functions in `lib/` and the pure helpers next to the screens (`features/attendance/model.ts`): dates, section rules, request gates, bootstrap parsing, query planning, toast tone for the database's own messages. No browser, no React. |
 | Component and behaviour | `tests/component/*.test.tsx` | `npm run test:component` (Vitest + jsdom + Testing Library) | The real screens, rendered, clicked and typed into, against a fake Supabase client. Checks what the person sees and what is sent to the database, not how the code is written. |
 | Database | `supabase/tests/*.test.sql` | `npm run test:db` | Constraints, triggers, functions and row-level security on a throwaway PostgreSQL. See `supabase/tests/README.md`. |
 | Browser | `tests/browser/` (kept by the browser-test work, not part of `npm test`) | see that folder | The app in a real browser against a test Supabase project. |
@@ -40,7 +40,7 @@ npx vitest tests/component/finance.test.tsx             # watch mode while writi
 ## Rules that keep the tests useful
 
 - A test checks behaviour: what is on screen, which call reached the database, which toast was shown and with what tone. It does not read source files and does not match source text. A refactor that keeps the behaviour must not fail a test.
-- A test imports the screen it exercises on one line and nothing else about where the screen lives. If a file moves, change that import line (and, for the shell, the import in `tests/support/portal.tsx`).
+- A test imports the screen it exercises on one line and nothing else about where the screen lives. If a file moves, change that import line (and, for the shell, the import in `tests/support/portal.tsx`). Screens live in `features/<area>/components/`; the shell as a whole is `features/shell/components/home.tsx`, imported by `tests/support/portal.tsx` only.
 - Every test must be shown to fail when the behaviour it protects is broken. When you add one, break the product code in a scratch copy (or temporarily), watch the test fail, then restore the code.
 - The header of a test file says what each old assertion or past bug it replaces protected, so the reason for a test is not lost when the code around it changes.
 

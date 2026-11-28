@@ -8,7 +8,7 @@ import { put, sign, download, listed, uid } from "../lib/storage.mjs";
 
 const inHours = (hours) => new Date(Date.now() + hours * 3600000).toISOString();
 
-// The totals the Attendance screen shows per member (app/attendance.tsx summaries): unexcused units
+// The totals the Attendance screen shows per member (features/attendance/components/attendance-page.tsx summaries): unexcused units
 // over closed meetings that count toward the metrics.
 function unexcusedTotals(workspace) {
   const counted = new Set(workspace.sessions.filter((x) => x.status === "closed" && x.counts_toward_metrics).map((x) => x.id));

@@ -1,4 +1,4 @@
-// The screens of app/portal.tsx as the browser sees them: where each one lives, what proves its CONTENT has arrived (not just its
+// The screens of the portal shell (features/shell/components/portal.tsx) as the browser sees them: where each one lives, what proves its CONTENT has arrived (not just its
 // heading: several screens print the heading first and load their data after), and what a role must not see on it.
 //
 // Everything here is about rendered output (visible text and roles), never about how the source is arranged, so it keeps working
