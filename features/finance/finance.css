@@ -173,6 +173,28 @@
 .reimbursement-actions small{align-self:center;color:#4c5f6b}
 .finance-page button:disabled{opacity:.55;cursor:not-allowed}
 .finance-skeleton-cards { height:120px; margin-bottom:45px; }
+/* The detail of a request, an expense or a payment */
+.finance-detail-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 14px}
+.finance-detail-head strong{font:400 26px Georgia,serif}
+.finance-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin:0 0 6px;border:1px solid var(--line);background:var(--line)}
+.finance-facts>div{background:var(--paper);padding:10px 12px;min-width:0}
+.finance-facts dt{color:#657582;font-size:12px;letter-spacing:.03em}
+.finance-facts dd{margin:3px 0 0;font-size:14px;overflow-wrap:anywhere}
+.finance-detail-heading{margin:22px 0 8px;font:600 14px var(--ui,Arial,sans-serif);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.finance-timeline{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--line)}
+.finance-timeline>li{position:relative;display:grid;gap:2px;padding:0 0 14px 12px}
+.finance-timeline>li::before{content:"";position:absolute;left:-21px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--carolina);border:2px solid var(--paper)}
+.finance-timeline>li.pending::before{background:var(--paper);border-color:#9aa8b1;outline:1px solid #9aa8b1}
+.finance-timeline>li.pending>b{font-weight:400;font-style:italic;color:#4c5f6b}
+.finance-timeline b{font-size:14px}
+.finance-timeline span,.finance-timeline small{color:#4c5f6b;font-size:12px}
+.finance-timeline q{font:italic 13px Georgia,serif;color:#4c5f6b;quotes:"“" "”";overflow-wrap:anywhere}
+.finance-detail-documents,.claim-documents{display:flex;flex-wrap:wrap;gap:6px}
+.claim-documents{margin-top:14px}
+.finance-detail-none{margin:0;color:#4c5f6b;font-size:13px}
+@media (max-width:460px){
+.finance-facts{grid-template-columns:1fr}
+}
 /* Tap targets: 44px on a small screen (docs/UI_PATTERNS.md, section 8). A text-like button in a row is only as tall as its text on a wide one. */
 @media (max-width:700px){
 .finance-tabs button,.finance-queue-item,.document-chip,.finance-row-action,.reimbursement-actions button,.claim-actions button,.claim-expenses button{min-height:44px;min-width:44px}

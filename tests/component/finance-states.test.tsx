@@ -409,3 +409,17 @@ describe("finance: a file shows its progress and can be sent again", () => {
     await expectNoSeriousViolations(view.baseElement);
   });
 });
+
+describe("finance: the one-click changes send one request, too", () => {
+  it("a claim's Back to editing pressed twice before the screen has drawn the first sends one request", async () => {
+    scriptFinance({ claims: [claim({ id: 3, status: "ready" })] });
+    fake.rpc("set_funding_claim_status").reply(ok(null));
+    renderFinance();
+    await waitForLoad();
+    await openTab("Funding claims");
+    const button = await screen.findByRole("button", { name: "Back to editing" });
+    act(() => { fireEvent.click(button); fireEvent.click(button); });
+    await waitFor(() => expect(fake.rpc("set_funding_claim_status").count).toBe(1));
+    expect(fake.rpc("set_funding_claim_status").calls[0].args[0]).toEqual({ p_claim_id: 3, p_status: "incomplete" });
+  });
+});

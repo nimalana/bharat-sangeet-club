@@ -10,8 +10,8 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  FINANCE_LIST_LIMIT, addFundingClaimExpense, approveFundingClaim, approveReimbursement, createFinanceDocumentUrl, createFundingClaim, declineReimbursement,
-  financeAvailable, loadFinanceWave, payPersonalReimbursement, recordClubExpense, recordFinanceIncome, recordFundingClaimDecision, recordFundingClaimPayment,
+  FINANCE_AUDIT_LIMIT, FINANCE_LIST_LIMIT, addFundingClaimExpense, approveFundingClaim, approveReimbursement, createFinanceDocumentUrl, createFundingClaim, declineReimbursement,
+  financeAvailable, listFinanceAudit, loadFinanceWave, payPersonalReimbursement, recordClubExpense, recordFinanceIncome, recordFundingClaimDecision, recordFundingClaimPayment,
   removeFinanceDocument, removeFundingClaimExpense, requestReimbursementChanges, setFundingClaimStatus, submitMemberReimbursement, updateFinanceExpense,
   updateMemberReimbursement, uploadFinanceDocument, voidFinanceExpense, voidFinancePayment, voidFundingClaim, withdrawMemberReimbursement,
   type PurchaseDetails,
@@ -37,7 +37,7 @@ describe("the finance api: the load wave", () => {
       ["from", "finance_expenses", "select", [["select", "*"], ["order", "purchase_date", { ascending: false }], ["order", "id", { ascending: false }], ["limit", 500]]],
       ["from", "personal_reimbursements", "select", [["select", "*"], ["order", "created_at", { ascending: false }], ["limit", 500]]],
       ["from", "finance_payments", "select", [["select", "*"], ["order", "payment_date", { ascending: false }], ["order", "id", { ascending: false }], ["limit", 500]]],
-      ["from", "finance_documents", "select", [["select", "id,document_type,title,storage_path,uploaded_by"], ["order", "created_at", { ascending: false }], ["limit", 2000]]],
+      ["from", "finance_documents", "select", [["select", "id,document_type,title,storage_path,uploaded_by,mime_type"], ["order", "created_at", { ascending: false }], ["limit", 2000]]],
       ["from", "finance_expense_documents", "select", [["select", "expense_id,document_id"], ["limit", 2000]]],
       ["from", "finance_reimbursement_documents", "select", [["select", "reimbursement_id,document_id"], ["limit", 2000]]],
       ["rpc", "get_finance_summary", "get_finance_summary"],
@@ -440,6 +440,35 @@ describe("the finance api: removing a document", () => {
     fake.rpc("remove_finance_document").reply(fail("A request needs at least one receipt"));
     await expect(removeFinanceDocument(11, sentences)).rejects.toMatchObject({ message: "A request needs at least one receipt" });
     expect(fake.storage("*", "remove").count).toBe(0);
+  });
+});
+
+describe("the finance api: the audit history", () => {
+  const row = { id: 9, entity_type: "personal_reimbursements", entity_id: 5, action: "approved", actor_id: "exec-2", created_at: "2026-10-03T15:00:00Z", before_data: { status: "submitted" }, after_data: { status: "approved" } };
+
+  it("asks for the newest rows of the records of one kind: the audit table, the kind, the ids, newest first, at most 100", async () => {
+    fake.from("finance_audit_log", "select").reply(ok([row]));
+    const rows = await listFinanceAudit("personal_reimbursements", [5]);
+    expect(rows).toEqual([row]);
+    expect(FINANCE_AUDIT_LIMIT).toBe(100);
+    const call = fake.from("finance_audit_log", "select").calls[0];
+    expect(chainOf(call)).toEqual([
+      ["select", "id,entity_type,entity_id,action,actor_id,created_at,before_data,after_data"],
+      ["eq", "entity_type", "personal_reimbursements"], ["in", "entity_id", [5]],
+      ["order", "created_at", { ascending: false }], ["order", "id", { ascending: false }], ["limit", 100],
+    ]);
+  });
+
+  it("asks for nothing when there is no id", async () => {
+    expect(await listFinanceAudit("finance_expenses", [])).toEqual([]);
+    expect(fake.from("finance_audit_log", "select").count).toBe(0);
+  });
+
+  it("a refusal is an ApiError with the database's sentence, and a call that gets no answer rejects as it is", async () => {
+    fake.from("finance_audit_log", "select").replyOnce(fail("permission denied for table finance_audit_log", "42501"));
+    await expect(listFinanceAudit("finance_payments", [7])).rejects.toBeInstanceOf(ApiError);
+    fake.from("finance_audit_log", "select").replyOnce(rejects());
+    await expect(listFinanceAudit("finance_payments", [7])).rejects.not.toBeInstanceOf(ApiError);
   });
 });
 

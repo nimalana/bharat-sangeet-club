@@ -42,6 +42,7 @@ const RICH: Partial<Data> = {
   documents: [{ id: 20, document_type: "receipt", title: "Harmonium receipt", storage_path: "member-9/harmonium.pdf", uploaded_by: "member-9" }],
   reimbursementDocuments: [{ reimbursement_id: 6, document_id: 20 }],
   claims: [claim({ id: 3, status: "draft" }), claim({ id: 4, title: "Spring showcase", status: "submitted" }), claim({ id: 5, title: "Winter gala", status: "approved", approved_amount: 80 })],
+  claimDocuments: [{ claim_id: 3, document_id: 20 }],
   claimExpenses: [{ claim_id: 3, expense_id: 1, claimed_amount: 80 }, { claim_id: 3, expense_id: 3, claimed_amount: 40 }, { claim_id: 4, expense_id: 2, claimed_amount: 40 }],
 };
 
@@ -282,7 +283,7 @@ describe("finance: with the keyboard alone", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: "reimbursements" })).toHaveAttribute("aria-selected", "true"));
     expect(focusedName()).toBe("reimbursements");
     // Into the panel: the request's buttons come in reading order.
-    expect(await tabOrder(user, 3)).toEqual(["Decline", "Request changes", "Approve"]);
+    expect(await tabOrder(user, 4)).toEqual(["Details of Tabla repair", "Decline", "Request changes", "Approve"]);
     await user.keyboard("{Enter}");
     await screen.findByRole("dialog", { name: "Approve reimbursement" });
     expect((document.activeElement as HTMLInputElement).getAttribute("name")).toBe("amount");

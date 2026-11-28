@@ -14,6 +14,7 @@ import { canManageClub } from "../../../lib/permissions";
 import { createSingleFlight } from "../../../lib/single-flight";
 import type { ClubRole, EventOption, GroupOption } from "../../../lib/db";
 import { ErrorBlock } from "../../../components/ui/error-block";
+import { PreviewDialog } from "../../../components/ui/preview-dialog";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
 import { Skeleton, SkeletonRows } from "../../../components/ui/skeleton";
 import { useFinanceCorrections } from "../hooks/use-finance-corrections";
@@ -21,14 +22,17 @@ import { useFinanceData } from "../hooks/use-finance-data";
 import { useFinanceDocuments } from "../hooks/use-finance-documents";
 import { useFinanceForms } from "../hooks/use-finance-forms";
 import { useActionRunner } from "../hooks/use-action-runner";
+import { useDetailTarget } from "../hooks/use-detail-target";
 import { useOneClickChanges } from "../hooks/use-one-click-changes";
 import { parseFlow, parseView } from "../address";
+import { buildDetail, whoIs } from "../detail";
 import { deriveFinance, filterPayments } from "../model";
 import type { FinanceFlow, FinanceView } from "../types";
 import { FinanceChangeDialogs } from "./change-dialogs";
 import { ClaimPaymentDialog, NewClaimDialog } from "./claim-dialogs";
 import { ClaimDocumentDialog, ReceiptDialog } from "./document-dialogs";
 import { ExpenseRegister } from "./expense-register";
+import { FinanceDetailDialog } from "./finance-detail";
 import { FinanceOverview } from "./finance-overview";
 import { FinanceTitleRow } from "./finance-title-row";
 import { FundingClaims } from "./funding-claims";
@@ -58,11 +62,19 @@ export function FinancePage({ user, role, groups, events }: {
   const [flight] = useState(createSingleFlight);
 
   const { snapshot, loading, loaded, loadFailed, retrying, retry, loadFinance, refreshAfterChange } = useFinanceData({ userId: user.id, canManage });
-  const { expenses, reimbursements, payments, claims, reimbursementDocuments, summary } = snapshot;
+  const { expenses, reimbursements, payments, claims, reimbursementDocuments, claimDocuments, summary } = snapshot;
   const finance = useMemo(() => deriveFinance(snapshot), [snapshot]);
   const { expenseById, profileById, documentById, lockedExpenseIds, activePayments, pendingReimbursements, unclaimedExpenses, claimChecklist } = finance;
 
-  const { uploadDocument, openDocument } = useFinanceDocuments({ userId: user.id, documentById });
+  const { uploadDocument, loadPreview } = useFinanceDocuments({ userId: user.id, documentById });
+  // The document being previewed, and the record whose detail is open (that one is in the address: ?request=, ?expense= or ?payment=).
+  const [previewId, setPreviewId] = useState<number | null>(null);
+  const detailTarget = useDetailTarget();
+  const who = useMemo(() => whoIs({ userId: user.id, canManage, profileById }), [user.id, canManage, profileById]);
+  const detail = useMemo(
+    () => (detailTarget.target ? buildDetail(detailTarget.target, { snapshot, names: { who, groupName: (id) => groups.find((group) => group.id === id)?.name ?? null } }) : null),
+    [detailTarget.target, snapshot, who, groups],
+  );
   const forms = useFinanceForms({ reimbursements, uploadDocument, refreshAfterChange, loadFinance });
   const changes = useOneClickChanges({ flight, refreshAfterChange, isClaimComplete: (claim) => claimChecklist(claim).complete });
   const runner = useActionRunner({ flight, refreshAfterChange });
@@ -92,16 +104,18 @@ export function FinancePage({ user, role, groups, events }: {
     <FinanceTabs views={canManage ? MANAGER_VIEWS : MEMBER_VIEWS} value={view} onChange={setView} />
 
     <FinancePanel view={view}>
-      {canManage && view === "overview" && <FinanceOverview payments={payments} filteredPayments={filteredPayments} query={query} setQuery={setQuery} flowFilter={flowFilter} setFlowFilter={setFlowFilter} askVoidPayment={ask.askVoidPayment} changing={changing} pendingReimbursements={pendingReimbursements} expenseById={expenseById} claims={claims} claimChecklist={claimChecklist} setView={setView} />}
+      {canManage && view === "overview" && <FinanceOverview payments={payments} filteredPayments={filteredPayments} query={query} setQuery={setQuery} flowFilter={flowFilter} setFlowFilter={setFlowFilter} askVoidPayment={ask.askVoidPayment} openDetail={detailTarget.open} changing={changing} pendingReimbursements={pendingReimbursements} expenseById={expenseById} claims={claims} claimChecklist={claimChecklist} setView={setView} />}
 
-      {canManage && view === "expenses" && <ExpenseRegister expenses={expenses} profileById={profileById} lockedExpenseIds={lockedExpenseIds} changing={changing} askEditExpense={ask.askEditExpense} askVoidExpense={ask.askVoidExpense} />}
+      {canManage && view === "expenses" && <ExpenseRegister expenses={expenses} profileById={profileById} lockedExpenseIds={lockedExpenseIds} changing={changing} openDetail={detailTarget.open} askEditExpense={ask.askEditExpense} askVoidExpense={ask.askVoidExpense} />}
 
-      {view === "reimbursements" && <ReimbursementList user={user} canManage={canManage} reimbursements={reimbursements} reimbursementDocuments={reimbursementDocuments} expenseById={expenseById} profileById={profileById} documentById={documentById} activePayments={activePayments} changing={changing} pendingKey={pendingKey} openDocument={openDocument} askRemoveDocument={ask.askRemoveDocument} setReceiptRequestId={setReceiptRequestId} askEditRequest={ask.askEditRequest} askWithdrawRequest={ask.askWithdrawRequest} askDecline={ask.askDecline} askRequestChanges={ask.askRequestChanges} askApprove={ask.askApprove} setConfirming={setConfirming} askVoidPayment={ask.askVoidPayment} askVoidExpense={ask.askVoidExpense} />}
+      {view === "reimbursements" && <ReimbursementList user={user} canManage={canManage} reimbursements={reimbursements} reimbursementDocuments={reimbursementDocuments} expenseById={expenseById} profileById={profileById} documentById={documentById} activePayments={activePayments} changing={changing} pendingKey={pendingKey} previewDocument={setPreviewId} openDetail={detailTarget.open} askRemoveDocument={ask.askRemoveDocument} setReceiptRequestId={setReceiptRequestId} askEditRequest={ask.askEditRequest} askWithdrawRequest={ask.askWithdrawRequest} askDecline={ask.askDecline} askRequestChanges={ask.askRequestChanges} askApprove={ask.askApprove} setConfirming={setConfirming} askVoidPayment={ask.askVoidPayment} askVoidExpense={ask.askVoidExpense} />}
 
-      {canManage && view === "claims" && <FundingClaims claims={claims} claimChecklist={claimChecklist} changing={changing} pendingKey={pendingKey} setModal={setModal} setClaimUploadId={setClaimUploadId} setClaimPaymentId={setClaimPaymentId} setConfirming={setConfirming} updateClaimStatus={changes.updateClaimStatus} askClaimDecision={ask.askClaimDecision} askVoidClaim={ask.askVoidClaim} askRemoveClaimExpense={ask.askRemoveClaimExpense} askAddClaimExpense={ask.askAddClaimExpense} />}
+      {canManage && view === "claims" && <FundingClaims claims={claims} claimDocuments={claimDocuments} documentById={documentById} previewDocument={setPreviewId} claimChecklist={claimChecklist} changing={changing} pendingKey={pendingKey} setModal={setModal} setClaimUploadId={setClaimUploadId} setClaimPaymentId={setClaimPaymentId} setConfirming={setConfirming} updateClaimStatus={changes.updateClaimStatus} askClaimDecision={ask.askClaimDecision} askVoidClaim={ask.askVoidClaim} askRemoveClaimExpense={ask.askRemoveClaimExpense} askAddClaimExpense={ask.askAddClaimExpense} />}
     </FinancePanel>
     </>}
 
+    {loaded && detail && <FinanceDetailDialog detail={detail} canManage={canManage} who={who} documentById={documentById} onPreview={setPreviewId} onClose={detailTarget.close} />}
+    <PreviewDialog open={previewId !== null} onClose={() => setPreviewId(null)} title={previewId === null ? "" : documentById.get(previewId)?.title || "Document"} load={() => loadPreview(previewId as number)} />
     {modal === "reimbursement" && <ReimbursementDialog groups={groups} events={events} eventRelated={eventRelated} setEventRelated={setEventRelated} saving={saving} uploads={uploads} recorded={recorded} onRetryUpload={retryUpload} onSubmit={forms.submitReimbursement} onClose={closeDialogs} />}
     {modal === "expense" && <ClubExpenseDialog groups={groups} events={events} eventRelated={eventRelated} setEventRelated={setEventRelated} saving={saving} uploads={uploads} recorded={recorded} onRetryUpload={retryUpload} onSubmit={forms.recordExpense} onClose={closeDialogs} />}
     {modal === "income" && <IncomeDialog saving={saving} onSubmit={forms.recordIncome} onClose={closeDialogs} />}

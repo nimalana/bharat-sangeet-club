@@ -175,7 +175,7 @@ describe("finance: voiding and editing expenses", () => {
     expect((field("Category") as HTMLSelectElement).value).toBe("Hospitality");
   });
 
-  it("an expense on a claim the funder has cannot be edited, only voided; a voided one has no buttons", async () => {
+  it("an expense on a claim the funder has cannot be edited, only voided; a voided one has only Details", async () => {
     scriptFinance({
       expenses: [expense(), expense({ id: 2, description: "Harmonium" }), expense({ id: 3, description: "Cables", status: "voided" })],
       claims: [claim({ status: "submitted" })], claimExpenses: [{ claim_id: 3, expense_id: 1, claimed_amount: 80 }],
@@ -187,7 +187,7 @@ describe("finance: voiding and editing expenses", () => {
     expect(within(row("Tabla repair")).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(within(row("Tabla repair")).getByRole("button", { name: "Void" })).toBeInTheDocument();
     expect(within(row("Harmonium")).getByRole("button", { name: "Edit" })).toBeInTheDocument();
-    expect(within(row("Cables")).queryAllByRole("button")).toHaveLength(0);
+    expect(within(row("Cables")).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(["Details of Cables"]);
   });
 });
 
@@ -520,30 +520,56 @@ describe("finance: the forms that save a record", () => {
   });
 });
 
-describe("finance: opening a stored document", () => {
+describe("finance: previewing a stored document", () => {
   const WITH_RECEIPT = {
-    documents: [{ id: 11, document_type: "receipt", title: "Taxi receipt", storage_path: "member-9/taxi.pdf", uploaded_by: "member-9" }],
+    documents: [{ id: 11, document_type: "receipt", title: "Taxi receipt", storage_path: "member-9/taxi.pdf", uploaded_by: "member-9", mime_type: "application/pdf" }],
     reimbursementDocuments: [{ reimbursement_id: 5, document_id: 11 }],
   };
 
-  it("opens it in a new tab through a link that lasts 90 seconds", async () => {
+  it("opens it in a preview: the link lasts 90 seconds, a PDF is shown in the frame, and Open in a new tab is a link of the preview", async () => {
     scriptFinance(WITH_RECEIPT);
     renderFinance();
     await waitForLoad();
     await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "▤ Taxi receipt" }));
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith("https://files.test/finance-private/member-9/taxi.pdf?signed", "_blank", "noopener,noreferrer"));
+    const preview = await screen.findByRole("dialog", { name: "Taxi receipt" });
+    await waitFor(() => expect(within(preview).getByTitle("Taxi receipt (PDF)")).toHaveAttribute("src", "https://files.test/finance-private/member-9/taxi.pdf?signed"));
     expect(fake.storage("finance-private", "createSignedUrl").calls[0].args).toEqual(["member-9/taxi.pdf", 90]);
+    const link = within(preview).getByRole("link", { name: "Open in a new tab" });
+    expect(link).toHaveAttribute("href", "https://files.test/finance-private/member-9/taxi.pdf?signed");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    // Nothing is opened behind the person's back: the old window.open of the chip is gone.
+    expect(window.open).not.toHaveBeenCalled();
   });
 
-  it("when no link can be made the person is told, as an error, and nothing opens", async () => {
+  it("a photo of a receipt is shown as an image; Close closes the preview and focus is back on the chip", async () => {
+    scriptFinance({ ...WITH_RECEIPT, documents: [{ ...WITH_RECEIPT.documents[0], mime_type: "image/png", storage_path: "member-9/taxi.png" }] });
+    renderFinance();
+    await waitForLoad();
+    await tab("reimbursements");
+    const chip = await screen.findByRole("button", { name: "▤ Taxi receipt" });
+    chip.focus();
+    fireEvent.click(chip);
+    const preview = await screen.findByRole("dialog", { name: "Taxi receipt" });
+    await waitFor(() => expect(within(preview).getByRole("img", { name: "Taxi receipt" })).toHaveAttribute("src", "https://files.test/finance-private/member-9/taxi.png?signed"));
+    fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(chip).toHaveFocus();
+  });
+
+  it("when no link can be made the preview says so with Try again, and a second try makes a new link; nothing opens", async () => {
     scriptFinance(WITH_RECEIPT);
-    fake.storage("finance-private", "createSignedUrl").reply(fail("Object not found"));
-    const notify = renderFinance();
+    fake.storage("finance-private", "createSignedUrl").replyOnce(fail("Object not found"));
+    renderFinance();
     await waitForLoad();
     await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "▤ Taxi receipt" }));
-    await waitFor(() => expect(notify.find("This finance document could not be opened").tone).toBe("error"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Object not found");
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByTitle("Taxi receipt (PDF)")).toBeInTheDocument());
+    expect(fake.storage("finance-private", "createSignedUrl").count).toBe(2);
     expect(window.open).not.toHaveBeenCalled();
   });
 
