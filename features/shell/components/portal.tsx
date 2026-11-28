@@ -21,9 +21,11 @@ import { ArchiveModal } from "../../recordings/components/archive-modal";
 import { usePortalData } from "../hooks/use-portal-data";
 import { attendanceTabFromUrl, usePortalNavigation } from "../hooks/use-portal-navigation";
 import { usePortalSession } from "../hooks/use-portal-session";
+import { SignupRequestsPage } from "../../admin/components/signup-requests-page";
 import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
 import { AttendancePage, ClubArchiveManager, FinancePage, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
 import { LoadingScreen } from "./loading-screen";
+import { PendingScreen, RejectedScreen } from "./membership-screens";
 import { PortalFooter } from "./portal-footer";
 import { PortalHeader } from "./portal-header";
 import { SectionRefused } from "./section-refused";
@@ -34,7 +36,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const { notify } = useToast();
   const data = usePortalData();
   const { archive, events, announcements, groups, memberships, resourceCount, dataLoading, setResourceCount, loadData } = data;
-  const { savedSession, authLoading, user, shellState, role, name, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
+  const { savedSession, authLoading, user, shellState, role, name, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
   const nav = usePortalNavigation({ user, loadData });
   const { section, navigate } = nav;
   const calendar = useCalendarPage({ onChanged: loadData });
@@ -50,6 +52,8 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   if (!isSupabaseConfigured()) return <SetupScreen />;
   if (!user) return nav.showLogin ? <LoginScreen onBack={nav.closeLogin} /> : <PublicSite onSignIn={nav.openLogin} initialRecordings={publicConcerts} />;
   if (shellState === "deactivated") return <DeactivatedScreen onSignOut={signOutQuietly} />;
+  if (shellState === "pending") return <PendingScreen onCheckAgain={retry} onSignOut={signOutQuietly} />;
+  if (shellState === "rejected") return <RejectedScreen onSignOut={signOutQuietly} />;
   if (shellState === "failed") return <BootstrapFailedScreen onRetry={retry} onSignOut={signOutQuietly} />;
   if (shellState === "loading") return <LoadingScreen />;
 
@@ -58,14 +62,16 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
   return (
     <main className="portal-shell">
-      <PortalHeader section={section} role={role} name={name} onNavigate={navigate} onSignOut={signOutQuietly} />
+      <PortalHeader section={section} role={role} name={name} pendingSignups={pendingSignups} onNavigate={navigate} onSignOut={signOutQuietly} />
 
       <SectionBoundary key={section}>
         {shown === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData } : undefined} />}
 
         {shown === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={nav.openAttendanceFor} onOpenRecordings={nav.openRecordingsFor} onOpenResources={nav.openResourcesFor} />}
 
-        {shown === "admin" && <AdminPage user={user} groups={groups} />}
+        {shown === "signups" && <SignupRequestsPage onCount={setPendingSignups} />}
+
+        {shown === "admin" && <AdminPage user={user} groups={groups} onPendingSignups={setPendingSignups} />}
 
         {shown === "recordings" && <><RecordingWorkspace user={user} groups={availableGroups} memberships={memberships} canManage={canManage} initialScope={nav.recordingScope === "club" ? "all" : nav.recordingScope} onDataChanged={loadData} />{canManage && <ClubArchiveManager items={archive} groups={groups} onAdd={() => setShowUpload(true)} onChanged={loadData} />}</>}
 

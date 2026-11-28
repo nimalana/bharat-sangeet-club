@@ -86,9 +86,12 @@ export type GroupOption = Pick<Subgroup, "id" | "name">;
 
 export type SubgroupMembership = Pick<Tables<"subgroup_memberships">, "subgroup_id" | "member_id" | "status" | "membership_role">;
 
-export type AccountStatus = "active" | "deactivated"; // profiles.status is text with a CHECK constraint
+// profiles.status is text with a CHECK constraint. A member is active or deactivated; a person who signed in for the first time is
+// "pending" until an executive approves the sign-up, or "rejected" when one declined it (they are not members and are never listed as such).
+export type MemberStatus = "active" | "deactivated";
+export type AccountStatus = MemberStatus | "pending" | "rejected";
 
-export type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: AccountStatus };
+export type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: MemberStatus };
 /** Who a row points at (a requester, a payee, a member in a roster): the columns a name line needs. */
 export type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 

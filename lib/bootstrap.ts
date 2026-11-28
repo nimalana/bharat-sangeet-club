@@ -5,6 +5,9 @@
 // (offline, a server error, no profile, a thrown request) the shell shows an
 // error with Retry instead of falling back to the default "member" role, and a
 // deactivated account always gets the deactivated screen when the profile says so.
+// A sign-up that no executive has approved yet ("pending") and one that was declined
+// ("rejected") get their own screens and no member data; like a deactivated account
+// they are recognised from the profile alone, whatever else the answer holds.
 // Pure, so it can be tested without a browser (tests/bootstrap.test.mjs).
 
 // Type-only import: lib modules that tests load directly import nothing at run time.
@@ -15,10 +18,12 @@ export type BootstrapProfile = { full_name: string; role: ClubRole; status: "act
 export type BootstrapOutcome<T> =
   | { kind: "ready"; boot: T & { profile: BootstrapProfile } }
   | { kind: "deactivated" }
+  | { kind: "pending" }
+  | { kind: "rejected" }
   | { kind: "failed" };
 
 // What the shell shows. "loading" is the state before any answer.
-export type ShellState = "loading" | "ready" | "failed" | "deactivated";
+export type ShellState = "loading" | "ready" | "failed" | "deactivated" | "pending" | "rejected";
 
 type Answer = { data: unknown; error: unknown };
 
@@ -35,6 +40,8 @@ export function interpretBootstrap<T>(answer: Answer): BootstrapOutcome<T> {
   const profile = answer.data.profile;
   // A deactivated account is recognised even if the rest of the answer is odd.
   if (profile.status === "deactivated") return { kind: "deactivated" };
+  if (profile.status === "pending") return { kind: "pending" };
+  if (profile.status === "rejected") return { kind: "rejected" };
   if (profile.status !== "active" || !isRole(profile.role)) return { kind: "failed" };
   return { kind: "ready", boot: answer.data as T & { profile: BootstrapProfile } };
 }

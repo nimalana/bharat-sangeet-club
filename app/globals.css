@@ -475,3 +475,7 @@ input::placeholder,textarea::placeholder{color:#65757e;opacity:1}
 @layer utilities{.attendance-checkin button{color:var(--ink)!important}}
 /* At phone width the code field and button stuck out of the card by about 17px: a 1fr track will not shrink below its content, minmax(0,1fr) will. */
 @media(max-width:680px){.attendance-checkin{grid-template-columns:minmax(0,1fr)}.attendance-checkin>div{min-width:0}.attendance-checkin input{box-sizing:border-box;width:100%}}
+/* The sign-up queue (Admin page and Sign-up requests page) and the count beside its menu entry. */
+.signup-panel{margin-bottom:20px}.signup-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;min-height:65px;border-bottom:1px solid var(--line);padding:8px 0}.signup-row b,.signup-row small{display:block}.signup-row b{font:400 15px Georgia,serif}.signup-row small{font-size:11px;color:#6b7a85;margin-top:3px}.signup-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.signup-subheading{margin:26px 0 4px;font:400 19px Georgia,serif}
+.nav-count{display:inline-block;min-width:18px;margin-left:4px;border-radius:9px;background:var(--maroon);padding:1px 6px;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+@media(max-width:620px){.signup-row{grid-template-columns:1fr}.signup-actions{justify-content:flex-start}}

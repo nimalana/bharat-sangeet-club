@@ -16,8 +16,10 @@ import { AdminAuditPanel } from "./admin-audit-panel";
 import { AdminMemberEditor } from "./admin-member-editor";
 import { AdminMembersPanel } from "./admin-members-panel";
 import { AdminStats } from "./admin-stats";
+import { SignupRequestsPanel } from "./signup-requests-panel";
 
-export function AdminPage({ user, groups }: { user: User; groups: Subgroup[] }) {
+/** `onPendingSignups` hears how many sign-ups wait for approval whenever the queue panel reads it (the shell shows the count in the menu). */
+export function AdminPage({ user, groups, onPendingSignups }: { user: User; groups: Subgroup[]; onPendingSignups?: (waiting: number) => void }) {
   const { notify } = useToast();
   const { members, memberships, announcements, audit, loading, load } = useAdminData();
   const [editingMember, setEditingMember] = useState<MemberProfile | null>(null);
@@ -57,6 +59,7 @@ export function AdminPage({ user, groups }: { user: User; groups: Subgroup[] }) 
   return <section className="section-shell page-section">
     <PageTitle eyebrow="ADMINISTRATION" title="Club control center" text="Manage identities, permissions, communications, and club health." />
     <AdminStats activeMembers={activeMembers} />
+    <SignupRequestsPanel onCount={onPendingSignups} />
     <div className="admin-grid">
       <AdminMembersPanel user={user} members={members} groups={groups} memberships={memberships} onChangeRole={changeRole} onEdit={setEditingMember} onChanged={load} />
       <AdminAnnouncementsPanel user={user} groups={groups} announcements={announcements} onSubmit={createAnnouncement} onChanged={load} />

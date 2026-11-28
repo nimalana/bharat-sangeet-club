@@ -17,6 +17,8 @@ export const adminActionLabels: Record<string, string> = {
   member_deleted: "Member deleted",
   member_deactivated: "Member deactivated",
   member_reactivated: "Member reactivated",
+  signup_approved: "Sign-up approved",
+  signup_declined: "Sign-up declined",
 };
 
 // Deactivate is the normal way to remove someone: it keeps their finance,
