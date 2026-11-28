@@ -172,7 +172,7 @@ test.describe("executive", () => {
     expect(await storageHasObject(page, "club-resources", ids.fileToDeletePath), "the file before the delete").toBe(true);
     await detail.getByRole("button", { name: "Delete", exact: true }).click();
     // The confirmation is rendered inside the detail panel, so both dialogs contain its text: take the confirmation itself.
-    const confirm = page.locator("#confirm-dialog-title", { hasText: "Delete this file for good?" }).locator("xpath=..");
+    const confirm = page.locator("#confirm-dialog-title", { hasText: "Delete this file?" }).locator("xpath=..");
     // Once the row is gone nobody can read the orphaned object any more (the storage policy needs the row), so "the file is not
     // there afterwards" cannot be asked of storage. What proves it is storage's own answer to the delete: it lists the object it removed.
     const storageAnswer = page.waitForResponse((response) => response.request().method() === "DELETE" && /\/storage\/v1\/object\/club-resources(\?|$)/.test(response.url()));

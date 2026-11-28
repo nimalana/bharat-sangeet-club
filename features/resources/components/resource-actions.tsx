@@ -32,7 +32,8 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, onCh
 }) {
   const { notify } = useToast();
   const [pending, setPending] = useState<Pending>(null);
-  const { pending: busy, run } = useAsyncAction(notify);
+  // One change at a time: a second press that lands before the buttons are disabled sends nothing.
+  const { pending: busy, run } = useAsyncAction(notify, { exclusive: true });
   if (!canManage) return null;
   const noun = item.node_kind === "folder" ? "folder" : item.node_kind === "link" ? "link" : "file";
   const unfinished = item.status === "failed" || item.status === "pending_upload";
@@ -110,7 +111,8 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, onCh
     {isExecutive && item.parent_id !== null && !unfinished && <p className="m-0 mt-2 text-xs text-[#4c5f6b]">Visibility follows the top-level folder this {noun} is in.</p>}
     {isExecutive && item.node_kind === "folder" && childCount > 0 && <p className="m-0 mt-2 text-xs text-[#4c5f6b]">Only empty folders can be deleted. Archive hides the folder and everything in it.</p>}
 
-    <Dialog open={pending === "edit"} onClose={busy ? () => {} : () => setPending(null)} className="max-w-[520px]">
+    {/* A form: a click beside it keeps what was typed, and nothing closes it while the change is saved. */}
+    <Dialog open={pending === "edit"} onClose={() => setPending(null)} dismissible={!busy} closeOnBackdrop={false} className="max-w-[520px]">
       <h2 className="m-0 text-2xl">{item.node_kind === "folder" ? "Rename folder" : `Edit ${noun}`}</h2>
       <form className="mt-4 grid gap-3" onSubmit={saveEdit}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="resource-edit-title">Name<Input id="resource-edit-title" name="title" defaultValue={item.title} required maxLength={160} /></label>
@@ -132,7 +134,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, onCh
     <ConfirmDialog open={pending === "restore"} title={`Restore this ${noun}?`} confirmLabel="Restore" busy={busy} onConfirm={() => setArchived(false)} onCancel={() => setPending(null)}>
       It becomes visible again to everyone who could see it before.
     </ConfirmDialog>
-    <ConfirmDialog open={pending === "delete"} title={unfinished ? "Discard this upload?" : `Delete this ${noun} for good?`} confirmLabel={unfinished ? "Discard" : "Delete"} danger busy={busy} onConfirm={deleteForGood} onCancel={() => setPending(null)}>
+    <ConfirmDialog open={pending === "delete"} title={unfinished ? "Discard this upload?" : `Delete this ${noun}?`} confirmLabel={unfinished ? "Discard" : "Delete"} danger busy={busy} onConfirm={deleteForGood} onCancel={() => setPending(null)}>
       {unfinished ? "The unfinished upload is removed from the library." : <>&ldquo;{item.title}&rdquo; will be permanently deleted. This cannot be undone. Archive it instead if you might want it back.</>}
     </ConfirmDialog>
   </div>;

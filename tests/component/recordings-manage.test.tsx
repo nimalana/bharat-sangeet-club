@@ -6,13 +6,17 @@
 // Everything runs for real against the fake client: what a write sent is read from the call, what the person sees from the DOM
 // and from the toasts the screen asked for.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArchiveModal } from "../../features/recordings/components/archive-modal";
 import { ClubArchiveManager } from "../../features/recordings/components/club-archive-manager";
 import type { ClubArchiveItem } from "../../lib/db";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 const typeInto = (scope: HTMLElement, label: string, value: string) => fireEvent.change(within(scope).getByLabelText(label), { target: { value } });
 const submitIn = (scope: HTMLElement) => fireEvent.submit(scope.querySelector("form")!);
@@ -233,7 +237,7 @@ describe("deleting a recording: what the confirmation says and what is refused",
     renderBar({}, { notes: [FILE_NOTE] });
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("Delete this recording for good?")).toBeInTheDocument();
+    expect(within(dialog).getByText("Delete this recording?")).toBeInTheDocument();
     expect(dialog).toHaveTextContent("The take and its 1 notation item will be permanently deleted. This cannot be undone. Archive it instead if you might want it back.");
   });
 
@@ -459,27 +463,41 @@ describe("the club recording list", () => {
 });
 
 describe("opening a club recording", () => {
-  it("signs the file for five minutes and opens it in a new tab that cannot reach back", async () => {
+  // Phase 3.3: the file opens in a preview over the page (PreviewDialog), not in another tab; "Open in a new tab" is in the preview.
+  it("signs the file for five minutes and shows it in a preview, with a link that opens it in a new tab that cannot reach back", async () => {
     renderArchive();
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    await waitFor(() => expect(window.open).toHaveBeenCalledTimes(1));
-    expect(window.open).toHaveBeenCalledWith("https://files.test/club-archive/u-1/spring.mp4?signed", "_blank", "noopener,noreferrer");
+    const dialog = await screen.findByRole("dialog", { name: "Spring concert" });
+    const player = await within(dialog).findByLabelText("spring.mp4");
+    expect(player.tagName).toBe("VIDEO");
+    expect(player).toHaveAttribute("src", "https://files.test/club-archive/u-1/spring.mp4?signed");
+    const link = within(dialog).getByRole("link", { name: "Open in a new tab" });
+    expect(link).toHaveAttribute("href", "https://files.test/club-archive/u-1/spring.mp4?signed");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(fake.storage("club-archive", "createSignedUrl").calls[0].args).toEqual(["u-1/spring.mp4", 300]);
+    expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("a file that cannot be signed is reported and nothing is opened", async () => {
-    fake.storage("club-archive", "createSignedUrl").reply(fail("Object not found"));
-    const { notify } = renderArchive();
+  it("a file that cannot be signed is said in the preview, with Try again, and nothing is opened", async () => {
+    fake.storage("club-archive", "createSignedUrl").replyOnce(fail("Object not found")).reply(ok({ signedUrl: "https://files.test/club-archive/u-1/spring.mp4?again" }));
+    renderArchive();
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    await waitFor(() => expect(notify.find("This file could not be opened").tone).toBe("error"));
+    const dialog = await screen.findByRole("dialog", { name: "Spring concert" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Object not found");
     expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+    expect(await within(dialog).findByLabelText("spring.mp4")).toHaveAttribute("src", "https://files.test/club-archive/u-1/spring.mp4?again");
   });
 
   it("storage that answers with no link is reported the same way", async () => {
     fake.storage("club-archive", "createSignedUrl").reply(ok(null));
-    const { notify } = renderArchive();
+    renderArchive();
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    await waitFor(() => expect(notify.find("This file could not be opened").tone).toBe("error"));
+    const dialog = await screen.findByRole("dialog", { name: "Spring concert" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("The file could not be opened.");
     expect(window.open).not.toHaveBeenCalled();
   });
 });
@@ -659,7 +677,7 @@ describe("the form that adds a club recording", () => {
     const onSaved = vi.fn();
     const view = render(<ArchiveModal user={userOf("u-me")} onClose={onClose} onSaved={onSaved} />);
     const form = view.container.querySelector("form")!;
-    const backdrop = view.container.querySelector(".modal-backdrop")!;
+    const backdrop = form.closest("[role=dialog]")!.parentElement!;
     return { notify, onClose, onSaved, form, backdrop };
   }
   const fill = (form: HTMLElement, values: { title?: string; description?: string; raga?: string; tala?: string; access?: string; file?: File | null }) => {
@@ -764,14 +782,16 @@ describe("the form that adds a club recording", () => {
     expect(within(form).getByRole("button", { name: "Save recording" })).toBeEnabled();
   });
 
-  it("the close button and a press on the backdrop close the form; a press inside it does not", () => {
+  // Phase 3.4: the form is on the shared Dialog. A click beside a form must not lose what was typed, so only the close button and Escape close it.
+  it("the close button and Escape close the form; a click beside it or inside it does not", () => {
     const { onClose, form, backdrop } = renderModal();
-    fireEvent.mouseDown(within(form).getByText("Add a club recording"));
-    fireEvent.mouseDown(within(form).getByLabelText("Title"));
+    fireEvent.click(within(form).getByText("Add a club recording"));
+    fireEvent.click(within(form).getByLabelText("Title"));
+    fireEvent.click(backdrop);
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.mouseDown(backdrop);
+    fireEvent.click(within(form).getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.click(within(form).getByRole("button", { name: "×" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

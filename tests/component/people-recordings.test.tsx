@@ -32,7 +32,7 @@
 // Dropped on purpose: nothing that checked behaviour. The text-style `doesNotMatch` lines are dropped (see above).
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClubArchiveManager } from "../../features/recordings/components/club-archive-manager";
 import type { ClubArchiveItem } from "../../lib/db";
 import { RecordingWorkspace } from "../../features/recordings/components/recording-workspace";
@@ -44,6 +44,10 @@ import { FILE_NOT_DELETED } from "../../lib/storage-remove";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, rejects } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 // The waveform player draws on a canvas that jsdom does not have. Only this third-party library is replaced.
 vi.mock("wavesurfer.js", () => ({

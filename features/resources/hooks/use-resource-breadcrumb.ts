@@ -1,5 +1,5 @@
 // The breadcrumb: the open folder and its ancestors, fetching only what is missing. A folder that cannot be found (it was deleted, is
-// archived outside the archived view, or cannot be read) sends the library back to the top with a toast.
+// archived outside the archived view, or cannot be read) sends the library back to the top with a toast, replacing the address.
 import { useEffect, useMemo, useState } from "react";
 import { readCache, writeCache } from "../../../lib/cache";
 import { crumbCacheKey, resolveFolderChain } from "../../../lib/resources-query";
@@ -14,7 +14,7 @@ export type ResourceBreadcrumbOptions = {
   showArchived: boolean;
   /** The rows on screen: ancestors among them are not fetched again. */
   items: ResourceItem[];
-  changeFolder: (next: number | null) => void;
+  changeFolder: (next: number | null, options?: { replace?: boolean }) => void;
   fetchOneFolder: (id: number) => Promise<ResourceItem | null>;
 };
 
@@ -36,7 +36,8 @@ export function useResourceBreadcrumb({ userId, folderId, version, showArchived,
       const found = chain[chain.length - 1];
       if (!found || found.id !== folderId || (found.status === "archived" && !showArchived)) {
         notify("That folder could not be found");
-        changeFolder(null);
+        // The address is corrected in place: Back must not return to a folder that opens nothing.
+        changeFolder(null, { replace: true });
         return;
       }
       writeCache(userId, crumbCacheKey(folderId), chain);

@@ -12,6 +12,10 @@ import { attachThumbnails } from "../../features/resources/thumbnails";
 import type { ResourceItem } from "../../features/resources/types";
 import { ensureFolderPath, shownMessage, uploadOne, type UploadBatch, type UploadSink } from "../../features/resources/upload-batch";
 import { fail, fake, ok, rejects } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 // `.single()` against the fake (and against PostgREST) answers with an error when no row comes back, so the guards that read "the
 // database sent no row" can only be reached by an api function that answers null. These three are passed through unless a test
@@ -212,8 +216,8 @@ describe("upload-batch: uploadOne", () => {
     const { sink, added, replaced } = newSink();
     const file = entry("Raga Notes.pdf", "Concert/Raga Notes.pdf");
     await uploadOne(newBatch({ folderId: null }), sink, file);
-    // Concert (folder row), then the file's row, the file itself, then the mark.
-    expect(fake.calls.map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual(["from:resources:insert", "from:resources:insert", "storage:club-resources:upload", "from:resources:update"]);
+    // Concert (folder row), then the file's row, the file itself (the upload reads the session first: no network), then the mark.
+    expect(fake.calls.map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual(["from:resources:insert", "from:resources:insert", "auth:auth:getSession", "storage:club-resources:upload", "from:resources:update"]);
     const [, pending] = fake.from("resources", "insert").calls;
     expect(pending.payload).toEqual({
       node_kind: "file", media_kind: "document", title: "Raga Notes.pdf", description: "", parent_id: 30, subgroup_id: 4, visibility: "members", storage_bucket: "club-resources", storage_path: "u-1/imp-1/Concert/Raga-Notes.pdf",
@@ -222,7 +226,8 @@ describe("upload-batch: uploadOne", () => {
     const [upload] = fake.storage("club-resources", "upload").calls;
     expect(upload.args[0]).toBe("u-1/imp-1/Concert/Raga-Notes.pdf");
     expect(upload.args[1]).toBe(file.file);
-    expect(upload.args[2]).toEqual({ contentType: "application/pdf", upsert: false });
+    expect(upload.args[2]).toEqual({ upsert: false });
+    expect((upload.args[1] as File).type).toBe("application/pdf");
     const [mark] = fake.from("resources", "update").calls;
     expect((mark.payload as { status: string }).status).toBe("ready");
     expect(mark.used("eq", "id", 31)).toBe(true);
@@ -238,7 +243,10 @@ describe("upload-batch: uploadOne", () => {
     await uploadOne(newBatch(), sink, { file: new File(["z"], "blob.bin", { type: "" }), relativePath: "", state: "queued" });
     const [pending] = fake.from("resources", "insert").calls;
     expect(pending.payload).toMatchObject({ media_kind: "other", mime_type: "application/octet-stream", title: "blob.bin", original_filename: "blob.bin", parent_id: 10, storage_path: "u-1/imp-1/blob.bin" });
-    expect(fake.storage("club-resources", "upload").calls[0].args[2]).toEqual({ contentType: "application/octet-stream", upsert: false });
+    // The file has no type of its own: it is sent as the type the row says (what a browser writes for such a part, and what the bucket takes for scores).
+    const [sent] = fake.storage("club-resources", "upload").calls;
+    expect(sent.args[2]).toEqual({ upsert: false });
+    expect((sent.args[1] as File).type).toBe("application/octet-stream");
   });
 
   it("cuts the title of the row to 160 characters and keeps the whole file name beside it", async () => {

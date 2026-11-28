@@ -6,11 +6,13 @@ import { createClubArchiveUrl, deleteClubArchiveItem, isInRecordingRoom, removeC
 import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../../lib/archive-sharing";
 import type { ClubArchiveItem } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
+import { useAsyncAction } from "../../../lib/hooks/use-async-action";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
+import { PreviewDialog } from "../../../components/ui/preview-dialog";
 import { Textarea } from "../../../components/ui/textarea";
 import { useToast } from "../../../components/ui/toast";
 
@@ -27,53 +29,58 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged }: {
   const [deleting, setDeleting] = useState<ClubArchiveItem | null>(null);
   const [sharedDelete, setSharedDelete] = useState(false);
   const [editError, setEditError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState<ClubArchiveItem | null>(null);
+  // One change at a time: a second press that lands before the buttons are disabled sends nothing.
+  const { pending: busy, run } = useAsyncAction(notify, { exclusive: true });
 
-  async function play(item: ClubArchiveItem) {
-    const { data: url, error } = await attempt(() => createClubArchiveUrl(item.storage_path));
-    if (error || !url) { notify("This file could not be opened", "error"); return; }
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
+  // The file is shown in a preview over this page (PreviewDialog; the signed link is made when it opens). A recording or a video plays,
+  // a PDF or an image shows, any other file has a download link; "Open in a new tab" is in every preview. The type is read from the
+  // file's extension (the archive row has no type of its own).
+  const previewFile = async (item: ClubArchiveItem) => {
+    const url = await createClubArchiveUrl(item.storage_path);
+    if (!url) throw new Error("");
+    return { url, mime: "", name: item.storage_path.split("/").pop()?.replace(/^[0-9a-f-]{36}-/, "") || item.title };
+  };
 
-  async function save(event: FormEvent<HTMLFormElement>) {
+  function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editing) return;
     const form = new FormData(event.currentTarget);
-    const text = (name: string) => String(form.get(name) || "").trim();
-    const access = text("access") as ArchiveAccess;
-    setEditError("");
-    setBusy(true);
-    // A group's recording room plays this file with the access set here, so
-    // lowering it to Executives only would break that copy. Checked only when it matters.
-    if (loweringToExecutivesOnly(archiveAccess(editing), access)) {
-      const room = await attempt(() => isInRecordingRoom(editing.storage_path));
-      if (room.error) { setBusy(false); setEditError(friendlyError(room.error, "The recording could not be checked.")); return; }
-      if (accessChangeBreaksPlayback(archiveAccess(editing), access, room.data)) { setBusy(false); setEditError(SHARED_ACCESS_NOTICE); return; }
-    }
-    const { data, error } = await attempt(() => updateClubArchiveItem(editing.id, {
-      title: text("title"), description: text("description"), raga: text("raga") || null, tala: text("tala") || null,
-      event_date: text("event_date") || null, ...accessColumns(access),
-    }));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
-    setEditing(null); notify("Recording updated"); await onChanged();
+    void run(async () => {
+      const text = (name: string) => String(form.get(name) || "").trim();
+      const access = text("access") as ArchiveAccess;
+      setEditError("");
+      // A group's recording room plays this file with the access set here, so
+      // lowering it to Executives only would break that copy. Checked only when it matters.
+      if (loweringToExecutivesOnly(archiveAccess(editing), access)) {
+        const room = await attempt(() => isInRecordingRoom(editing.storage_path));
+        if (room.error) { setEditError(friendlyError(room.error, "The recording could not be checked.")); return; }
+        if (accessChangeBreaksPlayback(archiveAccess(editing), access, room.data)) { setEditError(SHARED_ACCESS_NOTICE); return; }
+      }
+      const { data, error } = await attempt(() => updateClubArchiveItem(editing.id, {
+        title: text("title"), description: text("description"), raga: text("raga") || null, tala: text("tala") || null,
+        event_date: text("event_date") || null, ...accessColumns(access),
+      }));
+      if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
+      setEditing(null); notify("Recording updated"); await onChanged();
+    });
   }
 
-  async function remove() {
-    if (!deleting) return;
-    setBusy(true);
-    // A group recording copied into the recording room shares this file.
-    const room = await attempt(() => isInRecordingRoom(deleting.storage_path));
-    if (room.error) { setBusy(false); notify(friendlyError(room.error, "The recording could not be checked."), "error"); return; }
-    if (room.data) { setBusy(false); setDeleting(null); setSharedDelete(true); return; }
-    // File first: storage only allows the delete while the row exists. An empty answer from
-    // storage is a refused delete, not a success (see lib/storage-remove.ts).
-    const problem = await removeClubArchiveFile(deleting.storage_path, { confirmGone: true });
-    if (problem) { setBusy(false); notify(problem, "error"); return; }
-    const { data, error } = await attempt(() => deleteClubArchiveItem(deleting.id));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
-    setDeleting(null); notify("Recording deleted"); await onChanged();
+  function remove() {
+    if (!deleting) return Promise.resolve();
+    return run(async () => {
+      // A group recording copied into the recording room shares this file.
+      const room = await attempt(() => isInRecordingRoom(deleting.storage_path));
+      if (room.error) { notify(friendlyError(room.error, "The recording could not be checked."), "error"); return; }
+      if (room.data) { setDeleting(null); setSharedDelete(true); return; }
+      // File first: storage only allows the delete while the row exists. An empty answer from
+      // storage is a refused delete, not a success (see lib/storage-remove.ts).
+      const problem = await removeClubArchiveFile(deleting.storage_path, { confirmGone: true });
+      if (problem) { notify(problem, "error"); return; }
+      const { data, error } = await attempt(() => deleteClubArchiveItem(deleting.id));
+      if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
+      setDeleting(null); notify("Recording deleted"); await onChanged();
+    });
   }
 
   return <section className="section-shell page-section" aria-labelledby="club-archive-heading">
@@ -91,14 +98,15 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged }: {
         </div>
         <Badge variant={access === "public" ? undefined : "muted"}>{accessLabel[access]}</Badge>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => void play(item)}>Open</Button>
+          <Button variant="secondary" size="sm" onClick={() => setPreviewing(item)}>Open</Button>
           <Button variant="secondary" size="sm" onClick={() => { setEditError(""); setEditing(item); }}>Edit</Button>
           <Button variant="danger" size="sm" onClick={() => setDeleting(item)}>Delete</Button>
         </div>
       </article>;
     })}</div> : <p className="workspace-empty">No club recordings yet.</p>}
 
-    <Dialog open={Boolean(editing)} onClose={busy ? () => {} : () => setEditing(null)} className="max-w-[560px]">
+    {/* A form: a click beside it keeps what was typed, and nothing closes it while the change is saved. */}
+    <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} dismissible={!busy} closeOnBackdrop={false} className="max-w-[560px]">
       {editing && <>
         <h2 className="m-0 text-2xl">Edit club recording</h2>
         <form key={editing.id} className="mt-4 grid gap-3" onSubmit={save}>
@@ -124,6 +132,8 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged }: {
       <p className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">{SHARED_DELETE_NOTICE.body}</p>
       <div className="mt-6 flex justify-end"><Button variant="secondary" onClick={() => setSharedDelete(false)}>Close</Button></div>
     </Dialog>
+
+    <PreviewDialog open={previewing !== null} onClose={() => setPreviewing(null)} title={previewing?.title ?? ""} load={() => (previewing ? previewFile(previewing) : Promise.reject(new Error("")))} />
 
     <ConfirmDialog open={Boolean(deleting)} title="Delete this club recording?" confirmLabel="Delete recording" danger busy={busy} onConfirm={remove} onCancel={() => setDeleting(null)}>
       &ldquo;{deleting?.title}&rdquo; and its file will be permanently deleted{deleting?.is_public ? " and it will disappear from the public concert page" : ""}. This cannot be undone.

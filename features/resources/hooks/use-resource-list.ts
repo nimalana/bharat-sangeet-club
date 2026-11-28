@@ -10,6 +10,7 @@ import { fetchResource, listArchivedAmong, listChildFolderIds, listResourcesPage
 import { clearCachePrefix, readCache, writeCache } from "../../../lib/cache";
 import type { ScopeFilter } from "../../../lib/db";
 import { useDebounced } from "../../../lib/hooks/use-debounced";
+import { useUrlState } from "../../../lib/hooks/use-url-state";
 import { keepRowsOnFailure } from "../../../lib/refresh";
 import {
   RESOURCE_PAGE_SIZE, buildListPlan, isFlatListing, listCacheKey, mergePage, orderForDisplay, resolveSubtreeFolderIds, subtreeCacheKey, type LibraryTab, type SortKey,
@@ -30,7 +31,13 @@ export type ResourceListOptions = {
 export function useResourceList({ userId, onResourceCountChange, initialScope }: ResourceListOptions) {
   const { notify } = useToast();
   const [tab, setTab] = useState<LibraryTab>("all");
-  const [query, setQuery] = useState("");
+  // The search box keeps its own text (a controlled input must change in the event that typed); the address (?q=) follows it, a reload or a
+  // link brings it back, and the box follows the address when Back or a link changes it. Typing replaces the entry instead of adding one.
+  const [urlQuery, setUrlQuery] = useUrlState("q", { defaultValue: "", history: "replace" });
+  const [query, setQueryText] = useState(urlQuery);
+  const [seenQuery, setSeenQuery] = useState(urlQuery);
+  if (urlQuery !== seenQuery) { setSeenQuery(urlQuery); setQueryText(urlQuery); }
+  const setQuery = (text: string) => { setQueryText(text); setUrlQuery(text.trim() ? text : ""); };
   // What is sent to the database: the search box after a 250 ms pause.
   const [search, setSearch] = useDebounced(query, 250);
   const { scope, setScope, folderId, changeFolder } = useResourceFolder(initialScope);
@@ -77,7 +84,8 @@ export function useResourceList({ userId, onResourceCountChange, initialScope }:
     const cached = more ? undefined : readCache<ListSnapshot>(userId, cacheKey);
     if (!more) {
       if (cached) { setItems(cached.rows); setHasMore(cached.hasMore); setTotal(cached.total); fetchedRef.current = cached.fetched; shownKeyRef.current = cacheKey; setLoading(false); }
-      else if (lastKeyRef.current !== cacheKey) setLoading(true);
+      // Rows of this list on screen are refreshed quietly; anything else (another list, or a first read that failed and is tried again) shows the skeleton.
+      else if (lastKeyRef.current !== cacheKey || shownKeyRef.current !== cacheKey) setLoading(true);
       lastKeyRef.current = cacheKey;
     } else setLoadingMore(true);
     setLoadError("");

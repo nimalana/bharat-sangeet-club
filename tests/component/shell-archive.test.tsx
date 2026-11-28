@@ -2,9 +2,13 @@
 // The form's own behaviour (the upload, the orphan file when the row cannot be saved) is in people-recordings.test.tsx;
 // this is the part that lives in the shell: opening it, closing it, and what happens once a recording is saved.
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { fake, ok } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 const toast = () => document.querySelector(".toast") as HTMLElement | null;
 const item = (id: number, title: string) => ({ id, title, description: "", type: "recording", storage_path: `u/${id}.mp3`, visibility: "members", is_public: false, event_date: null, raga: null, tala: null, created_at: "2026-01-01T00:00:00Z", subgroup_id: null });

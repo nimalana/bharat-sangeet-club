@@ -6,6 +6,7 @@ import { attempt } from "../../../lib/api/attempt";
 import { deleteRecordingNote, deleteRecordingRow, recordingBucket, removeNotationFile, removeRecordingTake, setRecordingStatus, updateRecordingDetails, updateRecordingNote } from "../../../lib/api/recordings";
 import type { Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
+import { useAsyncAction } from "../../../lib/hooks/use-async-action";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
@@ -31,47 +32,48 @@ export function RecordingManageBar({ recording, user, canManage, notes, onChange
 }) {
   const { notify } = useToast();
   const [dialog, setDialog] = useState<"edit" | "archive" | "restore" | "delete" | null>(null);
-  const [busy, setBusy] = useState(false);
+  // One change at a time: a second press that lands before the buttons are disabled sends nothing.
+  const { pending: busy, run } = useAsyncAction(notify, { exclusive: true });
   const mine = recording.uploaded_by === user.id;
   if (!mine && !canManage) return null;
   const sharedWithLegacy = recordingBucket(recording) !== "recordings";
 
-  async function saveDetails(event: FormEvent<HTMLFormElement>) {
+  function saveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const text = (name: string) => String(form.get(name) || "").trim();
-    setBusy(true);
-    const { data, error } = await attempt(() => updateRecordingDetails(recording.id, {
-      title: text("title"), description: text("description"), recording_kind: text("recording_kind") || recording.recording_kind,
-      raga: text("raga") || null, tala: text("tala") || null, sruthi: text("sruthi") || null, tempo: text("tempo") || null,
-    }));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
-    setDialog(null); notify("Recording details saved"); await onChanged();
+    void run(async () => {
+      const text = (name: string) => String(form.get(name) || "").trim();
+      const { data, error } = await attempt(() => updateRecordingDetails(recording.id, {
+        title: text("title"), description: text("description"), recording_kind: text("recording_kind") || recording.recording_kind,
+        raga: text("raga") || null, tala: text("tala") || null, sruthi: text("sruthi") || null, tempo: text("tempo") || null,
+      }));
+      if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
+      setDialog(null); notify("Recording details saved"); await onChanged();
+    });
   }
 
-  async function setStatus(status: "archived" | "published") {
-    setBusy(true);
-    const { data, error } = await attempt(() => setRecordingStatus(recording.id, status));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to change this recording."), "error"); return; }
-    setDialog(null); notify(status === "archived" ? "Recording archived" : "Recording restored"); await onRemoved();
+  function setStatus(status: "archived" | "published") {
+    return run(async () => {
+      const { data, error } = await attempt(() => setRecordingStatus(recording.id, status));
+      if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to change this recording."), "error"); return; }
+      setDialog(null); notify(status === "archived" ? "Recording archived" : "Recording restored"); await onRemoved();
+    });
   }
 
-  async function deleteRecording() {
-    setBusy(true);
-    // 1. notation files, 2. the take itself, 3. the row (notes go with it).
-    for (const note of notes) {
-      if (!note.storage_path) continue;
-      const problem = await removeNotationFile(note.storage_path);
-      if (problem) { setBusy(false); notify(problem, "error"); return; }
-    }
-    const problem = await removeRecordingTake(recording.storage_path);
-    if (problem) { setBusy(false); notify(problem, "error"); return; }
-    const { data, error } = await attempt(() => deleteRecordingRow(recording.id));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
-    setDialog(null); notify("Recording deleted"); await onRemoved();
+  function deleteRecording() {
+    return run(async () => {
+      // 1. notation files, 2. the take itself, 3. the row (notes go with it).
+      for (const note of notes) {
+        if (!note.storage_path) continue;
+        const problem = await removeNotationFile(note.storage_path);
+        if (problem) { notify(problem, "error"); return; }
+      }
+      const problem = await removeRecordingTake(recording.storage_path);
+      if (problem) { notify(problem, "error"); return; }
+      const { data, error } = await attempt(() => deleteRecordingRow(recording.id));
+      if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
+      setDialog(null); notify("Recording deleted"); await onRemoved();
+    });
   }
 
   return <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-4">
@@ -82,7 +84,8 @@ export function RecordingManageBar({ recording, user, canManage, notes, onChange
       : <Button variant="secondary" size="sm" onClick={() => setDialog("archive")}>Archive</Button>}
     {!sharedWithLegacy && <Button variant="danger" size="sm" onClick={() => setDialog("delete")}>Delete</Button>}
 
-    <Dialog open={dialog === "edit"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[560px]">
+    {/* A form: a click beside it keeps what was typed, and nothing closes it while the change is saved. */}
+    <Dialog open={dialog === "edit"} onClose={() => setDialog(null)} dismissible={!busy} closeOnBackdrop={false} className="max-w-[560px]">
       <h2 className="m-0 text-2xl">Edit recording details</h2>
       <form className="mt-4 grid gap-3" onSubmit={saveDetails}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor="recording-edit-title">Title<Input id="recording-edit-title" name="title" defaultValue={recording.title} required maxLength={160} /></label>
@@ -107,7 +110,7 @@ export function RecordingManageBar({ recording, user, canManage, notes, onChange
     <ConfirmDialog open={dialog === "restore"} title="Restore this recording?" confirmLabel="Restore" busy={busy} onConfirm={() => setStatus("published")} onCancel={() => setDialog(null)}>
       It becomes visible to the group again.
     </ConfirmDialog>
-    <ConfirmDialog open={dialog === "delete"} title="Delete this recording for good?" confirmLabel="Delete recording" danger busy={busy} onConfirm={deleteRecording} onCancel={() => setDialog(null)}>
+    <ConfirmDialog open={dialog === "delete"} title="Delete this recording?" confirmLabel="Delete recording" danger busy={busy} onConfirm={deleteRecording} onCancel={() => setDialog(null)}>
       The take{notes.length ? ` and its ${notes.length} notation ${notes.length === 1 ? "item" : "items"}` : ""} will be permanently deleted. This cannot be undone. Archive it instead if you might want it back.
     </ConfirmDialog>
   </div>;
@@ -118,37 +121,37 @@ export function NoteActions({ note, user, canManage, onChanged }: {
 }) {
   const { notify } = useToast();
   const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { pending: busy, run } = useAsyncAction(notify, { exclusive: true });
   if (note.uploaded_by !== user.id && !canManage) return null;
 
-  async function save(event: FormEvent<HTMLFormElement>) {
+  function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const changes: { title: string; body?: string } = { title: String(form.get("title") || "").trim() };
     if (note.note_type === "text") changes.body = String(form.get("body") || "").trim();
-    setBusy(true);
-    const { data, error } = await attempt(() => updateRecordingNote(note.id, changes));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this note."), "error"); return; }
-    setDialog(null); notify("Notation saved"); await onChanged();
+    void run(async () => {
+      const { data, error } = await attempt(() => updateRecordingNote(note.id, changes));
+      if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this note."), "error"); return; }
+      setDialog(null); notify("Notation saved"); await onChanged();
+    });
   }
 
-  async function remove() {
-    setBusy(true);
-    if (note.storage_path) {
-      const problem = await removeNotationFile(note.storage_path);
-      if (problem) { setBusy(false); notify(problem, "error"); return; }
-    }
-    const { data, error } = await attempt(() => deleteRecordingNote(note.id));
-    setBusy(false);
-    if (error || !data?.length) { notify(friendlyError(error, "The notation could not be deleted."), "error"); return; }
-    setDialog(null); notify("Notation deleted"); await onChanged();
+  function remove() {
+    return run(async () => {
+      if (note.storage_path) {
+        const problem = await removeNotationFile(note.storage_path);
+        if (problem) { notify(problem, "error"); return; }
+      }
+      const { data, error } = await attempt(() => deleteRecordingNote(note.id));
+      if (error || !data?.length) { notify(friendlyError(error, "The notation could not be deleted."), "error"); return; }
+      setDialog(null); notify("Notation deleted"); await onChanged();
+    });
   }
 
   return <div className="mt-2 flex gap-2">
     <Button variant="ghost" size="sm" onClick={() => setDialog("edit")}>{note.note_type === "file" ? "Rename" : "Edit"}</Button>
     <Button variant="ghost" size="sm" onClick={() => setDialog("delete")}>Delete</Button>
-    <Dialog open={dialog === "edit"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[520px]">
+    <Dialog open={dialog === "edit"} onClose={() => setDialog(null)} dismissible={!busy} closeOnBackdrop={false} className="max-w-[520px]">
       <h2 className="m-0 text-2xl">{note.note_type === "file" ? "Rename notation file" : "Edit notation"}</h2>
       <form className="mt-4 grid gap-3" onSubmit={save}>
         <label className="grid gap-1 text-sm font-semibold" htmlFor={`note-title-${note.id}`}>Title<Input id={`note-title-${note.id}`} name="title" defaultValue={note.title} required maxLength={160} /></label>

@@ -4,7 +4,7 @@
 //
 // What each function stands for is in the call it checks; the screens' own behaviour (toasts, dialogs) is in the component tests of
 // announcements, resources and the public pages.
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createAnnouncement, deleteAnnouncement, setAnnouncementPinned, updateAnnouncement } from "../../lib/api/announcements";
 import { listPublicConcertRecordings, signInWithGoogle, signPublicConcertUrl } from "../../lib/api/public";
 import {
@@ -15,6 +15,10 @@ import {
 import { ApiError } from "../../lib/errors";
 import { buildListPlan, THUMBNAIL_TTL_SECONDS } from "../../lib/resources-query";
 import { fail, fake, ok, rejects, withCount } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 async function thrownBy(action: () => Promise<unknown>): Promise<ApiError> {
   try { await action(); } catch (error) { expect(error).toBeInstanceOf(ApiError); return error as ApiError; }
@@ -201,7 +205,9 @@ describe("lib/api/resources: the club-resources bucket", () => {
     const file = new File(["x"], "a.pdf", { type: "application/pdf" });
     await uploadResourceFile("u/1/a.pdf", file, "application/pdf");
     const [call] = fake.storage("club-resources", "upload").calls;
-    expect(call.args).toEqual(["u/1/a.pdf", file, { contentType: "application/pdf", upsert: false }]);
+    // The upload goes through XMLHttpRequest (Phase 3.1): the options are `{ upsert }` and the content type is the one of the file part.
+    expect(call.args).toEqual(["u/1/a.pdf", file, { upsert: false }]);
+    expect((call.args[1] as File).type).toBe("application/pdf");
     fake.storage("club-resources", "upload").reply(fail("The object exceeded the maximum allowed size"));
     const error = await thrownBy(() => uploadResourceFile("u/1/b.pdf", file, "application/pdf"));
     expect(error.message).toBe("The object exceeded the maximum allowed size");
