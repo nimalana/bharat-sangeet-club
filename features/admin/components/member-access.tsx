@@ -5,9 +5,9 @@ import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Textarea } from "../../../components/ui/textarea";
-import { must } from "../../../lib/api/_core";
+import { useToast } from "../../../components/ui/toast";
+import { deactivateMember, deleteMember, reactivateMember } from "../../../lib/api/admin";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 
 export type AccessMember = { id: string; full_name: string; email: string; status?: "active" | "deactivated" };
@@ -23,9 +23,11 @@ export const adminActionLabels: Record<string, string> = {
 // Deactivate is the normal way to remove someone: it keeps their finance,
 // attendance and recording history. Delete is only offered for a deactivated
 // account and only succeeds when the account has no such history.
-export function MemberAccessActions({ member, isSelf, onChanged, notify }: {
-  member: AccessMember; isSelf: boolean; onChanged: () => void | Promise<void>; notify: Notify;
+// `notify` is kept until the cleanup step removes it from every caller; the buttons read the toast from useToast().
+export function MemberAccessActions({ member, isSelf, onChanged }: {
+  member: AccessMember; isSelf: boolean; onChanged: () => void | Promise<void>; notify?: Notify;
 }) {
+  const { notify } = useToast();
   const [dialog, setDialog] = useState<"deactivate" | "reactivate" | "delete" | null>(null);
   const [reason, setReason] = useState("");
   const { pending: busy, run: track } = useAsyncAction(notify);
@@ -33,13 +35,11 @@ export function MemberAccessActions({ member, isSelf, onChanged, notify }: {
   const deactivated = member.status === "deactivated";
 
   async function run(action: "deactivate" | "reactivate" | "delete") {
-    const client = supabase;
-    if (!client) return;
-    const done = await track(async () => must(action === "deactivate"
-      ? await client.rpc("admin_deactivate_member", { p_target_id: member.id, p_reason: reason.trim() })
+    const done = await track(() => action === "deactivate"
+      ? deactivateMember(member.id, reason.trim())
       : action === "reactivate"
-        ? await client.rpc("admin_reactivate_member", { p_target_id: member.id })
-        : await client.rpc("admin_delete_member", { p_target_id: member.id })), { fallback: "That change could not be saved." });
+        ? reactivateMember(member.id)
+        : deleteMember(member.id), { fallback: "That change could not be saved." });
     if (!done.ok) return;
     setDialog(null); setReason("");
     notify(action === "deactivate" ? `${label} was deactivated` : action === "reactivate" ? `${label} was reactivated` : `${label} was deleted`);

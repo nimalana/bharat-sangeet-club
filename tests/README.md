@@ -95,6 +95,7 @@ fake.unscripted;                    // calls nobody scripted (they got an empty 
 
 - `userOf(id)` is a signed-in user as a screen receives it.
 - `notifySpy()` is the `notify` a screen is given. `notify.find("text").tone` is the tone the screen asked for: `"error"`, `"success"` or `undefined` (untagged). A failure that shows the database's own words must be tagged `"error"`, because those words say nothing about whether it failed. To prove that, script a database sentence that sounds cheerful ("Everything has been saved") and expect `"error"`.
+- `notifySpy()` from `tests/support/toast-spy.ts` is the same spy, for a test file that renders a screen on its own (no shell) and that screen reads its toasts with `useToast()`: it is also what `useToast()` answers until the test ends. The file says `vi.mock("../../components/ui/toast", async (importOriginal) => (await import("../support/toast-spy")).withToastSpy(await importOriginal()));` once and imports `notifySpy` from there instead of from `helpers`. See `toast-spy.test.tsx`.
 - `advance(ms)` moves fake time (`vi.useFakeTimers()`) and lets pending promises run; `flush()` lets resolved promises run.
 - `openPortal({ role, page, boot })` (`tests/support/portal.tsx`) signs a user in, scripts `get_portal_bootstrap` and renders the whole shell; `renderPortal()` renders it without scripting.
 
