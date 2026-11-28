@@ -11,6 +11,7 @@ attendance_remediations  authenticated  SELECT
 attendance_session_participants  authenticated  SELECT
 attendance_sessions  authenticated  SELECT
 attendance_settings  authenticated  SELECT
+content_audit_log  authenticated  SELECT
 events  authenticated  DELETE,INSERT,SELECT,UPDATE
 finance_audit_log  authenticated  SELECT
 finance_claim_documents  authenticated  SELECT
@@ -34,7 +35,6 @@ resources  authenticated  DELETE,INSERT,SELECT,UPDATE
 signup_reviews  authenticated  SELECT
 subgroup_memberships  authenticated  SELECT
 subgroups  authenticated  SELECT
-transactions  authenticated  SELECT
 # column grants (column-level privileges; the table grants above do not show them)
 public.profiles  authenticated  UPDATE (class_year, full_name, phone, specialty)
 # sequence grants
@@ -77,10 +77,10 @@ public.archive_items  [Executives update archive]  UPDATE  to authenticated
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
 public.archive_items  [Members view permitted archive]  SELECT  to authenticated
-    using: (( SELECT private.is_executive() AS is_executive) OR ((subgroup_id IS NULL) AND (visibility = 'members'::archive_visibility)) OR ((subgroup_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = archive_items.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR ((visibility = 'members'::archive_visibility) AND ((subgroup_id IS NULL) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = archive_items.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status)))))))
     check: -
 public.archive_items  [Visitors view public concert recordings]  SELECT  to anon
-    using: (is_public AND (type = 'recording'::archive_type))
+    using: (is_public AND (type = 'recording'::archive_type) AND (visibility = 'members'::archive_visibility))
     check: -
 public.attendance_eligibility  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -104,7 +104,7 @@ public.attendance_excuses  [Executives manage excuses]  ALL  to authenticated
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_excuses  [Members view own excuses]  SELECT  to authenticated
-    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR ((member_id = ( SELECT auth.uid() AS uid)) AND (session_id = ANY (( SELECT private.my_attendance_session_ids() AS my_attendance_session_ids)::bigint[]))))
     check: -
 public.attendance_record_audit  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -119,7 +119,7 @@ public.attendance_records  [Executives manage attendance records]  ALL  to authe
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_records  [Members view own attendance records]  SELECT  to authenticated
-    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR ((member_id = ( SELECT auth.uid() AS uid)) AND (session_id = ANY (( SELECT private.my_attendance_session_ids() AS my_attendance_session_ids)::bigint[]))))
     check: -
 public.attendance_remediations  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -134,7 +134,7 @@ public.attendance_remediations  [Executives update attendance remediation]  UPDA
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_remediations  [Members view own attendance remediation]  SELECT  to authenticated
-    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR ((member_id = ( SELECT auth.uid() AS uid)) AND (session_id = ANY (( SELECT private.my_attendance_session_ids() AS my_attendance_session_ids)::bigint[]))))
     check: -
 public.attendance_session_participants  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -143,7 +143,7 @@ public.attendance_session_participants  [Executives manage attendance participat
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_session_participants  [Members view attendance participation]  SELECT  to authenticated
-    using: (( SELECT private.is_executive() AS is_executive) OR (member_id = ( SELECT auth.uid() AS uid)))
+    using: (( SELECT private.is_executive() AS is_executive) OR ((member_id = ( SELECT auth.uid() AS uid)) AND (session_id = ANY (( SELECT private.my_attendance_session_ids() AS my_attendance_session_ids)::bigint[]))))
     check: -
 public.attendance_sessions  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -152,7 +152,7 @@ public.attendance_sessions  [Executives manage attendance sessions]  ALL  to aut
     using: ( SELECT private.is_executive() AS is_executive)
     check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_sessions  [Members view eligible attendance sessions]  SELECT  to authenticated
-    using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM attendance_session_participants WHERE ((attendance_session_participants.session_id = attendance_sessions.id) AND (attendance_session_participants.member_id = ( SELECT auth.uid() AS uid))))))
+    using: (( SELECT private.is_executive() AS is_executive) OR (id = ANY (( SELECT private.my_attendance_session_ids() AS my_attendance_session_ids)::bigint[])))
     check: -
 public.attendance_settings  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -162,6 +162,12 @@ public.attendance_settings  [Executives manage attendance thresholds]  ALL  to a
     check: ( SELECT private.is_executive() AS is_executive)
 public.attendance_settings  [Members view attendance thresholds]  SELECT  to authenticated
     using: true
+    check: -
+public.content_audit_log  [Active members only]  ALL  RESTRICTIVE  to authenticated
+    using: ( SELECT private.is_active_member() AS is_active_member)
+    check: ( SELECT private.is_active_member() AS is_active_member)
+public.content_audit_log  [Executives read content audit log]  SELECT  to authenticated
+    using: ( SELECT private.is_executive() AS is_executive)
     check: -
 public.events  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
@@ -458,7 +464,7 @@ storage.objects  [Members read permitted archive files]  SELECT  to authenticate
     using: ((bucket_id = 'club-archive'::text) AND ((EXISTS ( SELECT 1 FROM archive_items item WHERE ((item.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((item.subgroup_id IS NULL) AND (item.visibility = 'members'::archive_visibility)) OR (EXISTS ( SELECT 1 FROM subgroup_memberships membership WHERE ((membership.subgroup_id = item.subgroup_id) AND (membership.member_id = ( SELECT auth.uid() AS uid)) AND (membership.status = 'active'::subgroup_membership_status) AND (item.visibility = 'members'::archive_visibility)))))))) OR (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND private.can_view_resource(resource.subgroup_id, resource.visibility, resource.status, resource.created_by))))))
     check: -
 storage.objects  [Members read permitted attendance excuse proof]  SELECT  to authenticated
-    using: ((bucket_id = 'attendance-excuses'::text) AND (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) OR ( SELECT private.is_executive() AS is_executive)))
+    using: ((bucket_id = 'attendance-excuses'::text) AND (( SELECT private.is_executive() AS is_executive) OR (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND CASE WHEN ((storage.foldername(name))[2] ~ '^[0-9]{1,18}$'::text) THEN (((storage.foldername(name))[2])::bigint = ANY (( SELECT private.my_attendance_session_ids() AS my_attendance_session_ids)::bigint[])) ELSE true END)))
     check: -
 storage.objects  [Members read permitted finance files]  SELECT  to authenticated
     using: ((bucket_id = 'finance-private'::text) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.storage_path = objects.name) AND ((document.uploaded_by = ( SELECT auth.uid() AS uid)) OR ( SELECT private.is_executive() AS is_executive))))))
@@ -488,13 +494,13 @@ storage.objects  [Update resource files: executives, or unfinished uploads]  UPD
     using: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((resource.status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))))
     check: ((bucket_id = 'club-resources'::text) AND (EXISTS ( SELECT 1 FROM resources resource WHERE ((resource.storage_bucket = objects.bucket_id) AND (resource.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR ((resource.status = ANY (ARRAY['pending_upload'::resource_status, 'failed'::resource_status])) AND private.can_manage_resource(resource.subgroup_id, resource.visibility)))))))
 storage.objects  [Uploaders read objects in their own folder]  SELECT  to authenticated
-    using: ((bucket_id = ANY (ARRAY['recordings'::text, 'recording-notations'::text, 'club-archive'::text])) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
+    using: (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND ((bucket_id = ANY (ARRAY['recordings'::text, 'recording-notations'::text])) OR ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))))
     check: -
 storage.objects  [Uploaders read own recording objects]  SELECT  to authenticated
-    using: ((bucket_id = ANY (ARRAY['recordings'::text, 'recording-notations'::text, 'club-archive'::text])) AND (owner_id = (( SELECT auth.uid() AS uid))::text))
+    using: ((owner_id = (( SELECT auth.uid() AS uid))::text) AND ((bucket_id = ANY (ARRAY['recordings'::text, 'recording-notations'::text])) OR ((bucket_id = 'club-archive'::text) AND ( SELECT private.is_executive() AS is_executive))))
     check: -
 storage.objects  [Visitors stream public concert files]  SELECT  to anon
-    using: ((bucket_id = 'club-archive'::text) AND (EXISTS ( SELECT 1 FROM archive_items WHERE ((archive_items.storage_path = objects.name) AND archive_items.is_public AND (archive_items.type = 'recording'::archive_type)))))
+    using: ((bucket_id = 'club-archive'::text) AND (EXISTS ( SELECT 1 FROM archive_items item WHERE ((item.storage_path = objects.name) AND item.is_public AND (item.type = 'recording'::archive_type) AND (item.visibility = 'members'::archive_visibility)))))
     check: -
 # functions callable by signed-in users (definer = runs with owner rights)
 private.attendance_items_version(p_session_ids bigint[])  invoker
@@ -509,6 +515,7 @@ private.is_executive()  definer
 private.is_subgroup_lead_manager(target_subgroup_id bigint)  definer
 private.is_subgroup_manager(target_subgroup_id bigint)  definer
 private.my_active_subgroup_ids()  definer
+private.my_attendance_session_ids()  definer
 private.my_managed_subgroup_ids()  definer
 public.add_funding_claim_expense(p_claim_id bigint, p_expense_id bigint)  definer
 public.add_subgroup_member(p_subgroup_id bigint, p_member_id uuid)  definer
@@ -532,6 +539,7 @@ public.get_attendance_workspace(p_scope text, p_subgroup_id bigint, p_since time
 public.get_finance_summary()  invoker
 public.get_portal_bootstrap()  invoker
 public.leave_subgroup(p_subgroup_id bigint)  definer
+public.list_content_audit(p_limit integer, p_before bigint, p_entity_type text)  invoker
 public.list_pending_members()  invoker
 public.list_subgroup_roster(p_subgroup_id bigint)  invoker
 public.open_attendance_session(p_session_id bigint, p_duration_minutes integer)  definer

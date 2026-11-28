@@ -26,6 +26,7 @@ insert into test.expected_grants (rel, anon, auth, auth_cols) values
   ('public.admin_audit_log',                 '',       'SELECT', ''),
   ('public.announcements',                   '',       'DELETE,INSERT,SELECT,UPDATE', ''),
   ('public.archive_items',                   'SELECT', 'DELETE,INSERT,SELECT,UPDATE', ''),
+  ('public.content_audit_log',               '',       'SELECT', ''),
   ('public.attendance_eligibility',          '',       'SELECT', ''),
   ('public.attendance_excuses',              '',       'SELECT', ''),
   ('public.attendance_record_audit',         '',       'SELECT', ''),
@@ -57,7 +58,7 @@ insert into test.expected_grants (rel, anon, auth, auth_cols) values
   ('public.signup_reviews',                  '',       'SELECT', ''),
   ('public.subgroup_memberships',            '',       'SELECT', ''),
   ('public.subgroups',                       '',       'SELECT', ''),
-  ('public.transactions',                    '',       'SELECT', '');
+  ('public.transactions',                    '',       '',       '');  -- legacy ledger: closed completely by 20261128030400
 
 -- Raises one exception that lists every difference between the database and the matrix.
 create function test.assert_grants_match() returns void language plpgsql as $$
@@ -158,10 +159,8 @@ begin
 end $$;
 grant execute on function test.state_as(uuid, text) to anon, authenticated;
 
--- ===========================================================================
--- Part 1. The matrix, and proof that the check is not vacuous.
--- ===========================================================================
-select test.assert_grants_match();
+-- ====================================================================-- Part 1. The matrix, and proof that the check is not vacuous.
+-- ====================================================================select test.assert_grants_match();
 
 do $$
 declare message text;
@@ -206,10 +205,8 @@ begin
   perform test.assert_grants_match();
 end $$;
 
--- ===========================================================================
--- Part 2. Every write path the frontend uses still works as the signed-in role.
--- ===========================================================================
-do $$
+-- ====================================================================-- Part 2. Every write path the frontend uses still works as the signed-in role.
+-- ====================================================================do $$
 declare
   v_exec uuid := test.make_user('Exec Seventytwo', 'executive');
   v_leader uuid := test.make_user('Leader Seventytwo');
@@ -400,6 +397,10 @@ end $$;
 \ir ../migrations/20261127090000_attendance_eligibility_definer.sql
 \ir ../migrations/20261128010000_membership_gate_schema.sql
 \ir ../migrations/20261128029000_finance_documents_revoke_direct_writes.sql
+-- (the legacy ledger gets its SELECT back from the frozen matrix too; the migration that closes it runs again)
+\ir ../migrations/20261128030400_close_legacy_transactions.sql
+-- (and the content audit log, which the frozen matrix does not know, is closed by it and opened again by its own migration)
+\ir ../migrations/20261128030500_content_audit_log.sql
 
 do $$
 declare
@@ -418,10 +419,8 @@ begin
 end $$;
 select test.assert_grants_match();
 
--- ===========================================================================
--- Part 3. The old direct writes are refused.
--- ===========================================================================
-do $$
+-- ====================================================================-- Part 3. The old direct writes are refused.
+-- ====================================================================do $$
 declare
   v_exec uuid := test.make_user('Exec Seventythree', 'executive');
   v_member uuid := test.make_user('Member Seventythree');
@@ -480,6 +479,7 @@ begin
   assert test.state_as(v_exec, format('insert into public.subgroup_memberships (subgroup_id, member_id, status) values (1, %L, ''active'')', v_member)) = '42501', 'executive: add a member to a group directly';
   assert test.state_as(v_exec, 'delete from public.subgroups') = '42501', 'executive: delete groups directly';
   assert test.state_as(v_exec, 'delete from public.transactions') = '42501', 'executive: delete from the legacy ledger';
+  assert test.state_as(v_exec, 'select count(*) from public.transactions') = '42501', 'executive: read the legacy ledger';
   assert test.state_as(v_exec, 'truncate public.finance_expenses') = '42501', 'executive: truncate the ledger';
   assert test.state_as(v_member, 'truncate public.events') = '42501', 'member: truncate events';
   assert test.state_as(null, 'truncate public.archive_items') = '42501', 'anon: truncate the public concert list';

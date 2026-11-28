@@ -629,6 +629,45 @@ export type Database = {
           },
         ]
       }
+      content_audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          details: Json
+          entity_id: string | null
+          entity_type: string
+          id: number
+          label: string | null
+          occurred_at: string
+          row_count: number
+          subgroup_id: number | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          details?: Json
+          entity_id?: string | null
+          entity_type: string
+          id?: never
+          label?: string | null
+          occurred_at?: string
+          row_count?: number
+          subgroup_id?: number | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          details?: Json
+          entity_id?: string | null
+          entity_type?: string
+          id?: never
+          label?: string | null
+          occurred_at?: string
+          row_count?: number
+          subgroup_id?: number | null
+        }
+        Relationships: []
+      }
       events: {
         Row: {
           created_at: string
@@ -2420,6 +2459,22 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      list_content_audit: {
+        Args: { p_before?: number; p_entity_type?: string; p_limit?: number }
+        Returns: {
+          action: string
+          actor_id: string
+          actor_name: string
+          details: Json
+          entity_id: string
+          entity_type: string
+          id: number
+          label: string
+          occurred_at: string
+          row_count: number
+          subgroup_id: number
+        }[]
       }
       list_pending_members: {
         Args: never
