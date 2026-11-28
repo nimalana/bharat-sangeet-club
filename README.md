@@ -161,9 +161,14 @@ npm install
 npm run dev
 npm run build
 npm run report:bundle   # per-route bundle sizes of that build; --compare docs/bundle-baseline.json (docs/BUNDLE_BASELINE.md)
-npm test
+npm test                # pure-logic tests, then the component tests against a fake Supabase client (tests/README.md)
+npm run lint:ratchet    # ESLint against lint-baseline.json (counts may only fall) and the import rules below
+npm run lint:boundaries # which folder may import which, and no import cycle (scripts/check-boundaries.mjs)
 npm run test:contract   # every table, column, RPC and bucket the frontend uses exists in the migrated database (docs/CONTRACT_CHECK.md)
+npm run test:types-drift # lib/database.types.ts still matches the migrated database
 ```
+
+The code is organised as `app/` (routing) over `features/<area>/` (screens, hooks) over `components/ui/` and `lib/` (including `lib/api/`, the only code that calls Supabase). Where things live, the import rules and how to add a screen: `docs/ARCHITECTURE.md`.
 
 Create `.env.local` with:
 

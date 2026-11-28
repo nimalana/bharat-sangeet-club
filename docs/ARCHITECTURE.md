@@ -1,8 +1,12 @@
 # Architecture
 
-How the app is put together and where code goes. The screens now live in the layout below (Phase 2.5, R3: moved
-without changing any code). Still to come in Phase 2.5: the per-area data layer (`lib/api/<area>.ts`), the extraction of the
-large screen files, the CSS split. "Where things are today" below says what already exists.
+How the app is put together and where code goes. The browser talks to Supabase directly (row-level security decides what a
+person may read and write); the only server-side read is the public concert list that `app/page.tsx` fetches with the anon key.
+Everything else is client code, laid out by area.
+
+State of the code: Phase 2.5 (R2, R3) is done: generated database types, a data layer per area (`lib/api/<area>.ts`), shared
+hooks and UI blocks, the screens moved into `features/<area>/` and split into hooks and components, the toast taken from a
+context. Still to come: the CSS split, dependency and dead-code cleanup (`app/chatgpt-auth.ts` is imported by nothing).
 
 ## Data flow
 
@@ -11,83 +15,184 @@ database (Postgres, RLS, RPC)          supabase/migrations: the only source of w
         |
 lib/database.types.ts                  GENERATED from the database; never edited by hand
         |
-lib/db.ts                              Tables<"x">, TablesInsert, TablesUpdate, Enums<"x">, Functions<"rpc"> and the union
-        |                              types derived from the enums (roles, statuses, scopes)
-lib/supabase.ts                        the one place that creates the client: createClient<Database>
+lib/db.ts                              Tables<"x">, TablesInsert, TablesUpdate, Enums<"x">, Functions<"rpc">, the union types
+        |                              derived from the enums (roles, statuses), and the row shapes the screens share (Subgroup,
+        |                              ClubEvent, Profile, ArchiveItem ...: tables narrowed with Pick)
+lib/supabase.ts                        the one place that creates the client: createClient<AppDatabase> (null without a URL and key)
         |
-lib/api/<area>.ts                      all Supabase access: plain async functions, literal table and RPC names, typed
-        |                              arguments and returns, no React; a Supabase error is thrown as ApiError (lib/errors.ts)
-lib/hooks/use-query.ts                 cached reads (lib/cache.ts + lib/request-gate.ts): last data shown while refreshing,
-        |                              newest request wins, a failed refresh keeps the old data
-features/<area>/{components,hooks}     screens; they never import the Supabase client
+lib/api/<area>.ts                      all Supabase access: plain async functions, literal table, RPC and bucket names, typed
+        |                              arguments and returns, no React, no texts; a Supabase error is thrown as ApiError
+lib/hooks/use-query.ts, lib/cache.ts,  cached reads: last data shown while refreshing, newest request wins, a failed refresh
+lib/request-gate.ts                    keeps the old data
         |
-components/ui/*                        primitives: button, dialog, toast, empty-state, page-title, loading-block, error-block
-app/                                   routing, layout and the shell only
+features/<area>/hooks/use-*.ts         what a screen reads and does: state, loads, the order of a multi-step action, the toasts
+        |
+features/<area>/components/*.tsx       what is drawn; never imports lib/supabase
+        |
+components/ui/*                        primitives: button, dialog, toast, empty-state, page-title, loading-block, error-block ...
+app/                                   routing and layout; page.tsx renders features/shell
 ```
 
 `friendlyError(error, fallback)` (lib/errors.ts) turns an error into the sentence the person sees; the wording of every
-user-visible message stays where it is. `lib/toast.ts` decides a toast's tone, `components/ui/toast.tsx` shows it
-(`useToast()` returns `{ notify }`). Who may do what is encoded once in `lib/permissions.ts`; components ask it instead of
-comparing `role === "..."`. Dates, money and initials are formatted by `lib/format.ts`.
-
-## Where things are today
-
-Built and tested (R2-foundation): `lib/database.types.ts` with its drift check, `lib/db.ts` and the typed client,
-`lib/format.ts`, `lib/permissions.ts`, `ApiError` / `toApiError` in `lib/errors.ts`, `must()` in `lib/api/_core.ts`,
-`lib/hooks/{use-async-action,use-debounced,use-polling,use-query}.ts`, `components/ui/{page-title,empty-state,loading-block,error-block,toast}.tsx`.
-Each has tests under `tests/` and is used by the screens where the old behaviour could be kept exactly:
-
-| Piece | Used by | Not used (and why) |
-|---|---|---|
-| `format` | announcement-feed, subgroup-spaces, admin-page, members-page, resource-library, recording-workspace, finance-page | `lib/dates.ts` (club time zone), attendance's own `formatDateTime` (viewer time zone, other wording), `formatBytes` |
-| `permissions` | the shell (`portal`), subgroup-spaces, group-people, attendance-page, finance-page, resource-library | labels such as "Administrator", the role counts on the Admin page, `lib/sections.ts` (a menu table, not a permission) |
-| `use-async-action` | announcement pin and delete, member access | handlers that read `{ data, error }` and branch on rows changed, or that return early between the call and the flag |
-| `use-debounced` | resources and recordings search boxes | |
-| `use-polling` | attendance meeting poll | the beat animation and the recording timer (not polls) |
-| `use-query` | the Members page (`features/members`, pilot) | every other screen: they key several reads together or have writes that clear the cache by prefix; each is moved when its area is |
-| `ToastProvider` / `useToast` | the shell (`features/shell`: `Home` provides, `Portal` reads) | the screens still receive `notify` as a prop; it goes away area by area |
-| `ui/*` blocks | the shell, admin-page, members-page, subgroup-spaces, public-site, attendance-page, finance-page | the finance title row, `section-boundary`'s empty state, recordings' own empty state |
-
-Not built yet: the per-area `lib/api/<area>.ts` modules. Until they exist the screens (now under `features/`) still import
-`lib/supabase` and call it directly (the contract check reads those calls); a few already wrap the answer in `must()`.
+user-visible message lives in the screens and hooks, not in `lib/api`. `lib/toast.ts` decides a toast's tone and
+`components/ui/toast.tsx` shows it. Who may do what is encoded once in `lib/permissions.ts`; components ask it instead of
+comparing `role === "..."`. Dates, money, initials and the value of a date-time input are formatted by `lib/format.ts`
+(viewer's time zone); `lib/dates.ts` writes instants in the club's time zone.
 
 ## Folders
 
 ```
-app/                     routing only: layout.tsx, page.tsx (loads the public concerts on the server, renders Home),
-                         error.tsx, globals.css, meetings/page.tsx (redirect), chatgpt-auth.ts (not imported by anything; R5 removes it)
-features/<area>/         one folder per area; components/ holds the screens, hooks/ is created when an area gets one
-  shell/                 Home (toast provider + Portal), Portal (auth, bootstrap, navigation state, layout, the lazy
-                         screens), PortalPageMenu, SectionRefused, LoadingScreen, SetupScreen, BootstrapFailedScreen
-  dashboard/             ClubDashboard, TalamMeasure (the Overview page)
-  calendar/              CalendarView, EventModal
-  announcements/         AnnouncementFeed, AnnouncementActions, AnnouncementEditor, ScopeFilterBar
-  groups/                SubgroupSpaces, GroupPeople
-  members/               MembersPage
-  admin/                 AdminPage, AdminMemberEditor, MemberAccessActions, DeactivatedScreen
-  recordings/            RecordingWorkspace, RecordingManageBar, NoteActions, ClubArchiveManager, ArchiveModal
-  resources/             ResourceLibrary, ResourceActions (and resources.module.css)
-  attendance/            AttendancePage, SessionCorrections and the other correction buttons; model.ts (pure helpers)
-  finance/               FinancePage
-  public/                PublicSite, LoginScreen, hero-photos.ts
-components/ui/           primitives shared by every area (button, dialog, toast, empty-state, content-scope-label ...)
-lib/                     pure logic and nothing that renders (dates, sections, permissions, format, errors, cache,
-                         request gate); lib/portal-types.ts holds the row types several areas share
-lib/api/<area>.ts        every Supabase call of an area (to come)
-lib/hooks/               hooks that are not about one area (use-query, use-async-action, use-debounced, use-polling)
+app/                     routing only: layout.tsx, page.tsx (loads the public concerts on the server, renders Home), error.tsx,
+                         globals.css, meetings/page.tsx (redirect), chatgpt-auth.ts (imported by nothing; to be removed)
+features/<area>/         one folder per area (below); each has components/, and hooks/, model.ts and other files as it needs them
+components/ui/           primitives shared by every area
+lib/                     logic that renders nothing (below)
+lib/api/<area>.ts        every Supabase call (below)
+lib/hooks/               hooks that are not about one area
 supabase/migrations/     the database; applied migrations are never edited
+supabase/tests/          SQL suites (scripts/db-replay.sh)
+scripts/                 contract-check/, e2e/, db-replay.sh, bundle-report.mjs, lint-ratchet.mjs, check-boundaries.mjs
 tests/                   see tests/README.md
+docs/                    this file, CONTRACT_CHECK.md, BUNDLE_BASELINE.md, KNOWN_GAPS.md ...
 ```
 
-Imports go one way: `app` -> `features/shell` -> the other features -> `components/ui` -> `lib`. A feature never imports
-the shell or `app/`, and two features do not import each other, with one exception that exists today: `admin`, `groups`
-and `dashboard` import the announcement components (`features/announcements`). The shell imports every feature (it is the
-one place that knows them all). There were no import cycles when the files were moved; keep it so.
-`features/shell/components/portal.tsx` loads attendance, finance, resources and the two recording screens with
-`next/dynamic`, so each stays its own chunk: keep it that way when moving code.
+### features/<area>
 
-Files are kebab-case; a component file stays under about 600 lines (three screens, `attendance-page`, `finance-page` and
-`resource-library`, are at or just over it and are split by their area's refactor).
+Inside an area: `components/` holds the screens and their parts (kebab-case, one component or one small family per file, none over
+about 600 lines); `hooks/use-*.ts` holds data loading, state and multi-step actions (named after what they do); `model.ts` is
+pure logic of that area (no React, no Supabase, so `node --test` can load it); other small files (`types.ts`, `constants.ts`,
+`display.ts` ...) hold what several files of the area share.
+
+| Area | What it is | Main files |
+|---|---|---|
+| `shell` | The signed-in frame: session and bootstrap, navigation, the lists every page reads, the layout, the screens it picks | `home.tsx` (toast provider + `Portal`), `portal.tsx` (composes the hooks and picks the page), `portal-header`, `portal-page-menu`, `portal-footer`, `section-refused`, `loading-screen`, `setup-screen`, `bootstrap-failed-screen`, `lazy-screens.tsx` (the five heavy screens behind `next/dynamic`); hooks `use-auth-session`, `use-portal-session` (the state machine: loading, ready, failed, deactivated), `use-portal-data` (archive, events, announcements, groups, memberships, resource count), `use-portal-navigation` (the page in the address bar) |
+| `dashboard` | The Overview page | `club-dashboard`, `talam-measure` |
+| `calendar` | The club's dates | `calendar-page`, `calendar-view`, `event-modal`, `calendar-dialogs`, `scope-filter-bar`; `use-calendar-page`; `model.ts` (`matchesScope`, `eventsInScope`, `scopeName`) |
+| `announcements` | The announcement feed and its controls, shared by three screens (see the rules below) | `announcement-feed`, `announcement-actions` (`AnnouncementActions`, `AnnouncementEditor`) |
+| `groups` | My Groups: the list, Discover, one group's page, its people and settings | `subgroup-spaces` (the page), `group-list`, `discover-groups`, `group-detail`, `group-people` and its panels (`roster-list`, `join-requests-panel`, `group-confirm-dialogs`, `group-settings-dialog`, `add-member-dialog`), `create-group-dialog`, `group-update-dialog`; `use-group-spaces`, `use-group-roster`; `model.ts` |
+| `members` | The member directory | `members-page`, `member-card`, `contact-dialog`; `use-member-directory` (a pilot of `use-query`) |
+| `admin` | The Admin page and a member's access | `admin-page`, `admin-stats`, `admin-members-panel`, `admin-member-editor`, `admin-announcements-panel`, `admin-audit-panel`, `member-access` (`MemberAccessActions`, `DeactivatedScreen`); `use-admin-data` |
+| `recordings` | Group recordings and the club archive | `recording-workspace` (list and controls), `recording-list`, `recording-studio` (+ `studio-capture`, `studio-form`), `recording-detail`, `recording-notes`, `recording-manage` (`RecordingManageBar`, `NoteActions`), `waveform-player`, `shruthi-companion`, `club-archive-manager`, `archive-modal`; `use-recordings-list`, `use-recording-detail`, `use-recording-fields`, `use-recording-media`, `use-recording-save`; `model.ts` |
+| `resources` | The document library | `resource-library` (composes the hooks), `resource-toolbar`, `resource-list`, `resource-composer`, `resource-upload-panel`, `resource-detail-panel`, `resource-actions`, `resource-icon`, `resources.module.css`; `use-resource-list`, `-breadcrumb`, `-counts`, `-folder`, `-forms`, `-selection`, `-uploads`; `model.ts`, `types.ts`, `thumbnails.ts`, `upload-batch.ts` |
+| `attendance` | Meetings, check-in, absence forms, flags | `attendance-page` and one component per tab and card (`overview-tab`, `meetings-tab`, `excuses-tab`, `member-view`, `session-roster`, `live-session-card`, `check-in-card`, `absence-form-dialog`, `action-dialogs`, `new-meeting-dialog`, `attendance-corrections` ...); `use-attendance-data`, `use-attendance-poll`, `use-attendance-actions` (with `use-live-check-in`, `use-attendance-dialogs`, `use-absence-form`, `use-exclusive`); `model.ts`, `display.ts`, `action-dialog.ts` |
+| `finance` | The finance ledger, reimbursements and funding claims | `finance-page` and one component per section (`finance-overview`, `summary-cards`, `expense-register`, `payment-ledger`, `reimbursement-list`, `funding-claims`, the dialogs); `use-finance-data`, `use-finance-forms`, `use-action-runner`, `use-one-click-changes`, `use-finance-corrections`, `use-finance-documents`; `model.ts`, `forms.ts`, `corrections.ts`, `refusal.ts`, `types.ts`, `constants.ts` |
+| `public` | The signed-out pages | `public-site`, `login-screen`, `hero-photos.ts`, `constants.ts` (the sign-up name key the shell also reads) |
+
+`features/shell/components/lazy-screens.tsx` loads attendance, finance, resources, the recording workspace and the club archive
+manager with `next/dynamic`, so each stays its own chunk: keep it that way when moving code (`tests/component/shell-code-split.test.tsx`).
+
+### lib/
+
+Logic that renders nothing. Pure files are loadable by `node --test` (type-only imports from `lib/db.ts`).
+
+| File | What it does |
+|---|---|
+| `database.types.ts`, `db.ts`, `supabase.ts` | The generated types, the app's view of them, the client (see "Data flow") |
+| `errors.ts` | `ApiError`, `toApiError`, `friendlyError(error, fallback)` |
+| `toast.ts` | The tone rules of a toast (a failure never wears the tick of a success) |
+| `permissions.ts`, `sections.ts` | Who may do what; which screens exist, which roles open them, what the address bar calls them |
+| `format.ts`, `dates.ts` | Dates (viewer's zone), money, initials, `toLocalInputValue`; days and instants in the club's zone |
+| `cache.ts`, `request-gate.ts`, `single-flight.ts`, `refresh.ts`, `bounded-wait.ts` | Per-account in-memory cache; newest request wins; one action at a time; what a failed refresh keeps; waiting for a refresh, but not for ever |
+| `bootstrap.ts`, `chunk-errors.ts`, `public-concerts.ts` | The shell's reading of `get_portal_bootstrap`; telling a failed code-split load from a bug; the server's public concert read |
+| `resources-query.ts`, `archive-sharing.ts`, `finance-load.ts`, `finance-upload.ts`, `storage-remove.ts`, `storage.ts` | Pure rules behind the library's list requests, the archive's sharing, the finance refresh and upload, and reading the answer of a storage delete |
+| `utils.ts` | `cn` |
+
+### lib/api/
+
+One module per data area. A function is a plain `async` function: literal table, RPC and bucket names (the contract check
+reads them), typed arguments and results, no React, no toast, no sentence. A Supabase error is thrown as `ApiError`; where a
+screen branches on `{ data, error }` it wraps the call in `attempt()` (below).
+
+| Module | What it is |
+|---|---|
+| `_core.ts` | `must()` (an answer becomes its data or throws), `safeFileName()` (the one rule for a file name inside a storage path) |
+| `attempt.ts` | `attempt(() => apiCall())` gives back `{ data, error }` for a handler that branches on the failure |
+| `settle.ts` | `settle(read)` for several reads in a `Promise.all` that may fail separately |
+| `auth.ts` | `supabase.auth`: who is signed in, hearing of a change, signing out, `isSupabaseConfigured` |
+| `portal.ts` | The shell's own reads: the bootstrap, the lists it keeps for every page, the sign-up name |
+| `events.ts` | The calendar's dates: read, add, change, remove |
+| `announcements.ts` | Create, edit, pin and delete one announcement |
+| `groups.ts` | Group lists, memberships, a roster, joining, leaving, reviewing requests, settings, a group's announcements |
+| `members.ts` | The member directory, a member's own contact details, the people a group can add |
+| `admin.ts` | The Admin page's reads and administrator-only changes (role, profile, deactivate, reactivate, delete, announcement) |
+| `recordings.ts` | The recordings list and notation, their buckets, the club archive |
+| `resources.ts` | Library rows, upload batches, the `club-resources` bucket, visibility and archive state |
+| `attendance.ts` | Overview, roster and poll reads, check-in, meetings and corrections, marks, absence forms and proofs, follow-ups, eligibility, thresholds |
+| `finance.ts` | The eleven reads of the load wave, every finance RPC, the `finance-private` bucket (`uploadFinanceDocument`: upload, register, link) |
+| `public.ts` | The signed-out pages: Google sign-in, the public concert archive read on the client |
+
+The `client()` helper at the top of several modules throws `ApiError("Supabase is not configured")` in some and
+`ApiError("The portal is not connected.")` in others; the texts differ, so they were not merged.
+
+## Shared pieces and where each is used
+
+| Piece | What | Used by |
+|---|---|---|
+| `lib/format.ts` | `formatDate`, `formatDateOrNone`, `formatMoney`, `initials`, `toLocalInputValue` | admin, announcements, attendance, calendar, finance, groups, members, recordings, resources |
+| `lib/permissions.ts` | The role and group permission table | attendance, finance, groups, resources, shell |
+| `lib/hooks/use-async-action.ts` | The pending flag, the failure sentence and the toast of a "press a button, wait for the database" handler; takes `notify` as its argument | admin, announcements, resources |
+| `lib/hooks/use-debounced.ts` | A search box that asks the database after a pause | recordings, resources |
+| `lib/hooks/use-polling.ts` | A poll that pauses on a hidden page | attendance |
+| `lib/hooks/use-query.ts` | A cached read | members (the pilot; the other screens key several reads together or clear the cache by prefix) |
+| `lib/api/attempt.ts`, `lib/api/settle.ts` | `{ data, error }` for a handler; independent reads | attempt: attendance, recordings; settle: admin, groups, members |
+| `components/ui/toast.tsx` | `ToastProvider`, `useToast()`, `ToastViewport` | every area that notifies |
+| `components/ui/{empty-state,page-title,loading-block,error-block,load-error}` | The repeated blocks | empty-state: finance, groups, members, public, shell; page-title: admin, calendar, groups, members, public; loading-block: admin, attendance, calendar, finance, groups, members, public, shell; error-block: attendance; load-error: finance, members, recordings, resources |
+| `components/ui/{button,dialog,confirm-dialog,form-dialog,input,textarea,badge}` | Primitives | most areas |
+| `components/ui/content-scope-label.tsx` | "Club-wide" or the group's name, as a tag | admin (the calendar writes its own `<small class="calendar-scope">`, with "Group" as the fallback word, which its tests pin) |
+| `components/ui/section-boundary.tsx` | Catches a screen that fails to render or load | shell |
+
+Not merged on purpose: attendance's `formatDateTime` (`features/attendance/display.ts`: the viewer's time zone, "Date unavailable"
+for a bad value) and `lib/dates.ts` `formatDateTime` (the club's time zone, empty for a bad value); attendance's
+`localDateTime()` (the input value for "now") next to `toLocalInputValue(value)` (same result for "now").
+
+### Toasts
+
+`Home` (features/shell) renders `ToastProvider`; the `ToastViewport` is drawn inside the shell's `<main>`. Anything that tells the
+person something calls `const { notify } = useToast()`; there is no `notify` prop or argument anywhere (only `useAsyncAction(notify?)`
+takes the function, as an injection point of a shared hook). `notify(message, "error")` for a failure, always for text that comes
+from the database; an untagged message is a fixed sentence read for the ordinary words of a failure (`lib/toast.ts`). In tests,
+`notifySpy()` (tests/support/helpers.ts) is what `useToast()` answers.
+
+## Dependency rules
+
+Imports go one way, and `scripts/check-boundaries.mjs` enforces it (`npm run lint:boundaries`; `npm run lint:ratchet`, the CI lint
+step, runs it too; `--selftest` proves each rule catches its violation on a throwaway tree):
+
+| Folder | May import | Rule broken otherwise |
+|---|---|---|
+| `lib/` | `lib/` only | `lib-imports-up` |
+| `components/ui/` | `lib/` and itself | `ui-imports-up` |
+| `features/<area>/` | its own folder, `components/ui`, `lib`, and `features/announcements` | `feature-imports-feature` |
+| `features/shell/` | every feature, `components/ui`, `lib` | `shell-imports-app` (not `app/`) |
+| `app/` | `features/shell`, `components/ui`, `lib` | `app-imports-feature` |
+| nothing but `app/` | may import `features/shell` | `feature-imports-shell` |
+
+There are no import cycles (the script finds them: run-time imports only, `import type` does not count). The shell is the one
+place that knows every feature. `announcements` is the one feature other features may import, because `AnnouncementActions` and
+`AnnouncementEditor` (post, edit, pin, delete) are a domain component used by three screens: the dashboard (`AnnouncementFeed`),
+the group page and the Admin page. Keep it a leaf: it imports nothing of another feature. A component used by one area belongs in
+that area (the audience picker of the calendar is `features/calendar/components/scope-filter-bar.tsx`); something two areas need
+that is not announcements moves to `components/ui` (if it renders) or `lib` (if it does not), or is combined by the shell. A
+constant the shell and a feature both read is not read out of a component file (`pendingSignupNameKey` is `features/public/constants.ts`).
+
+Tests are not checked by the script; they import what they exercise.
+
+## Adding a screen or a feature
+
+1. Data: for each new table or RPC, a function in `lib/api/<area>.ts` with literal names (add the file if the area is new), throwing
+   `ApiError`; run `npm run test:contract` and write a test against the fake client (`tests/component/api-*.test.ts`).
+2. Pure rules (what to show, how to total, how to validate) in `features/<area>/model.ts`, tested with `node --test` or Vitest.
+3. State and actions in `features/<area>/hooks/use-<what-it-does>.ts` (loads through `lib/cache.ts` and `lib/request-gate.ts`, or
+   `use-query`; toasts through `useToast()`; errors through `friendlyError`).
+4. The screen in `features/<area>/components/<screen>.tsx`, split into parts when it grows; primitives from `components/ui`; roles from
+   `lib/permissions.ts`; no `lib/supabase` import (the boundary script and a grep both catch it).
+5. Wire it in: a section in `lib/sections.ts` (roles, address, menu), a case in `features/shell/components/portal.tsx`; heavy screens
+   (audio, large forms) go in `lazy-screens.tsx`. Check `npm run report:bundle -- --compare docs/bundle-baseline.json`.
+6. Tests: a component test that renders the screen against the fake client (tests/README.md), asserting what the person sees and what
+   was sent; then break the code on purpose and watch it fail.
+
+A new area is a new `features/<area>/` folder; if another area needs to render part of it, either the shell combines them or the part
+moves to `components/ui` / `lib`, not an import between features.
 
 ## Database types
 
@@ -111,4 +216,30 @@ CI runs `npm run test:types-drift:selftest` in the `contract` job, so a migratio
 merge. See `docs/CONTRACT_CHECK.md` for what the check compares.
 
 Types describe tables, columns, enums and function signatures. They do not describe grants, row-level security or
-storage policies: `npm run test:contract` and `scripts/db-replay.sh` check those.
+storage policies: `npm run test:contract` and `scripts/db-replay.sh` check those. A row shape a screen needs is written once in
+`lib/db.ts` (`Pick<Tables<"x">, ...>`); a screen that needs fewer columns narrows that (`GroupOption`, `EventOption`) instead of
+declaring its own copy.
+
+## Tests and commands
+
+Layers, cheapest first (details and how to write a test: `tests/README.md`):
+
+| Layer | Where | Run with |
+|---|---|---|
+| Pure logic | `tests/*.test.mjs` | `npm run test:unit` (`node --test`) |
+| Component and behaviour | `tests/component/*.test.ts(x)` against the fake Supabase client | `npm run test:component` (Vitest, jsdom) |
+| Database | `supabase/tests/*.test.sql` | `npm run test:db` (`scripts/db-replay.sh`) |
+| Browser | `tests/browser/`, a real browser on the test Supabase project | `npm run test:browser` (not part of `npm test`) |
+
+Before merging, CI and a reviewer expect all of these to pass:
+
+```bash
+npx tsc --noEmit                                              # types
+npm test                                                      # pure logic + component tests (includes the boundary test)
+npm run lint:ratchet                                          # lint count may not rise; import boundaries (lint:boundaries)
+npm run build                                                 # NEXT_PUBLIC_SUPABASE_URL / _PUBLISHABLE_KEY as in CI
+npm run report:bundle -- --compare docs/bundle-baseline.json  # no route more than 5 kB gzip larger
+npm run test:contract:selftest                                # every table, column, RPC, bucket the frontend uses exists (docs/CONTRACT_CHECK.md)
+npm run test:types-drift:selftest                             # lib/database.types.ts matches the migrations
+npm run lint:boundaries:selftest                              # the boundary check catches each kind of violation
+```

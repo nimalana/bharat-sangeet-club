@@ -10,7 +10,7 @@ Scheduled: Phase 4.2, item **register_finance_document function that creates doc
 
 ### What is open
 
-The frontend registers an upload in several separate client calls (`uploadDocument` in `features/finance/components/finance-page.tsx`, around lines 160 to 215):
+The frontend registers an upload in several separate client calls (`uploadFinanceDocument` in `lib/api/finance.ts`, called by `uploadDocument` in `features/finance/hooks/use-finance-documents.ts`):
 
 1. upload the file to the `finance-private` bucket under `<user id>/<uuid>-<name>`;
 2. `insert` into `public.finance_documents` (`uploaded_by` is set by the client);
@@ -47,6 +47,6 @@ One `SECURITY DEFINER` function, `register_finance_document(...)`, with the pare
 - checks the caller is an active member and, for a member, that the parent is theirs and still editable (not decided, not on a submitted or paid claim); for an executive, that the parent is in a status that accepts evidence;
 - sets `uploaded_by` to `auth.uid()` and requires `storage_path` to start with the caller's id and the object to exist in `storage.objects` (P1-05);
 - inserts the document row and every link, and writes one `finance_audit_log` row;
-- then `INSERT` is revoked on the four tables for `authenticated`, the matrix test and `permissions.snapshot` are updated, and `features/finance/components/finance-page.tsx` calls the function once and removes the uploaded file if it fails.
+- then `INSERT` is revoked on the four tables for `authenticated`, the matrix test and `permissions.snapshot` are updated, and `uploadFinanceDocument` in `lib/api/finance.ts` calls the function once (the hook in `features/finance/hooks/use-finance-documents.ts` stays as it is) and removes the uploaded file if it fails.
 
 A test per row of the table above (each must be refused) belongs with that change.

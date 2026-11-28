@@ -3,7 +3,7 @@
 `npm run test:contract` fails when the frontend uses something the database does not provide, or does something the
 database will refuse. It exists because the frontend talks to Supabase through an untyped client, so a wrong column,
 a wrong RPC argument name or a write to a table that became SELECT-only compiles fine and fails only in the browser.
-R2 (generated types) removes part of this; until then, and as a check on the grants, this is the net under the refactor.
+The generated types (docs/ARCHITECTURE.md, "Database types") now catch part of this at compile time; this check stays for what the types do not say (grants, CHECK values, buckets, RPC EXECUTE) and is the net under every change to `lib/api/*.ts`.
 
 ```bash
 npm run test:contract            # about 10 s: replay the migrations, extract the calls, compare, scan
@@ -53,11 +53,9 @@ WARN is worth reading and does not fail (type mismatches such as a nullable valu
 without an `eq`, an insert omitting NOT NULL columns without a default, overloads that are ambiguous). INFO is context
 (`VERBOSE=1`). Each finding has a stable key such as `table-priv:subgroups:update` that does not contain a file name.
 
-**ACCEPTED** is a FAIL listed in `config.json` under `accepted` with a reason and a severity. On the current branch there
-is one: `rpc-enum:set_attendance_status:p_status:pending`, minor. The TypeScript type `RecordStatus` includes the
-client-only `pending`; the only code that builds the call is the attendance table, whose `pending` option is `disabled`,
-so the value cannot be sent. R2 derives the type from the enum and the entry then reports itself as stale (WARN) and is
-deleted. An accepted entry that no longer occurs is reported, so the list cannot rot.
+**ACCEPTED** is a FAIL listed in `config.json` under `accepted` with a reason and a severity. There are none today (the one
+that used to be there, `pending` sent to `set_attendance_status`, went away when the type was derived from the enum). An
+accepted entry that no longer occurs is reported, so the list cannot rot.
 
 ## UNRESOLVED: what it could not read
 
@@ -67,12 +65,12 @@ refactor that hides calls behind a generic helper is noticed. Strings are resolv
 unions, `const`, ternaries, `a || "literal"`, function return values, and function parameters through **all** call sites
 (so `removeStoredFile(bucket)` is followed to the callers' literals).
 
-On the current code, 6 are unresolved:
+On the current code, 5 are unresolved (`maxUnresolved` is 5):
 
 | Where | Why |
 |---|---|
-| `storage.from(bucket)` x5 (`lib/storage-remove`, `features/resources/components/resource-library`, `features/recordings/components/recording-workspace`) | the bucket comes from data (`storage_bucket` column, a map key). Checked anyway against every value a `*bucket*` column may hold (`club-resources`, `club-archive`, `recordings`) plus the literals seen |
-| `from("resources")` passed to `applyListPlan(query, plan)` | the resources list filters are applied by a generic helper from a plan object; the columns named in `lib/resources-query` are not checked |
+| `storage.from(bucket)` x4 (`lib/storage-remove.ts`, `lib/api/recordings.ts`, `lib/api/resources.ts` twice) | the bucket comes from data (a `storage_bucket` column, a parameter that several callers fill). Checked anyway against every value a `*bucket*` column may hold (`club-resources`, `club-archive`, `recordings`) plus the literals seen |
+| `from("resources")` passed to `applyListPlan(query, plan)` (`lib/api/resources.ts`) | the resources list filters are applied by a generic helper from a plan object; the columns named in `lib/resources-query` are not checked |
 
 ## Known blind spots
 
