@@ -1,9 +1,9 @@
-# Bundle size baseline (Phase 2.5, R0; reset in R5)
+# Bundle size baseline (Phase 2.5, R0; reset in R5 and R4)
 
 R0 of the refactoring plan: bundle size per route is reported before and after every step, and "per-route bundles no larger
 than before" is part of the definition of done (R7). The first baseline (R0, commit `988b3b7`) had `/` at 273.8 kB gzip. After the data
 layer and the file moves (R2, R3) `/` was at 280.4 kB; the R5 bundle diet (below) brought it to 265.5 kB, and this file now holds that
-number, so the gain cannot be given back unnoticed.
+number, so the gain cannot be given back unnoticed. The R4 CSS split removed the unused rules and took the CSS from 27.0 to 23.0 kB gzip.
 
 | | |
 |---|---|
@@ -15,9 +15,9 @@ number, so the gain cannot be given back unnoticed.
 
 | Route | First-load JS gzip | brotli | raw | JS chunks | CSS gzip | CSS raw |
 |---|---:|---:|---:|---:|---:|---:|
-| `/` (the whole portal) | 265.5 kB | 227.3 kB | 940.0 kB | 9 | 27.0 kB | 146.2 kB |
-| `/meetings` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 27.0 kB | 146.2 kB |
-| `/_not-found` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 27.0 kB | 146.2 kB |
+| `/` (the whole portal) | 265.5 kB | 227.3 kB | 940.0 kB | 9 | 23.0 kB | 122.9 kB |
+| `/meetings` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 23.0 kB | 122.9 kB |
+| `/_not-found` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 23.0 kB | 122.9 kB |
 
 kB = 1000 bytes, as Next prints. gzip is level 9, brotli quality 11. Also in the JSON: JS that no route loads on a first visit
 ("lazy"): 171.6 kB gzip, 609.8 kB raw, 8 chunks. That is the legacy-browser polyfill chunk, the Tone.js / wavesurfer.js chunk loaded
@@ -26,8 +26,8 @@ in 7 chunks: the data layer and hooks of R2/R3 add code to the screens that were
 
 What this means for the refactor: about 146 kB gzip of every route is Next/React and the shared layout, and the portal itself
 adds 119 kB gzip on `/`. Moving code behind `next/dynamic` lowers `/` and raises "lazy", which the compare output shows
-separately so that moved code is not mistaken for removed code. All CSS (`globals.css`, 146.2 kB raw, one file in every route) is shared
-by the three routes; R4 changes this number.
+separately so that moved code is not mistaken for removed code. All CSS (122.9 kB raw after R4 split `globals.css` into one file per area and removed 275 unused rules, one bundle in every route) is shared
+by the three routes.
 
 ### R5 bundle diet: where the bytes were and what was done
 
