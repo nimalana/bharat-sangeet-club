@@ -2,7 +2,7 @@
 
 How the app is put together and where code goes. The refactor that moves the screens into this layout is Phase 2.5
 (R2 to R5 in the implementation plan); until it is finished some code still lives in the old places (`app/*.tsx`,
-`components/<area>/`). New code follows this page.
+`components/<area>/`). New code follows this page. "Where things are today" below says what already exists.
 
 ## Data flow
 
@@ -29,6 +29,27 @@ app/                                   routing, layout and the shell only
 user-visible message stays where it is. `lib/toast.ts` decides a toast's tone, `components/ui/toast.tsx` shows it
 (`useToast()` returns `{ notify }`). Who may do what is encoded once in `lib/permissions.ts`; components ask it instead of
 comparing `role === "..."`. Dates, money and initials are formatted by `lib/format.ts`.
+
+## Where things are today
+
+Built and tested (R2-foundation): `lib/database.types.ts` with its drift check, `lib/db.ts` and the typed client,
+`lib/format.ts`, `lib/permissions.ts`, `ApiError` / `toApiError` in `lib/errors.ts`, `must()` in `lib/api/_core.ts`,
+`lib/hooks/{use-async-action,use-debounced,use-polling,use-query}.ts`, `components/ui/{page-title,empty-state,loading-block,error-block,toast}.tsx`.
+Each has tests under `tests/` and is used by the screens where the old behaviour could be kept exactly:
+
+| Piece | Used by | Not used (and why) |
+|---|---|---|
+| `format` | portal, resources, recording-workspace, finance | `lib/dates.ts` (club time zone), attendance's own `formatDateTime` (viewer time zone, other wording), `formatBytes` |
+| `permissions` | portal, group-people, attendance, finance, resources | labels such as "Administrator", the role counts on the Admin page, `lib/sections.ts` (a menu table, not a permission) |
+| `use-async-action` | announcement pin and delete, member access | handlers that read `{ data, error }` and branch on rows changed, or that return early between the call and the flag |
+| `use-debounced` | resources and recordings search boxes | |
+| `use-polling` | attendance meeting poll | the beat animation and the recording timer (not polls) |
+| `use-query` | the Members page (pilot) | every other screen: they key several reads together or have writes that clear the cache by prefix; each is moved when its area is |
+| `ToastProvider` / `useToast` | the shell (`Home`) | the screens still receive `notify` as a prop; it goes away area by area |
+| `ui/*` blocks | portal, attendance, finance | the finance title row, `section-boundary`'s empty state, recordings' own empty state |
+
+Not built yet: `features/<area>/` and the per-area `lib/api/<area>.ts` modules. Until they exist the screens still import
+`lib/supabase` and call it directly (the contract check reads those calls); a few already wrap the answer in `must()`.
 
 ## Folders
 

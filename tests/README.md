@@ -11,6 +11,23 @@ Layers, from cheapest to most real. `npm test` runs the first two.
 
 `npm test` runs the pure-logic tests first, then the component tests; it fails if either fails. CI runs it in the "Unit tests" step.
 
+## Tests of the shared pieces
+
+Each piece in `lib/` and `components/ui/` that screens share has its own tests, written so that a screen can move onto it
+without a screen test changing:
+
+| Piece | Tests |
+|---|---|
+| `lib/format.ts`, `lib/permissions.ts`, `lib/errors.ts` (ApiError) | `tests/format.test.mjs` (the old private copies are the oracle, five time zones), `tests/permissions.test.mjs` (every cell of the plan 1.1 table), `tests/errors.test.mjs` |
+| `lib/api/_core.ts` (`must`) | `tests/component/api-core.test.ts` (Vitest: it imports `../errors` without an extension, which `node --test` cannot resolve) |
+| `lib/hooks/*` | `tests/component/hooks.test.tsx` (async action, debounce, polling), `tests/component/use-query.test.tsx` |
+| `components/ui/{page-title,empty-state,loading-block,error-block}` | `tests/component/ui-blocks.test.tsx`: each compared with the markup the screens wrote by hand |
+| `components/ui/toast.tsx` | `tests/component/toast-provider.test.tsx`, next to the shell tests that read the toast |
+| Screens that adopted a piece | the screen's own tests: `action-feedback.test.tsx` (announcement pin and delete, member access), `members-directory.test.tsx` (the `use-query` pilot), and the loading and failure cases in `attendance.test.tsx` and `finance.test.tsx` |
+
+When a screen moves onto a shared piece, write the test that pins the old behaviour first and check that it passes on the old
+code, then move the screen: the test is what shows the move changed nothing.
+
 ## Running one file or one test
 
 ```bash
