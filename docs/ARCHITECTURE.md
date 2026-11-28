@@ -6,7 +6,7 @@ Everything else is client code, laid out by area.
 
 State of the code: Phase 2.5 (R2, R3) is done: generated database types, a data layer per area (`lib/api/<area>.ts`), shared
 hooks and UI blocks, the screens moved into `features/<area>/` and split into hooks and components, the toast taken from a
-context. Still to come: the CSS split, dependency and dead-code cleanup (`app/chatgpt-auth.ts` is imported by nothing).
+context; the Cloudflare/vinext/Drizzle starter that the app never used is gone, and `npm run knip` keeps dead code out. Still to come: the CSS split.
 
 ## Data flow
 
@@ -43,7 +43,7 @@ comparing `role === "..."`. Dates, money, initials and the value of a date-time 
 
 ```
 app/                     routing only: layout.tsx, page.tsx (loads the public concerts on the server, renders Home), error.tsx,
-                         globals.css, meetings/page.tsx (redirect), chatgpt-auth.ts (imported by nothing; to be removed)
+                         globals.css, meetings/page.tsx (redirect)
 features/<area>/         one folder per area (below); each has components/, and hooks/, model.ts and other files as it needs them
 components/ui/           primitives shared by every area
 lib/                     logic that renders nothing (below)

@@ -74,7 +74,7 @@ const jsValue = (type, labels) => labels ? JSON.stringify(labels.replace(/^\{|\}
 const argsFor = (f, skip = []) => f.names.map((n, i) => (skip.includes(n) ? null : `${n}: ${jsValue(f.types[i], f.enum_labels?.[i])}`)).filter(Boolean).join(", ");
 
 // ---------------------------------------------------------------- copies of the frontend
-const EXCLUDE_TOP = new Set(["node_modules", ".next", ".git", ".claude", ".vercel", "supabase", "docs", "public", "scripts", "tests", "build", "db", "drizzle", "examples", "worker", "dist", "out"]);
+const EXCLUDE_TOP = new Set(["node_modules", ".next", ".git", ".claude", ".vercel", "supabase", "docs", "public", "scripts", "tests", "dist", "out"]);
 function copyFrontend(name) {
   const dir = path.join(SCRATCH, name);
   fs.mkdirSync(dir, { recursive: true });

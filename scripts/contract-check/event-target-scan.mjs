@@ -20,7 +20,7 @@ const ts = (() => { try { return createRequire(path.join(FRONTEND, "package.json
 const configPath = ts.findConfigFile(FRONTEND, ts.sys.fileExists, "tsconfig.json");
 const parsed = ts.getParsedCommandLineOfConfigFile(configPath, { incremental: false, noEmit: true }, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} });
 const program = ts.createProgram(parsed.fileNames, parsed.options);
-const SKIP_TOP = new Set(["node_modules", "tests", "test", "scripts", "supabase", "docs", "build", "db", "drizzle", "examples", "worker", "public", "e2e", "dist", "out", "coverage"]);
+const SKIP_TOP = new Set(["node_modules", "tests", "test", "scripts", "supabase", "docs", "public", "e2e", "dist", "out", "coverage"]);
 let bad = 0, total = 0;
 for (const sf of program.getSourceFiles()) {
   const r = path.relative(FRONTEND, sf.fileName).split(path.sep);

@@ -60,7 +60,7 @@ const program = ts.createProgram(parsed.fileNames, parsed.options);
 const checker = program.getTypeChecker();
 
 // ---- which files are "the frontend" ---------------------------------------
-const SKIP_TOP = new Set(["node_modules", "tests", "test", "scripts", "supabase", "docs", "build", "db", "drizzle", "examples", "worker", "public", "e2e", "dist", "out", "coverage"]);
+const SKIP_TOP = new Set(["node_modules", "tests", "test", "scripts", "supabase", "docs", "public", "e2e", "dist", "out", "coverage"]);
 const SKIP_ANY = new Set(["__tests__", "__mocks__", "node_modules", ".next"]);
 const rel = (f) => path.relative(FRONTEND, f).split(path.sep).join("/");
 function inFrontend(sf) {

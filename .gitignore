@@ -16,7 +16,6 @@
 
 # next.js
 /.next/
-/.vinext/
 /out/
 
 # misc
@@ -38,10 +37,8 @@ yarn-error.log*
 .vercel
 
 /dist/
-/.wrangler/
 /outputs/
 /work/
-/.openai/*.log
 
 # browser smoke tests (tests/browser): run output, traces, state, screenshots of the current run
 /tests/browser/.out/
