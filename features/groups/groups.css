@@ -1,0 +1,58 @@
+/* groups: Rules of the groups area.
+   Imported by app/globals.css; the import order decides ties between rules of equal specificity (docs/ARCHITECTURE.md, "CSS"). */
+.workspace-seal{width:36px;height:36px;border-radius:4px;display:grid;place-items:center;background:var(--maroon);color:white;font:11px Georgia,serif;letter-spacing:.04em}
+.workspace-seal.subgroup{background:var(--carolina);color:var(--maroon-dark)}
+.dashboard-section-title{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:15px}
+.dashboard-section-title h2,.dashboard-section-title h3{font:400 27px Georgia,serif;margin:0}
+.dashboard-section-title span{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#71808b}
+.discover-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.discover-card{min-height:330px;display:flex;flex-direction:column;align-items:flex-start;border:1px solid var(--line);border-top:4px solid var(--carolina);background:var(--paper);padding:25px}
+.discover-card>.workspace-seal{margin-bottom:24px}
+.discover-card .eyebrow{margin-bottom:9px}
+.discover-card h2{font:400 25px Georgia,serif;margin-bottom:10px}
+.discover-card>p:not(.eyebrow){color:#687985;font-size:11px;line-height:1.6}
+.discover-card>button,.discover-card>.enrollment-status{margin-top:auto}
+.enrollment-status{display:block;border:1px solid var(--carolina);background:var(--carolina-pale);color:var(--maroon);padding:10px 12px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.enrollment-status.muted{border-color:var(--line);background:#f2eee7;color:#77818a}
+@media (max-width:980px){
+.discover-grid{grid-template-columns:1fr 1fr}
+}
+@media (max-width:650px){
+.discover-grid{grid-template-columns:1fr}
+}
+.group-detail-actions{display:flex;justify-content:flex-end;gap:8px;margin:-25px 0 28px}
+.group-detail-grid{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:1px;border:1px solid var(--line);background:var(--line)}
+.group-detail-grid>section{min-width:0;background:var(--paper);padding:24px}
+.group-feed article{border-bottom:1px solid var(--line);padding:15px 0}
+.group-feed article:first-of-type{padding-top:0}
+.group-feed b{font:500 17px var(--display);letter-spacing:.01em}
+.group-feed p{margin:5px 0;color:#5f7381;font-size:11px;line-height:1.6;white-space:pre-wrap}
+.group-feed small{color:#80909b;font-size:8px}
+.group-list-heading{display:flex;align-items:end;justify-content:space-between;gap:20px;border-bottom:1px solid var(--ink);padding-bottom:13px;margin-bottom:0}
+.group-list-heading.discover{margin-top:50px}
+.group-list-heading h2{margin:0;font:500 28px/1 var(--display);letter-spacing:.01em}
+.group-list-heading p{margin:6px 0 0;color:#6a7c88;font-size:10px}
+.group-list-heading>span,.group-list-heading>div:last-child>span{display:inline-grid;place-items:center;min-width:34px;height:34px;border:1px solid var(--line);color:var(--maroon);font:600 15px var(--display)}
+.group-list-heading>div:last-child{display:flex;align-items:center;gap:9px}
+.group-list{border-bottom:1px solid var(--ink)}
+.group-list>button{width:100%;display:grid;grid-template-columns:48px minmax(220px,1fr) 80px 90px auto;align-items:center;gap:16px;border:0;border-bottom:1px solid var(--line);background:var(--paper);padding:17px 15px;text-align:left;cursor:pointer}
+.group-list>button:hover{background:var(--carolina-pale);transform:translateX(3px)}
+.group-list>button>span b,.group-list>button>span small{display:block}
+.group-list>button>span:nth-child(2) b{font:500 18px var(--display)}
+.group-list>button small{margin-top:3px;color:#71838f;font-size:8px}
+.group-list>button>span:nth-child(n+3){text-align:center}
+.group-list>button>i{font-style:normal;color:var(--maroon);font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.06em}
+@media (max-width:950px){
+.group-detail-grid{grid-template-columns:1fr}
+.group-list>button{grid-template-columns:44px minmax(180px,1fr) 72px auto}
+.group-list>button>span:nth-child(4){display:none}
+}
+@media (max-width:680px){
+.group-detail-actions{align-items:stretch;flex-direction:column;margin-top:-20px}
+.group-list-heading{align-items:flex-start}
+.group-list-heading>div:last-child{align-items:flex-end;flex-direction:column}
+.group-list>button{grid-template-columns:40px minmax(0,1fr) auto;padding:15px 7px}
+.group-list>button>span:nth-child(n+3){display:none}
+.group-detail-grid>section{padding:19px}
+.group-list-heading .primary{padding:0 12px}
+}

@@ -1,0 +1,14 @@
+/* ui: Rules of the primitives in components/ui.
+   Imported by app/globals.css; the import order decides ties between rules of equal specificity (docs/ARCHITECTURE.md, "CSS"). */
+.toast { position:fixed; right:25px; bottom:25px; z-index:60; background:#303d31; color:white; padding:15px 20px; box-shadow:0 10px 30px rgba(0,0,0,.2); font-size:12px; }
+.inline-loading{padding:45px 0;color:#746b64;font-family:Georgia,serif;font-style:italic}
+.empty-state{min-height:280px;border:1px dashed var(--line);display:grid;place-content:center;justify-items:center;text-align:center;padding:40px;background:rgba(251,248,241,.45)}
+.empty-state>span{width:48px;height:48px;border:1px solid var(--brass);border-radius:50%;display:grid;place-items:center;color:var(--maroon);font:italic 18px Georgia,serif;margin-bottom:16px}
+.empty-state h3{font:400 24px Georgia,serif;margin-bottom:8px}
+.empty-state p{color:#7b7169;font-size:12px}
+.scope-badge{display:inline-flex;margin-bottom:14px;border:1px solid var(--carolina);background:var(--carolina-pale);padding:6px 9px;color:var(--maroon);font-size:8px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.content-scope{display:inline-flex;align-items:center;margin-right:8px;border:1px solid var(--line);padding:3px 6px;color:#596f7d;font:750 7px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;vertical-align:middle}
+.content-scope.subgroup{border-color:var(--carolina);background:var(--carolina-pale);color:var(--maroon)}
+.scope-badge{margin-bottom:14px;border:0;border-bottom:1px solid var(--carolina);background:transparent;padding:0 0 5px;color:#286a9c}
+.toast{border-radius:0;background:var(--ink);box-shadow:8px 10px 24px rgba(23,37,47,.18)}
+.toast.error{border-left:4px solid #e3a1a8}
