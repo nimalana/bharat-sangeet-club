@@ -3,6 +3,9 @@
 import type { User } from "@supabase/supabase-js";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { getSessionUser, hasSavedSession, isSupabaseConfigured, onAuthChange, signOut } from "../../../lib/api/auth";
+import { deleteEvent as deleteEventRow } from "../../../lib/api/events";
+import { getPortalBootstrap, loadPortalLists, loadWorkspaceLists, updateOwnFullName } from "../../../lib/api/portal";
 import { setCacheOwner } from "../../../lib/cache";
 import { runBootstrap, type ShellState } from "../../../lib/bootstrap";
 import { canManageClub } from "../../../lib/permissions";
@@ -12,7 +15,6 @@ import type { PublicConcert } from "../../../lib/public-concerts";
 import { countOrKeep, listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
 import { SECTION_LABELS, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../../../lib/sections";
-import { supabase } from "../../../lib/supabase";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { PageTitle } from "../../../components/ui/page-title";
 import { SectionBoundary } from "../../../components/ui/section-boundary";
@@ -57,13 +59,9 @@ function attendanceTabFromUrl(): "overview" | "meetings" | "excuses" {
   return params.get("page") === "meetings" || params.get("tab") === "meetings" ? "meetings" : "overview";
 }
 
-// True when this browser holds a saved sign-in. The server render cannot know,
-// so it reports false and the first client render agrees; the value is read
-// right after hydration.
+// The server render cannot know whether this browser holds a saved sign-in, so it
+// reports false and the first client render agrees; the value is read right after hydration.
 const subscribeNothing = () => () => {};
-function hasSavedSession() {
-  try { return Object.keys(window.localStorage).some((key) => /^sb-.+-auth-token$/.test(key)); } catch { return false; }
-}
 
 export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | null }) {
   const savedSession = useSyncExternalStore(subscribeNothing, hasSavedSession, () => false);
@@ -107,11 +105,10 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   // not arrive, the shell shows an error with Retry, never the member screens.
   const activeUserId = useRef<string | null>(null);
   const bootstrap = useCallback(async (currentUser: User) => {
-    if (!supabase) return;
-    const client = supabase;
+    if (!isSupabaseConfigured()) return;
     setShellState("loading");
     setDataLoading(true);
-    const outcome = await runBootstrap<PortalBootstrap>(() => client.rpc("get_portal_bootstrap"));
+    const outcome = await runBootstrap<PortalBootstrap>(getPortalBootstrap);
     if (activeUserId.current !== currentUser.id) return;
     setDataLoading(false);
     if (outcome.kind !== "ready") { setShellState(outcome.kind); return; }
@@ -127,7 +124,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
     setShellState("ready");
     const pendingSignupName = window.sessionStorage.getItem(pendingSignupNameKey)?.trim();
     if (pendingSignupName) {
-      const { error: updateError } = await client.from("profiles").update({ full_name: pendingSignupName }).eq("id", currentUser.id);
+      const { error: updateError } = await updateOwnFullName(currentUser.id, pendingSignupName);
       if (updateError) notify("Your account was created, but your preferred name could not be saved");
       else {
         window.sessionStorage.removeItem(pendingSignupNameKey);
@@ -137,27 +134,21 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   }, [notify]);
 
   const loadData = useCallback(async () => {
-    const client = supabase;
-    if (!client) return;
+    if (!isSupabaseConfigured()) return;
     const owner = activeUserId.current;
     const isCurrent = dataGate.begin();
     setDataLoading(true);
     try {
-      const [archiveResult, eventsResult, announcementResult, resourceCountResult] = await Promise.all([
-        client.from("archive_items").select("*").eq("type", "recording").order("created_at", { ascending: false }),
-        client.from("events").select("*").gte("starts_at", new Date(Date.now() - 365 * 86400000).toISOString()).order("starts_at", { ascending: true }),
-        client.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(12),
-        client.from("resources").select("id", { count: "exact", head: true }).neq("status", "archived"),
-      ]);
+      const { archive: archiveResult, events: eventsResult, announcements: announcementResult, resourceCount: resourceCountResult } = await loadPortalLists();
       if (!isCurrent() || activeUserId.current !== owner) return;
       if (archiveResult.error) notify("The club archive could not be loaded");
       if (eventsResult.error) notify("The calendar could not be loaded");
       if (announcementResult.error) notify("Announcements could not be loaded");
       if (resourceCountResult.error) notify("The resource count could not be loaded");
       // A list that failed to load keeps what is shown; it is not replaced by an empty one.
-      setArchive((current) => listOrKeep(current, archiveResult as { data: ArchiveItem[] | null; error?: unknown }));
-      setEvents((current) => listOrKeep(current, eventsResult as { data: ClubEvent[] | null; error?: unknown }));
-      setAnnouncements((current) => listOrKeep(current, announcementResult as { data: Announcement[] | null; error?: unknown }));
+      setArchive((current) => listOrKeep(current, archiveResult));
+      setEvents((current) => listOrKeep(current, eventsResult));
+      setAnnouncements((current) => listOrKeep(current, announcementResult));
       setResourceCount((current) => countOrKeep(current, resourceCountResult));
     } catch {
       if (isCurrent()) notify("The club data could not be loaded. Check your connection and try again.");
@@ -167,18 +158,16 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   }, [dataGate, notify]);
 
   useEffect(() => {
-    if (!supabase) { setAuthLoading(false); return; }
-    const client = supabase;
+    if (!isSupabaseConfigured()) { setAuthLoading(false); return; }
     let cancelled = false;
     const loadingTimeouts = new Set<number>();
     const hydrateAuth = async () => {
       const loadingTimeout = window.setTimeout(() => { if (!cancelled) setAuthLoading(false); }, 7000);
       loadingTimeouts.add(loadingTimeout);
       try {
-        const { data, error } = await client.auth.getSession();
-        if (error) throw error;
+        const sessionUser = await getSessionUser();
         if (cancelled) return;
-        adoptUser(data.session?.user ?? null);
+        adoptUser(sessionUser);
       } catch {
         if (!cancelled) adoptUser(null);
       } finally {
@@ -188,13 +177,13 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
       }
     };
     void hydrateAuth();
-    const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
+    const stopListening = onAuthChange((nextUser) => {
       if (cancelled) return;
-      adoptUser(session?.user ?? null);
+      adoptUser(nextUser);
     });
     const restore = (event: PageTransitionEvent) => { if (event.persisted) { setAuthLoading(true); void hydrateAuth(); } };
     window.addEventListener("pageshow", restore);
-    return () => { cancelled = true; loadingTimeouts.forEach((timeout) => window.clearTimeout(timeout)); window.removeEventListener("pageshow", restore); listener.subscription.unsubscribe(); };
+    return () => { cancelled = true; loadingTimeouts.forEach((timeout) => window.clearTimeout(timeout)); window.removeEventListener("pageshow", restore); stopListening(); };
   }, [adoptUser]);
 
   const resetShell = useCallback(() => {
@@ -225,16 +214,13 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
 
   const loadWorkspaces = useCallback(async () => {
-    if (!supabase || !user || shellState !== "ready") return;
+    if (!isSupabaseConfigured() || !user || shellState !== "ready") return;
     const isCurrent = workspaceGate.begin();
-    const [groupResult, membershipResult] = await Promise.all([
-      supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").is("archived_at", null).order("name"),
-      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
-    ]);
+    const { groups: groupResult, memberships: membershipResult } = await loadWorkspaceLists(user.id);
     if (!isCurrent() || activeUserId.current !== user.id) return;
     if (groupResult.error || membershipResult.error) { notify("Your groups could not be loaded"); return; }
-    setGroups((groupResult.data || []) as Subgroup[]);
-    setMemberships((membershipResult.data || []) as SubgroupMembership[]);
+    setGroups(groupResult.data || []);
+    setMemberships(membershipResult.data || []);
   }, [notify, user, shellState, workspaceGate]);
 
   const canManage = canManageClub(role);
@@ -251,6 +237,9 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // A failed sign-out is silent, as it always was: the person is still signed in and presses it again.
+  const leave = () => { if (isSupabaseConfigured()) void signOut().catch(() => {}); };
+
   const openLogin = () => {
     setShowLogin(true);
     if (!new URLSearchParams(window.location.search).has("signin")) window.history.pushState({ signin: true }, "", `${window.location.pathname}?signin=1`);
@@ -262,18 +251,18 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   };
 
   async function deleteEvent(eventId: number) {
-    if (!supabase || !window.confirm("Remove this date from the calendar?")) return;
-    const { error } = await supabase.from("events").delete().eq("id", eventId);
+    if (!isSupabaseConfigured() || !window.confirm("Remove this date from the calendar?")) return;
+    const { error } = await deleteEventRow(eventId);
     if (error) notify(error.message, "error"); else { notify("Calendar date removed"); loadData(); }
   }
 
   // With a server-rendered concert list and no saved sign-in, show the public
   // page straight away instead of a loading screen.
-  if (authLoading) return publicConcerts && !savedSession && supabase ? <PublicSite onSignIn={openLogin} initialRecordings={publicConcerts} /> : <LoadingScreen />;
-  if (!supabase) return <SetupScreen />;
+  if (authLoading) return publicConcerts && !savedSession && isSupabaseConfigured() ? <PublicSite onSignIn={openLogin} initialRecordings={publicConcerts} /> : <LoadingScreen />;
+  if (!isSupabaseConfigured()) return <SetupScreen />;
   if (!user) return showLogin ? <LoginScreen onBack={closeLogin} /> : <PublicSite onSignIn={openLogin} initialRecordings={publicConcerts} />;
-  if (shellState === "deactivated") return <DeactivatedScreen onSignOut={() => { void supabase?.auth.signOut(); }} />;
-  if (shellState === "failed") return <BootstrapFailedScreen onRetry={() => void bootstrap(user)} onSignOut={() => { void supabase?.auth.signOut(); }} />;
+  if (shellState === "deactivated") return <DeactivatedScreen onSignOut={leave} />;
+  if (shellState === "failed") return <BootstrapFailedScreen onRetry={() => void bootstrap(user)} onSignOut={leave} />;
   if (shellState === "loading") return <LoadingScreen />;
 
   const outcome = resolveSection(section, role);
@@ -283,7 +272,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
       <header className="topbar">
         <button className="brand" onClick={() => navigate("home")} aria-label="Bharat Sangeet at UNC Chapel Hill home"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="" /><span><b>Bharat Sangeet</b><small>UNC Chapel Hill</small></span></button>
         <PortalPageMenu section={section} role={role} onNavigate={navigate} />
-        <div className="account"><button className="role-button" onClick={() => supabase?.auth.signOut()} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
+        <div className="account"><button className="role-button" onClick={leave} title="Sign out"><span className="avatar">{role === "admin" ? "AD" : role === "executive" ? "EX" : "MB"}</span><span><b>{name}</b><small>{role === "admin" ? "Admin · Sign out" : role === "executive" ? "Executive · Sign out" : "Member · Sign out"}</small></span></button></div>
       </header>
 
       <SectionBoundary key={section}>

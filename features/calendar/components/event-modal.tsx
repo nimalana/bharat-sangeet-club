@@ -2,22 +2,21 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
+import { isSupabaseConfigured } from "../../../lib/api/auth";
+import { createEvent, updateEvent } from "../../../lib/api/events";
 import { friendlyError } from "../../../lib/errors";
 import type { ClubEvent, Subgroup } from "../../../lib/portal-types";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 
 export function EventModal({ user, groups, editing, onClose, onSaved, notify }: { user: User; groups: Subgroup[]; editing?: ClubEvent; onClose: () => void; onSaved: () => void; notify: Notify }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return; setSaving(true);
+    event.preventDefault(); if (!isSupabaseConfigured()) return; setSaving(true);
     const form = new FormData(event.currentTarget);
     const subgroupId = String(form.get("subgroup_id") || "");
     const fields = { title: String(form.get("title") || ""), description: String(form.get("description") || ""), starts_at: new Date(String(form.get("starts_at") || "")).toISOString(), location: String(form.get("location") || ""), subgroup_id: subgroupId ? Number(subgroupId) : null };
-    const result = editing
-      ? await supabase.from("events").update(fields).eq("id", editing.id).select("id")
-      : await supabase.from("events").insert({ ...fields, created_by: user.id }).select("id");
+    const result = editing ? await updateEvent(editing.id, fields) : await createEvent(fields, user.id);
     setSaving(false);
     // An update that matches no row returns no error, so check that something was written.
     if (result.error || !result.data?.length) notify(friendlyError(result.error, "This date could not be saved. It may have been removed."), "error"); else onSaved();
