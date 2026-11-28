@@ -2,17 +2,17 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
-import type { Tables } from "../../lib/db";
-import { friendlyError } from "../../lib/errors";
-import { must } from "../../lib/api/_core";
-import { useAsyncAction } from "../../lib/hooks/use-async-action";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import type { Tables } from "../../../lib/db";
+import { friendlyError } from "../../../lib/errors";
+import { must } from "../../../lib/api/_core";
+import { useAsyncAction } from "../../../lib/hooks/use-async-action";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
 
 export type EditableAnnouncement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "subgroup_id">;
 type GroupOption = Pick<Tables<"subgroups">, "id" | "name">;

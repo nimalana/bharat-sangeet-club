@@ -30,7 +30,9 @@ import { PageTitle } from "../components/ui/page-title";
 import { SectionBoundary } from "../components/ui/section-boundary";
 import { ToastProvider, ToastViewport, useToast } from "../components/ui/toast";
 import { Input } from "../components/ui/input";
-import { AnnouncementActions, AnnouncementEditor } from "../components/announcements/announcement-actions";
+import { AnnouncementActions } from "../features/announcements/components/announcement-actions";
+import { AnnouncementFeed, type AnnouncementManage } from "../features/announcements/components/announcement-feed";
+import { ScopeFilterBar } from "../features/announcements/components/scope-filter-bar";
 import dynamic from "next/dynamic";
 import { GroupPeople } from "../components/subgroups/group-people";
 
@@ -484,17 +486,6 @@ function ClubDashboard({ name, role, events, resourceCount, announcements, onNav
   const latest = announcements[0];
   const nextWhen = next ? new Date(next.starts_at).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "No upcoming date scheduled";
   return <>{(announcements.length > 0 || manage) && <AnnouncementFeed announcements={announcements} manage={manage} />}<section className="portal-dashboard"><div className="dashboard-intro"><div><h1>Welcome back, {name}.</h1><p>Carnatic and Hindustani musicians, one shared club home.</p></div><span>{role === "executive" ? "Executive view" : role === "admin" ? "Admin view" : "Member view"}</span></div><TalamMeasure next={next} nextWhen={nextWhen} onNavigate={onNavigate} /><div className="dashboard-beats"><article><span className="beat-number">1</span><h2>Announcements</h2><h3>{latest?.title || "Nothing new to review"}</h3><p>{latest?.body || "Club and group updates will appear here when an executive posts one."}</p><button type="button" onClick={() => onNavigate("home")}>{latest ? "Read update" : "Refresh overview"}</button></article><article><span className="beat-number">2</span><h2>Attendance</h2><h3>Ready for the next meeting</h3><p>Check in with a meeting code, review your history, or submit an absence excuse.</p><button type="button" onClick={() => onNavigate("attendance")}>Open attendance</button></article><article><span className="beat-number">3</span><h2>Resources</h2><h3>{resourceCount} available {resourceCount === 1 ? "resource" : "resources"}</h3><p>Repertoire, planning documents, shared links, and references for every tradition and group.</p><button type="button" onClick={() => onNavigate("documents")}>Open library</button></article></div></section></>;
-}
-
-type AnnouncementManage = { user: User; groups: Subgroup[]; onChanged: () => void | Promise<void>; notify: Notify };
-function AnnouncementFeed({ announcements, manage }: { announcements: Announcement[]; manage?: AnnouncementManage }) {
-  const [composing, setComposing] = useState(false);
-  return <section className="announcement-feed" aria-labelledby="announcement-heading"><div className="announcement-feed-heading"><div><p className="eyebrow">CLUB & GROUP UPDATES</p><h2 id="announcement-heading">Announcements</h2></div>{manage ? <Button size="sm" onClick={() => setComposing(true)}>＋ Post announcement</Button> : <span>{announcements.length} recent</span>}</div>{announcements.length ? <div className="announcement-list">{announcements.map((item) => <article className={item.is_pinned ? "pinned" : ""} key={item.id}>{item.is_pinned && <span className="announcement-pin">Pinned</span>}<div><h3>{item.title}</h3><p>{item.body}</p>{manage && <AnnouncementActions user={manage.user} groups={manage.groups} announcement={item} onChanged={manage.onChanged} notify={manage.notify} />}</div><time>{formatDate(item.published_at)}</time></article>)}</div> : <p className="workspace-empty">No announcements yet.</p>}{composing && manage && <AnnouncementEditor user={manage.user} groups={manage.groups} onClose={() => setComposing(false)} onSaved={manage.onChanged} notify={manage.notify} />}</section>;
-}
-
-function ScopeFilterBar({ value, onChange, groups }: { value: ScopeFilter; onChange: (scope: ScopeFilter) => void; groups: Subgroup[] }) {
-  const selectedValue = typeof value === "number" ? `group:${value}` : value;
-  return <label className="scope-picker"><span>View</span><select aria-label="Filter by audience" value={selectedValue} onChange={(event) => { const next = event.target.value; onChange(next.startsWith("group:") ? Number(next.slice(6)) : next as "all" | "club"); }}><option value="all">All activity</option><option value="club">Club-wide</option>{groups.map((group) => <option key={group.id} value={`group:${group.id}`}>{group.name}</option>)}</select></label>;
 }
 
 function ContentScopeLabel({ subgroupId, groups }: { subgroupId?: number | null; groups: Subgroup[] }) {

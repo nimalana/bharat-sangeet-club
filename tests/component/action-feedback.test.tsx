@@ -5,7 +5,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemberAccessActions } from "../../components/admin/member-access";
-import { AnnouncementActions } from "../../components/announcements/announcement-actions";
+import { AnnouncementActions } from "../../features/announcements/components/announcement-actions";
 import { notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
 
