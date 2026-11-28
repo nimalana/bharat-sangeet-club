@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { attempt } from "../../../lib/api/attempt";
+import { createClubArchiveUrl, deleteClubArchiveItem, isInRecordingRoom, removeClubArchiveFile, updateClubArchiveItem } from "../../../lib/api/recordings";
 import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../../lib/archive-sharing";
 import type { Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
-import { removeStoredFile } from "../../../lib/storage";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -18,13 +18,6 @@ export type ClubArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "de
   & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">>;
 
 const accessLabel: Record<ArchiveAccess, string> = { public: "Public concert page", members: "All club members", executives: "Executives only" };
-
-// True when a group's recording room plays the same file.
-async function isInRecordingRoom(storagePath: string): Promise<{ shared: boolean; error: { message?: string; code?: string } | null }> {
-  if (!supabase) return { shared: false, error: { message: "The portal is not connected." } };
-  const { data, error } = await supabase.from("recordings").select("id").eq("storage_path", storagePath).limit(1);
-  return { shared: Boolean(data?.length), error };
-}
 
 // Club recordings (the older archive) still feed the public concert page.
 // Executives manage them here: add, edit, change who can see them, delete.
@@ -39,15 +32,14 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: 
   const [busy, setBusy] = useState(false);
 
   async function play(item: ClubArchiveItem) {
-    if (!supabase) return;
-    const { data, error } = await supabase.storage.from("club-archive").createSignedUrl(item.storage_path, 300);
-    if (error || !data) { notify("This file could not be opened", "error"); return; }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    const { data: url, error } = await attempt(() => createClubArchiveUrl(item.storage_path));
+    if (error || !url) { notify("This file could not be opened", "error"); return; }
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !editing) return;
+    if (!editing) return;
     const form = new FormData(event.currentTarget);
     const text = (name: string) => String(form.get(name) || "").trim();
     const access = text("access") as ArchiveAccess;
@@ -56,31 +48,31 @@ export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: 
     // A group's recording room plays this file with the access set here, so
     // lowering it to Executives only would break that copy. Checked only when it matters.
     if (loweringToExecutivesOnly(archiveAccess(editing), access)) {
-      const room = await isInRecordingRoom(editing.storage_path);
+      const room = await attempt(() => isInRecordingRoom(editing.storage_path));
       if (room.error) { setBusy(false); setEditError(friendlyError(room.error, "The recording could not be checked.")); return; }
-      if (accessChangeBreaksPlayback(archiveAccess(editing), access, room.shared)) { setBusy(false); setEditError(SHARED_ACCESS_NOTICE); return; }
+      if (accessChangeBreaksPlayback(archiveAccess(editing), access, room.data)) { setBusy(false); setEditError(SHARED_ACCESS_NOTICE); return; }
     }
-    const { data, error } = await supabase.from("archive_items").update({
+    const { data, error } = await attempt(() => updateClubArchiveItem(editing.id, {
       title: text("title"), description: text("description"), raga: text("raga") || null, tala: text("tala") || null,
       event_date: text("event_date") || null, ...accessColumns(access),
-    }).eq("id", editing.id).select("id");
+    }));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "You do not have permission to edit this recording."), "error"); return; }
     setEditing(null); notify("Recording updated"); await onChanged();
   }
 
   async function remove() {
-    if (!supabase || !deleting) return;
+    if (!deleting) return;
     setBusy(true);
     // A group recording copied into the recording room shares this file.
-    const room = await isInRecordingRoom(deleting.storage_path);
+    const room = await attempt(() => isInRecordingRoom(deleting.storage_path));
     if (room.error) { setBusy(false); notify(friendlyError(room.error, "The recording could not be checked."), "error"); return; }
-    if (room.shared) { setBusy(false); setDeleting(null); setSharedDelete(true); return; }
+    if (room.data) { setBusy(false); setDeleting(null); setSharedDelete(true); return; }
     // File first: storage only allows the delete while the row exists. An empty answer from
     // storage is a refused delete, not a success (see lib/storage-remove.ts).
-    const problem = await removeStoredFile("club-archive", deleting.storage_path, { confirmGone: true });
+    const problem = await removeClubArchiveFile(deleting.storage_path, { confirmGone: true });
     if (problem) { setBusy(false); notify(problem, "error"); return; }
-    const { data, error } = await supabase.from("archive_items").delete().eq("id", deleting.id).select("id");
+    const { data, error } = await attempt(() => deleteClubArchiveItem(deleting.id));
     setBusy(false);
     if (error || !data?.length) { notify(friendlyError(error, "The recording could not be deleted."), "error"); return; }
     setDeleting(null); notify("Recording deleted"); await onChanged();

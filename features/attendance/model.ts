@@ -1,4 +1,4 @@
-// Types and pure helpers for the attendance screen (features/attendance/components/attendance-page.tsx).
+// Types and pure helpers for the attendance screens (features/attendance/components/attendance-page.tsx and its parts).
 // Kept free of React and Supabase so they run under `node --test`.
 
 // Type-only import: this file is loaded by node's test runner, so it imports nothing at run time.
@@ -9,6 +9,11 @@ export type { ClubRole, EligibilityStatus, ExcuseStatus, RemediationStatus, Sess
 // A mark, or "pending": no mark yet. "pending" is the UI's own word; the database has no such status.
 export type RecordStatus = AttendanceStatus | "pending";
 export type AbsenceCategory = "class_exam" | "family_emergency" | "illness" | "other_club_event" | "other";
+// The audience the screen is showing (all activity, club-wide meetings, or one subgroup's rehearsals) and the tab an executive is on.
+export type ScopeFilter = "all" | "club" | number;
+export type AttendanceTab = "overview" | "meetings" | "excuses";
+// A subgroup the person can pick as an audience.
+export type GroupOption = { id: number; name: string };
 
 // What an executive sees about a meeting that is open right now. `version`
 // changes whenever the roster's content does: a participant joins (opening
