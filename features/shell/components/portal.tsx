@@ -2,7 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { setCacheOwner } from "../../../lib/cache";
 import { runBootstrap, type ShellState } from "../../../lib/bootstrap";
 import { canManageClub } from "../../../lib/permissions";
@@ -78,7 +78,6 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [query, setQuery] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [showEvent, setShowEvent] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ClubEvent | null>(null);
@@ -242,7 +241,6 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
   const availableGroups = canManage ? groups : groups.filter((group) => activeGroupIds.has(group.id));
   const matchesScope = (subgroupId: number | null | undefined, scope: ScopeFilter) => scope === "all" || (scope === "club" ? !subgroupId : subgroupId === scope);
-  const recordings = useMemo(() => archive.filter((item) => item.type === "recording" && matchesScope(item.subgroup_id, recordingScope) && `${item.title} ${item.description} ${item.raga || ""}`.toLowerCase().includes(query.toLowerCase())), [archive, query, recordingScope]);
   const visibleEvents = events.filter((item) => matchesScope(item.subgroup_id, calendarScope));
 
   const navigate = (next: Section) => {
@@ -262,13 +260,6 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
     setShowLogin(false);
     window.history.replaceState({}, "", window.location.pathname);
   };
-
-  async function openFile(item: ArchiveItem) {
-    if (!supabase) return;
-    const { data, error } = await supabase.storage.from("club-archive").createSignedUrl(item.storage_path, 300);
-    if (error || !data) { notify("This file could not be opened"); return; }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-  }
 
   async function deleteEvent(eventId: number) {
     if (!supabase || !window.confirm("Remove this date from the calendar?")) return;
