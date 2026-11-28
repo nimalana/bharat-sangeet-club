@@ -159,8 +159,10 @@ begin
 end $$;
 grant execute on function test.state_as(uuid, text) to anon, authenticated;
 
--- ====================================================================-- Part 1. The matrix, and proof that the check is not vacuous.
--- ====================================================================select test.assert_grants_match();
+-- ===========================================================================
+-- Part 1. The matrix, and proof that the check is not vacuous.
+-- ===========================================================================
+select test.assert_grants_match();
 
 do $$
 declare message text;
@@ -205,8 +207,10 @@ begin
   perform test.assert_grants_match();
 end $$;
 
--- ====================================================================-- Part 2. Every write path the frontend uses still works as the signed-in role.
--- ====================================================================do $$
+-- ===========================================================================
+-- Part 2. Every write path the frontend uses still works as the signed-in role.
+-- ===========================================================================
+do $$
 declare
   v_exec uuid := test.make_user('Exec Seventytwo', 'executive');
   v_leader uuid := test.make_user('Leader Seventytwo');
@@ -419,8 +423,10 @@ begin
 end $$;
 select test.assert_grants_match();
 
--- ====================================================================-- Part 3. The old direct writes are refused.
--- ====================================================================do $$
+-- ===========================================================================
+-- Part 3. The old direct writes are refused.
+-- ===========================================================================
+do $$
 declare
   v_exec uuid := test.make_user('Exec Seventythree', 'executive');
   v_member uuid := test.make_user('Member Seventythree');

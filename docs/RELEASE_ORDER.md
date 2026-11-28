@@ -20,6 +20,7 @@ Everything that only adds. The deployed frontend keeps working against all of it
 - `20261128030100_attendance_former_member_access.sql` (P1-01): a person who left a group no longer reads that group's sessions, records, excuses, remediations and proof images, and `check_in_attendance` / `submit_attendance_excuse` refuse them. Their own history for groups they belong to is unchanged.
 - `20261128030200_actor_columns_guard.sql` (P3-05): the who-columns (`created_by`, `uploaded_by`, `marked_by`, `reviewed_by`, ... 39 columns on 29 tables, listed in `supabase/tests/77_actor_columns.test.sql`) are set from `auth.uid()` by a trigger; a value that names someone else is refused, a write with no signed-in person (migrations, the service role) is left alone.
 - `20261128030500_content_audit_log.sql` (4.4): adds `public.content_audit_log`, the statement-level audit triggers on groups, memberships, events, announcements, resources, imports, recordings, notation notes and archive items, and `list_content_audit(p_limit, p_before, p_entity_type)`. No screen reads it yet. One extra insert per audited statement that changed a tracked column (measured in the phase report).
+- `20261128031000_actor_columns_guard_new_columns.sql` (integration of 4.1, 4.2 and 4.3): the who-columns added by the membership gate (`signup_reviews.decided_by`) and by finance integrity (`finance_expenses.rejected_by`) are guarded like the other 39. Both are written only by definer functions from `auth.uid()`, so no screen notices.
 
 ## 2. Deploy the frontend
 

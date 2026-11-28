@@ -47,7 +47,8 @@ declare
     'attendance_sessions.stamp.created_by', 'attendance_records.stamp.marked_by', 'attendance_record_audit.stamp.changed_by',
     'attendance_excuses.stamp.reviewed_by', 'attendance_remediations.stamp.assigned_by', 'attendance_remediations.stamp.completed_by',
     'attendance_eligibility.stamp.updated_by', 'attendance_settings.stamp.updated_by', 'member_deactivations.stamp.deactivated_by',
-    'finance_expenses.stamp.created_by', 'finance_expenses.stamp.approved_by', 'finance_expenses.stamp.voided_by',
+    'finance_expenses.stamp.created_by', 'finance_expenses.stamp.approved_by', 'finance_expenses.stamp.voided_by', 'finance_expenses.stamp.rejected_by',
+    'signup_reviews.stamp.decided_by',
     'finance_payments.stamp.created_by', 'finance_payments.stamp.voided_by',
     'funding_claims.stamp.created_by', 'funding_claims.stamp.updated_by', 'funding_claims.stamp.voided_by',
     'personal_reimbursements.stamp.reviewed_by', 'personal_reimbursements.stamp.voided_by',
@@ -217,7 +218,7 @@ begin
     perform test.m77a_check(format('forged insert %s.%s (%s)', g.tbl, g.colname, g.kind), m, format('%s.%s must be the signed-in member', g.tbl, g.colname));
     n := n + 1;
   end loop;
-  assert n = 39, format('the loop covered %s columns', n);
+  assert n = 41, format('the loop covered %s columns', n);
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------
@@ -338,12 +339,16 @@ begin
   m := test.m77a_msg(v_out, format('insert into public.recording_notes(recording_id, title, note_type, body, uploaded_by) values (%s, ''F77a outsider'', ''text'', ''x'', %L)', v_rec, v_out));
   assert (select count(*) from public.recording_notes where title = 'F77a outsider') = 0 or m is null, 'unchanged policy outcome for an outsider (published recording: allowed)';
 
-  -- finance_documents (any member registers their own; executives manage)
-  m := test.m77a_msg(v_mem, format('insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''F77a forged'', ''f77a/forged.pdf'', ''application/pdf'', 10, %L)', v_exec));
+  -- finance_documents: since 20261128029000 the client holds no INSERT at all (public.register_finance_document writes the row as
+  -- auth.uid()), so these are the owner's writes with the person signed in, which is what a definer function is. The guard is
+  -- the second lock behind that function.
+  m := test.m77a_msg(v_mem, 'insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes) values (''receipt'', ''F77a direct'', ''f77a/direct.pdf'', ''application/pdf'', 10)');
+  assert m like 'permission denied%', 'the client cannot insert into finance_documents at all: ' || coalesce(m, 'no error');
+  m := test.m77a_as_uid(v_mem, format('insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''F77a forged'', ''f77a/forged.pdf'', ''application/pdf'', 10, %L)', v_exec));
   perform test.m77a_check('finance_documents forged insert by a member', m, 'finance_documents.uploaded_by must be the signed-in member');
-  m := test.m77a_msg(v_exec, format('insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''F77a on behalf'', ''f77a/behalf.pdf'', ''application/pdf'', 10, %L)', v_mem));
+  m := test.m77a_as_uid(v_exec, format('insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''F77a on behalf'', ''f77a/behalf.pdf'', ''application/pdf'', 10, %L)', v_mem));
   perform test.m77a_check('finance_documents an executive registers a file in a member''s name', m, 'finance_documents.uploaded_by must be the signed-in member');
-  m := test.m77a_msg(v_mem, 'insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes) values (''receipt'', ''F77a omitted'', ''f77a/omitted.pdf'', ''application/pdf'', 10)');
+  m := test.m77a_as_uid(v_mem, 'insert into public.finance_documents(document_type, title, storage_path, mime_type, file_size_bytes) values (''receipt'', ''F77a omitted'', ''f77a/omitted.pdf'', ''application/pdf'', 10)');
   perform test.m77a_check('finance_documents omitted uploaded_by', m, null);
   assert (select uploaded_by from public.finance_documents where title = 'F77a omitted') = v_mem, 'finance_documents: the uploader is filled in';
   -- (the client holds no UPDATE on finance_documents, so this one is a definer's write, made as postgres with the executive signed in)
