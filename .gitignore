@@ -42,3 +42,6 @@ yarn-error.log*
 /outputs/
 /work/
 /.openai/*.log
+
+# browser smoke tests (tests/browser): run output, traces, state, screenshots of the current run
+/tests/browser/.out/
