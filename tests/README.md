@@ -22,12 +22,27 @@ without a screen test changing:
 | `lib/api/_core.ts` (`must`) | `tests/component/api-core.test.ts` (Vitest: it imports `../errors` without an extension, which `node --test` cannot resolve) |
 | `lib/hooks/*` | `tests/component/hooks.test.tsx` (async action, debounce, polling), `tests/component/use-query.test.tsx` |
 | `components/ui/{page-title,empty-state,loading-block,error-block}` | `tests/component/ui-blocks.test.tsx`: each compared with the markup the screens wrote by hand |
+| `components/ui/dialog.tsx`, `confirm.tsx`, `confirm-dialog.tsx` | `tests/component/dialog.test.tsx` (role and name, focus in, trap, back, Escape, backdrop, nested dialogs, inert page, scroll lock, axe), `confirm.test.tsx` (`useConfirm`: true only on Confirm, focus on Cancel, queued questions, axe) |
+| `lib/hooks/use-url-state.ts` | `tests/component/use-url-state.test.tsx` (reading, SSR and hydration, writing, Back and Forward, one entry per tick, the shell's own navigation next to it) |
+| States: `error-block`, `skeleton`, `Button pending`, `use-query` error/retry, `use-async-action` exclusive | `tests/component/states.test.tsx` |
+| `lib/api/_core.ts` `uploadWithProgress`, `components/ui/upload-progress.tsx` | `tests/component/upload-with-progress.test.ts` (the real supabase-js client and `uploadWithProgress` against one transport: the same URL, headers, body and answers), `upload-progress.test.tsx` |
+| `components/ui/preview-dialog.tsx` | `tests/component/preview-dialog.test.tsx` |
+| The accessibility base: focus ring, `.sr-only`, reduced motion, tap targets, `IconButton`, the 12px floor | `tests/component/a11y-base.test.tsx` (contrast computed from the tokens; the stylesheets read; no test can paint) |
+| The test helpers themselves (`a11y.ts`, `keyboard.ts`) | `tests/component/test-support.test.tsx` |
 | `components/ui/toast.tsx` | `tests/component/toast-provider.test.tsx` (the provider and its viewport), `toast-context-groups.test.tsx` (screens inside a provider show their toast in the viewport), `toast-spy.test.tsx` (the test spy itself), `toast-tone.test.tsx` (tone rules) |
 | `scripts/check-boundaries.mjs` (import rules, no import cycle) | `tests/boundaries.test.mjs`: the repository itself is clean, the layer of each path, each allowed and refused pair, cycles through run-time imports and not through type imports. `npm run lint:boundaries:selftest` builds a throwaway tree with one violation per rule. |
 | Screens that adopted a piece | the screen's own tests: `action-feedback.test.tsx` (announcement pin and delete, member access), `members-directory.test.tsx` (the `use-query` pilot), and the loading and failure cases in `attendance.test.tsx` and `finance.test.tsx` |
 
 When a screen moves onto a shared piece, write the test that pins the old behaviour first and check that it passes on the old
 code, then move the screen: the test is what shows the move changed nothing.
+
+## Accessibility, keyboard, uploads and the address in a test
+
+`tests/support/a11y.ts`: `await expectNoSeriousViolations(container)` runs axe-core and fails on a serious or critical violation (colour contrast is off in jsdom, and an iframe is audited as an element only).
+`tests/support/keyboard.ts`: `keyboardUser()` (user-event; `{ fakeTimers: true }` under fake timers), `focusedName()`, `tabOrder(user, n)`.
+`tests/support/fake-xhr.ts`: `installFakeXhr()` for code that uploads with progress. `tests/support/confirm.tsx`: `withConfirm(node)` / `ConfirmWrapper` for a screen that uses `useConfirm()`.
+The address is the real jsdom one: `window.history.replaceState({}, "", "/?page=x")` before a render; `setup.ts` resets it, the env stubs and the globals after every test.
+What these can and cannot prove, with examples: `docs/UI_PATTERNS.md` section 9.
 
 ## Running one file or one test
 
@@ -42,7 +57,7 @@ npx vitest tests/component/finance.test.tsx             # watch mode while writi
 
 - A test checks behaviour: what is on screen, which call reached the database, which toast was shown and with what tone. It does not read source files and does not match source text. A refactor that keeps the behaviour must not fail a test.
 - A test imports the screen it exercises on one line and nothing else about where the screen lives. If a file moves, change that import line (and, for the shell, the import in `tests/support/portal.tsx`). Screens live in `features/<area>/components/`; the shell as a whole is `features/shell/components/home.tsx`, imported by `tests/support/portal.tsx` only. Tests are not subject to the import-boundary check (they import whatever they exercise), but a source file never imports a test.
-- Every test must be shown to fail when the behaviour it protects is broken. When you add one, break the product code in a scratch copy (or temporarily), watch the test fail, then restore the code.
+- Every test must be shown to fail when the behaviour it protects is broken. When you add one, break the product code in a scratch copy (or temporarily), watch the test fail, then restore the code. A mutant that survives is a missing test or an equivalent change: say which.
 - The header of a test file says what each old assertion or past bug it replaces protected, so the reason for a test is not lost when the code around it changes.
 
 ## The fake Supabase client (`tests/support/fake-supabase.ts`)

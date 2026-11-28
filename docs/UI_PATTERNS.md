@@ -15,6 +15,8 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 - [6. Preview](#6-preview): `PreviewDialog` for an image, a PDF, a recording, a video
 - [7. State in the address](#7-state-in-the-address): `useUrlState` for the open tab, folder, selected group, month, filter
 - [8. Accessibility base](#8-accessibility-base): the focus ring, `.sr-only`, reduced motion, 44px tap targets, `IconButton`, the 12px floor
+- [9. Testing a screen](#9-testing-a-screen): axe, the keyboard, a fake upload, and what a test here cannot prove
+- [10. Checklist for an area](#10-checklist-for-an-area): what to do in each area, in order, and what to report
 
 ---
 
@@ -552,3 +554,81 @@ Found in the areas, not changed: `features/dashboard/dashboard.css` (3 declarati
 12px or more, and do not set a size in a unit that scales below it.
 
 The larger text can wrap a place that was tuned for the smaller size (a badge, the footer, the header's "UNC Chapel Hill"); that is for the browser run to check.
+
+
+---
+
+## 9. Testing a screen
+
+Everything here is in `tests/support/*` and runs in jsdom. The tests of the pieces themselves (`tests/component/{toast-provider,dialog,confirm,states,upload-progress,upload-with-progress,preview-dialog,use-url-state,a11y-base,test-support}.test.tsx`)
+are the examples to copy.
+
+**Accessibility, with axe-core** (`tests/support/a11y.ts`):
+
+```tsx
+const view = render(<ScreenUnderTest />);
+await expectNoSeriousViolations(view.container);        // or view.baseElement when it opens a dialog
+```
+
+Every axe rule runs; a violation of impact *serious* or *critical* fails the test and names the rule, the help text and the elements. *Moderate* and *minor* findings are not reported (they are advice about page structure that a
+single screen cannot satisfy). **Off: `color-contrast`**, which jsdom cannot compute: the contrast of the ring and of the shared colours is checked by arithmetic (section 8) and by a person in a browser. An iframe is audited as an element
+(its title) but not inside. A fragment is audited without a landmark or an `<h1>`: a violation that still shows up is a real finding. Run it **in every state a screen can be in** (loading, empty, failed, with data, with a dialog open), not only the happy one.
+
+**The keyboard, with user-event** (`tests/support/keyboard.ts`):
+
+```tsx
+const user = keyboardUser();                                   // keyboardUser({ fakeTimers: true }) under vi.useFakeTimers()
+await user.tab();                                              // a real Tab: user-event computes the order
+expect(focusedName()).toBe("Cancel");                          // aria-label, else text, else tag; "(page)" for the body
+expect(await tabOrder(user, 3)).toEqual(["Cancel", "Delete", "Cancel"]);   // Tab 3 times; { shift: true } for Shift+Tab
+await user.keyboard("{Escape}");
+```
+
+A screen that can be used with a mouse must be usable with these four moves: Tab reaches every control in a sensible order, Enter and Space act on a button, Escape closes a dialog and focus goes back to what opened it, and a
+dialog keeps Tab inside. Test the ones your screen has. jsdom does not paint, so "focus is visible" is not testable here (section 8 has the ring's numbers); "focus is where it should be" is.
+
+**A fake upload** (`tests/support/fake-xhr.ts`, section 5): `installFakeXhr()`, `xhr.waitForRequest()`, `xhr.last.progress(...)` / `.respond(...)` / `.networkError()`.
+
+**A dialog that confirms**: render inside `ConfirmWrapper` / `withConfirm(node)` (`tests/support/confirm.tsx`), or the screen has no `ConfirmProvider` and `useConfirm()` throws.
+
+**A toast**: `notifySpy()` (`tests/support/helpers.ts`) as before; to see the stack, render `ToastProvider` + `ToastViewport`.
+
+**The address**: `window.history.replaceState({}, "", "/?page=attendance&tab=meetings")` before the render, `window.location` after (section 7). `setup.ts` resets the address, the fake client, timers, env stubs and globals after every test.
+
+**Every new behaviour needs a test that fails when the behaviour is broken.** Break the code on purpose in a scratch copy (change a string, drop a guard, flip a condition), see the test fail, restore. The tests of the
+pieces were checked this way (the evidence is in the foundation's report); a test that passes on a broken product is the most expensive kind.
+
+What a test here **cannot** prove, so it goes on the browser run (`tests/browser`, the coordinator's axe run) and in the report as "not verified": colour contrast as painted; that the focus ring is visible and not clipped; layout at 360px
+and the 44px targets as laid out; real screen-reader announcements (a live region that works in jsdom can still be silent in NVDA, JAWS or VoiceOver); real focus behaviour inside a PDF or media element; `prefers-reduced-motion` as a
+browser sets it; a real upload against Supabase storage.
+
+---
+
+## 10. Checklist for an area
+
+Do these in the area's files; use the piece, do not copy it. Anything a piece lacks: say `needs: ...` in the report; do not fork it.
+
+**Feedback and safety (3.1)**
+- [ ] Every failure that comes from the database is `notify(friendlyError(error, "<what to do next>"), "error")`; confirmations are plain `notify("Saved")` (section 1).
+- [ ] Every destructive or hard-to-undo action asks first: `useConfirm()` with `tone: "destructive"` and a `confirmLabel` that names the action ("Delete announcement"), never `window.confirm`, never an unguarded click (section 3 lists each action in the portal and where it stands).
+- [ ] Every first read has a loading state (`SkeletonRows` or `LoadingBlock`), a failed state with **Try again** (`ErrorBlock` + `retry` from `useQuery`), and an empty state (section 4.1).
+- [ ] Every button that starts a mutation shows `pending` and cannot be pressed twice (`Button pending`, `useAsyncAction`, `exclusive` where a double click is possible) (4.2).
+- [ ] A failed save never clears a form or closes its dialog (4.3).
+- [ ] Every upload shows progress and a Retry on failure: `uploadWithProgress` + `UploadProgress` (section 5). Keep the bucket a literal.
+
+**Dialogs and files (3.3, 3.4)**
+- [ ] Every hand-made modal of the area is a `Dialog`/`FormDialog`/`ConfirmDialog` (the catalogue in section 2 names them), with a name, a description where it has one, Escape, focus in and back, and `dismissible={!busy}`.
+- [ ] A stored file that a person opens is shown with `PreviewDialog` where it can be previewed (`previewKind`), with its own signed-link function as `load` (section 6).
+
+**State in the address (3.2)**
+- [ ] The selected group, tab, folder, month and filters the area has are `useUrlState`, with a key of the area's own and `history` chosen on purpose (section 7). `?page=` is not touched.
+
+**Accessibility (3.4)**
+- [ ] No `outline: none` without a replacement; no text under 12px in the area's CSS or `text-[...]` classes; no smooth scroll by script without checking reduced motion (section 8).
+- [ ] Every icon-only control is an `IconButton` with a real name; every control is 44px under 700px.
+- [ ] Every input has a visible label that is a `<label>` for it (or `aria-label` where a label would be redundant); errors are text, not only colour.
+- [ ] An axe test and a keyboard test for the screen, in each of its states (section 9).
+
+**In the report**
+- [ ] Per file: what moved onto which piece. Every user-visible sentence added or changed (word for word). Every test that had to change and why. Mutation evidence for the new tests. What was **not** verified (section 9's list).
+- [ ] Every `needs:` (what the piece lacks) and every file changed outside the area.
