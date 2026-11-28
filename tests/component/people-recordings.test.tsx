@@ -33,9 +33,9 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ClubArchiveManager, type ClubArchiveItem } from "../../components/recordings/club-archive-manager";
-import { RecordingWorkspace } from "../../components/recordings/recording-workspace";
-import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../components/recordings/recording-manage";
+import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordings/components/club-archive-manager";
+import { RecordingWorkspace } from "../../features/recordings/components/recording-workspace";
+import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { ResourceActions, type ManagedResource } from "../../components/resources/resource-actions";
 import { GroupPeople } from "../../features/groups/components/group-people";
 import { setCacheOwner } from "../../lib/cache";

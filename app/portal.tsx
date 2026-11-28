@@ -1,16 +1,13 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AdminPage } from "../features/admin/components/admin-page";
 import { DeactivatedScreen } from "../features/admin/components/member-access";
 import { setCacheOwner } from "../lib/cache";
 import { runBootstrap, type ShellState } from "../lib/bootstrap";
-import { friendlyError } from "../lib/errors";
 import { canManageClub } from "../lib/permissions";
-import type { ArchiveVisibility, ClubRole } from "../lib/db";
-import { removeStoredFile } from "../lib/storage";
-import type { Notify } from "../lib/toast";
+import type { ClubRole } from "../lib/db";
 import type { AccountStatus, Announcement, ArchiveItem, ClubEvent, ScopeFilter, Subgroup, SubgroupMembership } from "../lib/portal-types";
 import type { PublicConcert } from "../lib/public-concerts";
 import { countOrKeep, listOrKeep } from "../lib/refresh";
@@ -32,6 +29,7 @@ import { SubgroupSpaces } from "../features/groups/components/subgroup-spaces";
 import { MembersPage } from "../features/members/components/members-page";
 import { LoginScreen, pendingSignupNameKey } from "../features/public/components/login-screen";
 import { PublicSite } from "../features/public/components/public-site";
+import { ArchiveModal } from "../features/recordings/components/archive-modal";
 
 // Each heavy screen is its own bundle, loaded when it is first opened, so the
 // audio libraries and finance code are not downloaded to read the calendar.
@@ -40,8 +38,8 @@ const SectionLoading = () => <LoadingBlock role="status">Loading…</LoadingBloc
 const AttendancePage = dynamic(() => import("./attendance").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
 const FinancePage = dynamic(() => import("./finance").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
 const ResourceLibrary = dynamic(() => import("./resources").then((module) => module.ResourceLibrary), { ssr: false, loading: SectionLoading });
-const RecordingWorkspace = dynamic(() => import("../components/recordings/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
-const ClubArchiveManager = dynamic(() => import("../components/recordings/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
+const RecordingWorkspace = dynamic(() => import("../features/recordings/components/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
+const ClubArchiveManager = dynamic(() => import("../features/recordings/components/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
 
 type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: AccountStatus } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
 
@@ -345,27 +343,6 @@ function PortalPageMenu({ section, role, onNavigate }: { section: Section; role:
 
 function SectionRefused({ label, onHome }: { label: string; onHome: () => void }) {
   return <section className="section-shell page-section"><EmptyState title={`${label} is not available to your account`} text="Ask a club administrator if you think you should have access." /><div className="mt-4 flex justify-center"><Button variant="secondary" onClick={onHome}>Back to Overview</Button></div></section>;
-}
-
-function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: Notify }) {
-  const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return; setSaving(true);
-    const form = new FormData(event.currentTarget); const title = String(form.get("title") || "");
-    const file = form.get("file") as File; if (!file?.size) { setSaving(false); notify("Choose a file to upload"); return; }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-"); const storagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
-    const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
-    if (upload.error) { setSaving(false); notify(friendlyError(upload.error, "The file could not be uploaded."), "error"); return; }
-    const access = String(form.get("visibility") || "members");
-    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type: "recording", storage_path: storagePath, visibility: (access === "public" ? "members" : access) as ArchiveVisibility, is_public: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploaded_by: user.id });
-    if (saved.error) {
-      // The row was not saved, so the file just uploaded is an orphan: remove it, and say so if it stays.
-      const leftover = await removeStoredFile("club-archive", storagePath, { refusedMessage: "The recording could not be saved, and its uploaded file could not be removed. Ask an administrator to delete it." });
-      setSaving(false); notify(leftover ?? friendlyError(saved.error, "The recording could not be saved."), "error"); return;
-    }
-    setSaving(false); onSaved();
-  }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>Add a club recording</h2><label>Title<input name="title" required placeholder="Give this recording a clear name" /></label><label>Description<input name="description" placeholder="Optional context for members" /></label><div className="form-pair"><label>Raga / raag<input name="raga" /></label><label>Tala / taal<input name="tala" /></label></div><label>Choose file<input name="file" type="file" required accept="audio/*,video/*" /></label><label>Who can access this?<select name="visibility"><option value="members">All club members</option><option value="executives">Executives only</option><option value="public">Everyone (public concert)</option></select></label><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save recording"}</button></form></div>;
 }
 
 function BootstrapFailedScreen({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {

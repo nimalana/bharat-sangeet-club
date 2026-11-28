@@ -2,16 +2,16 @@
 
 import { useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
-import type { Tables, TablesUpdate } from "../../lib/db";
-import { friendlyError } from "../../lib/errors";
-import { removeStoredFile } from "../../lib/storage";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import type { Tables, TablesUpdate } from "../../../lib/db";
+import { friendlyError } from "../../../lib/errors";
+import { removeStoredFile } from "../../../lib/storage";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
 
 export type ManagedRecording = Pick<Tables<"recordings">, "id" | "title" | "description" | "uploaded_by" | "storage_path" | "status" | "recording_kind" | "raga" | "tala" | "sruthi" | "tempo">
   & Partial<Pick<Tables<"recordings">, "storage_bucket">>;

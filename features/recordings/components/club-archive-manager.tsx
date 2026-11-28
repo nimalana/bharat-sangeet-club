@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../lib/archive-sharing";
-import type { Tables } from "../../lib/db";
-import { friendlyError } from "../../lib/errors";
-import { removeStoredFile } from "../../lib/storage";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../../lib/archive-sharing";
+import type { Tables } from "../../../lib/db";
+import { friendlyError } from "../../../lib/errors";
+import { removeStoredFile } from "../../../lib/storage";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
 
 export type ClubArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
   & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">>;
