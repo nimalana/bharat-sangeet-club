@@ -5,7 +5,8 @@ import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog } from "../ui/dialog";
 import { Textarea } from "../ui/textarea";
-import { friendlyError } from "../../lib/errors";
+import { must } from "../../lib/api/_core";
+import { useAsyncAction } from "../../lib/hooks/use-async-action";
 import { supabase } from "../../lib/supabase";
 import type { Notify } from "../../lib/toast";
 
@@ -27,20 +28,19 @@ export function MemberAccessActions({ member, isSelf, onChanged, notify }: {
 }) {
   const [dialog, setDialog] = useState<"deactivate" | "reactivate" | "delete" | null>(null);
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { pending: busy, run: track } = useAsyncAction(notify);
   const label = member.full_name || member.email;
   const deactivated = member.status === "deactivated";
 
   async function run(action: "deactivate" | "reactivate" | "delete") {
-    if (!supabase) return;
-    setBusy(true);
-    const { error } = action === "deactivate"
-      ? await supabase.rpc("admin_deactivate_member", { p_target_id: member.id, p_reason: reason.trim() })
+    const client = supabase;
+    if (!client) return;
+    const done = await track(async () => must(action === "deactivate"
+      ? await client.rpc("admin_deactivate_member", { p_target_id: member.id, p_reason: reason.trim() })
       : action === "reactivate"
-        ? await supabase.rpc("admin_reactivate_member", { p_target_id: member.id })
-        : await supabase.rpc("admin_delete_member", { p_target_id: member.id });
-    setBusy(false);
-    if (error) { notify(friendlyError(error, "That change could not be saved."), "error"); return; }
+        ? await client.rpc("admin_reactivate_member", { p_target_id: member.id })
+        : await client.rpc("admin_delete_member", { p_target_id: member.id })), { fallback: "That change could not be saved." });
+    if (!done.ok) return;
     setDialog(null); setReason("");
     notify(action === "deactivate" ? `${label} was deactivated` : action === "reactivate" ? `${label} was reactivated` : `${label} was deleted`);
     await onChanged();

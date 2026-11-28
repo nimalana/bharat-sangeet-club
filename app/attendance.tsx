@@ -6,6 +6,7 @@ import { friendlyError } from "../lib/errors";
 import type { AttendanceStatus } from "../lib/db";
 import { canManageClub } from "../lib/permissions";
 import { readCache, writeCache } from "../lib/cache";
+import { usePolling } from "../lib/hooks/use-polling";
 import { supabase } from "../lib/supabase";
 import type { Notify } from "../lib/toast";
 import { Button } from "../components/ui/button";
@@ -14,7 +15,7 @@ import { FormDialog, type FormField } from "../components/ui/form-dialog";
 import { ClearMarkButton, SessionCorrections, ThresholdSettings, WithdrawExcuseButton } from "../components/attendance/attendance-corrections";
 import {
   DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, applyPulse, createFailureGate, createSequencer, flaggedSummaries, nextListLimit, normalizeOverview, overallRate, parseMinutesLate,
-  pulseNeedsReload, queueNote, rosterIsStale, shouldPoll, termChoices, termLabel,
+  pulseNeedsReload, queueNote, rosterIsStale, termChoices, termLabel,
   type AbsenceCategory, type AttendanceOverview, type AttendanceSession, type ClubRole, type EligibilityStatus, type Excuse, type Pulse,
   type Remediation, type Roster,
 } from "../components/attendance/attendance-model";
@@ -230,14 +231,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     }
   }, [cacheKey, canManage, failures, load, loadRoster, loadSeq, pulseSeq, reportFailure, scopeArgs]);
 
-  useEffect(() => {
-    if (!hasOpenSession) return;
-    const tick = () => { if (shouldPoll(document.visibilityState, true)) pulse(); };
-    const onVisibility = () => { if (document.visibilityState === "visible") pulse(); };
-    const timer = window.setInterval(tick, POLL_MS);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [hasOpenSession, pulse]);
+  usePolling(pulse, POLL_MS, hasOpenSession);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) || null;
   const termOptions = useMemo(() => termChoices(view.terms, termFilter), [view.terms, termFilter]);

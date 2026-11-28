@@ -9,6 +9,7 @@ import { readCache, writeCache } from "../../lib/cache";
 import type { Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
 import { formatDate } from "../../lib/format";
+import { useDebounced } from "../../lib/hooks/use-debounced";
 import { createRequestGate } from "../../lib/request-gate";
 import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
@@ -58,11 +59,7 @@ export function RecordingWorkspace({ user, groups, memberships, canManage, initi
   // The server filters and pages the list: 24 at a time, newest first.
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  useEffect(() => {
-    const timer = window.setTimeout(() => { setSearch(query.trim()); setPages(1); }, 250);
-    return () => window.clearTimeout(timer);
-  }, [query]);
+  const search = useDebounced(query, 250, () => setPages(1))[0].trim();
   const cacheKey = `recordings:${view}:${scope}:${search}`;
   const [loadFailed, setLoadFailed] = useState(false);
   // Search, view, scope and "show more" each start a load; only the newest may change the list.

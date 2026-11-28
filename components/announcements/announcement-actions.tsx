@@ -4,6 +4,8 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
 import type { Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
+import { must } from "../../lib/api/_core";
+import { useAsyncAction } from "../../lib/hooks/use-async-action";
 import { supabase } from "../../lib/supabase";
 import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
@@ -68,26 +70,21 @@ export function AnnouncementActions({ user, groups, announcement, onChanged, not
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { pending: busy, run } = useAsyncAction(notify);
 
   async function togglePin() {
-    if (!supabase || busy) return;
-    setBusy(true);
-    const { error } = await supabase.from("announcements").update({ is_pinned: !announcement.is_pinned }).eq("id", announcement.id);
-    setBusy(false);
-    if (error) { notify(friendlyError(error), "error"); return; }
-    notify(announcement.is_pinned ? "Announcement unpinned" : "Announcement pinned");
-    await onChanged();
+    const client = supabase;
+    if (!client || busy) return;
+    const done = await run(async () => must(await client.from("announcements").update({ is_pinned: !announcement.is_pinned }).eq("id", announcement.id)), { success: announcement.is_pinned ? "Announcement unpinned" : "Announcement pinned" });
+    if (done.ok) await onChanged();
   }
 
   async function remove() {
-    if (!supabase || busy) return;
-    setBusy(true);
-    const { error } = await supabase.from("announcements").delete().eq("id", announcement.id);
-    setBusy(false); setConfirming(false);
-    if (error) { notify(friendlyError(error), "error"); return; }
-    notify("Announcement deleted");
-    await onChanged();
+    const client = supabase;
+    if (!client || busy) return;
+    const done = await run(async () => must(await client.from("announcements").delete().eq("id", announcement.id)), { success: "Announcement deleted" });
+    setConfirming(false);
+    if (done.ok) await onChanged();
   }
 
   return <div className="flex flex-wrap gap-1">

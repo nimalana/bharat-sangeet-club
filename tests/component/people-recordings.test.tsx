@@ -315,6 +315,28 @@ describe("the recordings list: what it asks the server for", () => {
     expect(filter).not.toMatch(/[()]/);
   });
 
+  it("a search settling starts again from the first page, and spaces around the words are not a new search", async () => {
+    vi.useFakeTimers();
+    listReads().reply(ok(Array.from({ length: 24 }, (_, i) => rec(i + 1, `Take ${i + 1}`)), { count: 60 }));
+    renderRecordings();
+    await advance(1);
+    expect(listReads().count).toBe(1);
+    await advance(300);
+    fireEvent.click(screen.getByRole("button", { name: "Show more (36 more)" }));
+    await advance(1);
+    expect(listReads().count).toBe(2);
+    expect(listReads().calls[1].used("range", 0, 47)).toBe(true);
+    search("raga");
+    await advance(260);
+    expect(listReads().count).toBe(3);
+    expect(listReads().calls[2].used("range", 0, 23)).toBe(true);
+    search("raga ");
+    await advance(300);
+    search(" raga ");
+    await advance(300);
+    expect(listReads().count).toBe(3);
+  });
+
   it("someone with no active group is told to join one and cannot start a recording", async () => {
     renderRecordings({ memberships: [{ subgroup_id: 7, status: "pending" }] });
     expect(await screen.findByText("Join a subgroup to start recording")).toBeInTheDocument();

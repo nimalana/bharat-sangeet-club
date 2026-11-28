@@ -171,6 +171,26 @@ describe("what the library asks the server for", () => {
     expect(JSON.stringify(listReads()[1].uses("or"))).toContain("tabla");
   });
 
+  it("Clear search empties the box and lists everything again at once, without the 250 ms wait", async () => {
+    vi.useFakeTimers();
+    scriptLibrary({ rows: [] });
+    renderLibrary();
+    await advance(1);
+    fireEvent.change(screen.getByPlaceholderText(SEARCH), { target: { value: "zzz" } });
+    await advance(260);
+    await advance(1);
+    expect(listReads()).toHaveLength(2);
+    expect(JSON.stringify(listReads()[1].uses("or"))).toContain("zzz");
+    expect(screen.getByRole("heading", { name: "No matching resources" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    await advance(1);
+    expect(screen.getByPlaceholderText(SEARCH)).toHaveValue("");
+    expect(listReads()).toHaveLength(3);
+    expect(listReads()[2].uses("or")).toEqual([]);
+    await advance(500);
+    expect(listReads()).toHaveLength(3);
+  });
+
   it("choosing a group scopes the list to it", async () => {
     scriptLibrary({ rows: [res(1, "Syllabus.pdf")] });
     renderLibrary({ groups: [{ id: 7, name: "Hindustani Vocal" }] });

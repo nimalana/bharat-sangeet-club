@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { clearCachePrefix, readCache, writeCache } from "../lib/cache";
 import type { ClubRole, Tables } from "../lib/db";
 import { formatDateOrNone } from "../lib/format";
+import { useDebounced } from "../lib/hooks/use-debounced";
 import { canManageGroupResources, isExecutive } from "../lib/permissions";
 import { keepRowsOnFailure } from "../lib/refresh";
 import { LoadErrorBanner } from "../components/ui/load-error";
@@ -111,7 +112,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   const [tab, setTab] = useState<LibraryTab>("all");
   const [query, setQuery] = useState("");
   // What is sent to the database: the search box after a 250 ms pause.
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useDebounced(query, 250);
   const [scope, setScope] = useState<ScopeFilter>(initialScope);
   // The open folder lives in the address bar as ?page=documents&folder=<id>.
   const [folderId, setFolderId] = useState<number | null>(() => typeof window === "undefined" ? null : parseFolderParam(window.location.search));
@@ -178,11 +179,6 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
     const timer = window.setTimeout(() => { setScope(initialScope); changeFolder(null); }, 0);
     return () => window.clearTimeout(timer);
   }, [initialScope]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(query), 250);
-    return () => window.clearTimeout(timer);
-  }, [query]);
 
   // Back and forward move between folders because each folder is its own URL.
   useEffect(() => {
