@@ -1,4 +1,4 @@
-// Least-privilege grants (20261127075000, 20261127090000): the money, attendance, audit and group tables are changed only through
+// Least-privilege grants (20261127075000, 20261127090000, 20261128029000): the money, document, attendance, audit and group tables are changed only through
 // the portal's functions. Signed-in people hold SELECT on them (row-level security decides which rows), nothing else, so an
 // executive, the administrator or a member who skips the functions and writes the table gets "permission denied for table".
 // supabase/tests/permissions.snapshot is the list of what each role holds; this section checks the real project agrees.
@@ -17,12 +17,13 @@ const plainColumn = (table) => {
 // Tables whose only grant to `authenticated` is SELECT in the snapshot (profiles has a column-level UPDATE and is covered in section 00).
 const FUNCTION_ONLY = [
   "admin_audit_log", "attendance_eligibility", "attendance_excuses", "attendance_record_audit", "attendance_records", "attendance_remediations",
-  "attendance_session_participants", "attendance_sessions", "attendance_settings", "finance_audit_log", "finance_expenses", "finance_payments",
+  "attendance_session_participants", "attendance_sessions", "attendance_settings", "finance_audit_log", "finance_claim_documents", "finance_documents",
+  "finance_expense_documents", "finance_expenses", "finance_payments", "finance_reimbursement_documents",
   "funding_claim_expenses", "funding_claims", "member_deactivations", "personal_reimbursements", "resource_links", "resource_tag_assignments",
   "resource_tags", "signup_reviews", "subgroup_memberships", "subgroups", "transactions",
 ];
-// Still insertable by any signed-in person (the policies decide), by design for now: docs/KNOWN_GAPS.md, plan item P1-05 / Phase 4.2.
-const STILL_INSERTABLE = ["finance_documents", "finance_expense_documents", "finance_reimbursement_documents", "finance_claim_documents"];
+// finance_documents and its three link tables joined the list with 20261128029000 (Phase 4.2): a document is registered by
+// register_finance_document and by nothing else, which checks the file, the caller's folder and the state of the target.
 
 export default async function leastPrivilege(t, ctx) {
   const { c } = ctx;
@@ -46,7 +47,7 @@ export default async function leastPrivilege(t, ctx) {
       }
     }
     // Controls: the same people still read the tables the policies let them read, so a refusal above is about writing.
-    for (const [key, table] of [["execA", "finance_payments"], ["execA", "attendance_sessions"], ["execA", "subgroups"], ["member1", "subgroups"], ["admin", "admin_audit_log"]]) {
+    for (const [key, table] of [["execA", "finance_payments"], ["execA", "finance_documents"], ["execA", "attendance_sessions"], ["execA", "subgroups"], ["member1", "subgroups"], ["admin", "admin_audit_log"]]) {
       const res = await c[key].from(table).select("*").limit(1);
       if (res.error) problems.push(`${key}: reading ${table} failed with ${describeError(res.error)}`);
     }
@@ -57,16 +58,5 @@ export default async function leastPrivilege(t, ctx) {
     const paymentId = Number(succeeded(await c.execA.rpc("record_finance_income", { p_description: mark("least-privilege control income"), p_amount: 1, p_payment_date: new Date().toISOString().slice(0, 10), p_category: "Dues", p_counterparty: "e2e" }), "record_finance_income"));
     ok(paymentId > 0, `record_finance_income should return the payment id, got ${paymentId}`);
     succeeded(await c.execA.rpc("void_finance_payment", { p_payment_id: paymentId, p_reason: "least-privilege control, voided" }), "void the control income");
-  });
-
-  await t.observe("finance_documents and the four link tables are still directly insertable by signed-in people (documented gap)", async () => {
-    const lines = [];
-    for (const table of STILL_INSERTABLE) {
-      const res = await c.member1.from(table).insert({}).select();
-      const privilege = res.error && /permission denied for table/i.test(res.error.message);
-      lines.push(`${table}: ${res.error ? describeError(res.error) : `inserted ${JSON.stringify(res.data)}`}${privilege ? " (INSERT revoked)" : " (INSERT granted, the policy refused this row)"}`);
-    }
-    return `An empty insert as a member is refused by the row-level-security policy ("new row violates row-level security policy") and not by a privilege ("permission denied for table"), so INSERT is still granted on these tables, unlike on the ${FUNCTION_ONLY.length} tables above: ${lines.join("; ")}. `
-      + "The policies decide what a row may say (uploaded_by must be the caller, a link only to the caller's own expense), but not whether the file exists or sits in the caller's folder. See docs/KNOWN_GAPS.md.";
   });
 }

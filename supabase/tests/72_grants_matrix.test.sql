@@ -36,12 +36,12 @@ insert into test.expected_grants (rel, anon, auth, auth_cols) values
   ('public.attendance_settings',             '',       'SELECT', ''),
   ('public.events',                          '',       'DELETE,INSERT,SELECT,UPDATE', ''),
   ('public.finance_audit_log',               '',       'SELECT', ''),
-  ('public.finance_claim_documents',         '',       'INSERT,SELECT', ''),
-  ('public.finance_documents',               '',       'INSERT,SELECT', ''),
-  ('public.finance_expense_documents',       '',       'INSERT,SELECT', ''),
+  ('public.finance_claim_documents',         '',       'SELECT', ''),
+  ('public.finance_documents',               '',       'SELECT', ''),
+  ('public.finance_expense_documents',       '',       'SELECT', ''),
   ('public.finance_expenses',                '',       'SELECT', ''),
   ('public.finance_payments',                '',       'SELECT', ''),
-  ('public.finance_reimbursement_documents', '',       'INSERT,SELECT', ''),
+  ('public.finance_reimbursement_documents', '',       'SELECT', ''),
   ('public.funding_claim_expenses',          '',       'SELECT', ''),
   ('public.funding_claims',                  '',       'SELECT', ''),
   ('public.member_deactivations',            '',       'SELECT', ''),
@@ -328,7 +328,11 @@ begin
   perform public.update_subgroup(v_open, 'Seventytwo Open', 'edited');
   perform test.logout();
 
-  -- Finance: the RPCs write; the executive and the member register and link documents directly.
+  -- Finance: the RPCs write, and a file is registered through register_finance_document (20261128020000). The four
+  -- document tables are select-only for signed-in users since 20261128029000, so the member and the executive do not
+  -- insert into them any more.
+  insert into storage.objects (bucket_id, name, owner_id) values
+    ('finance-private', v_member || '/receipt.pdf', v_member::text), ('finance-private', v_exec || '/approval.pdf', v_exec::text);
   perform test.login(v_exec);
   v_expense := public.record_club_expense('Tabla repair', 'Shop', 100, date '2026-11-02', 'Instruments', 'Club bank account', '4242');
   perform public.record_finance_income('Gig', 400, date '2026-11-01', 'Gig revenue', 'UNC');
@@ -336,16 +340,15 @@ begin
   perform test.login(v_member);
   select expense_id, reimbursement_id into v_member_expense, v_reimbursement
   from public.submit_member_reimbursement('Strings', 'Shop', 40, date '2026-11-04', 'Supplies', '1111', 'For the concert');
-  insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by)
-    values ('receipt', 'Receipt', v_member || '/receipt.pdf', 'application/pdf', 1000, v_member) returning id into v_doc;
-  insert into public.finance_reimbursement_documents (reimbursement_id, document_id) values (v_reimbursement, v_doc);
-  insert into public.finance_expense_documents (expense_id, document_id) values (v_member_expense, v_doc);
+  v_doc := public.register_finance_document(v_member || '/receipt.pdf', 'receipt', 'Receipt', 'application/pdf', 1000, '1111', v_member_expense, v_reimbursement);
   perform test.logout();
   perform test.login(v_exec);
   select id into v_claim from public.create_funding_claim('Fall concert', 'GPSG', 'A-1', 'H-1', date '2026-12-01', '', array[v_expense]);
-  insert into public.finance_claim_documents (claim_id, document_id) values (v_claim, v_doc);
+  perform public.register_finance_document(v_exec || '/approval.pdf', 'funding_approval', 'Approval', 'application/pdf', 1000, null, null, null, v_claim);
   assert (public.get_finance_summary() ->> 'available_cash') is not null, 'the summary (security invoker) still reads the ledger';
   perform test.logout();
+  assert (select count(*) from public.finance_documents where id = v_doc) = 1, 'the registered document exists';
+  assert (select count(*) from public.finance_reimbursement_documents where document_id = v_doc) = 1 and (select count(*) from public.finance_expense_documents where document_id = v_doc) = 1, 'and is linked to both';
 
   -- Attendance: meetings, marks and eligibility all go through functions. The eligibility one
   -- is SECURITY DEFINER (20261127090000), so the table is select-only for signed-in users.
@@ -388,14 +391,15 @@ end $$;
 
 -- Re-running the migration changes nothing that matters: still the matrix, and now the
 -- serial sequence the previous block created gets USAGE because events can be inserted into.
--- It also hands attendance_eligibility its old insert and update again (the matrix inside it
--- is frozen), so the later migration that takes them away runs again after it, as it did on
--- the first replay.
+-- It also hands attendance_eligibility its old insert and update again, and the four finance document
+-- tables their old insert (the matrix inside it is frozen), so the later migrations that take them away
+-- run again after it, as they did on the first replay.
 -- It likewise takes the select on signup_reviews (a table created after it) away, so the
 -- membership gate's schema file runs again too, which is also the proof that it can be repeated.
 \ir ../migrations/20261127075000_least_privilege_grants.sql
 \ir ../migrations/20261127090000_attendance_eligibility_definer.sql
 \ir ../migrations/20261128010000_membership_gate_schema.sql
+\ir ../migrations/20261128029000_finance_documents_revoke_direct_writes.sql
 
 do $$
 declare
@@ -464,6 +468,13 @@ begin
   assert test.state_as(v_exec, format('insert into public.attendance_eligibility (term_key, member_id, status, updated_by, updated_at) values (''2026-fall'', %L, ''reinstated'', %L, now())', v_member, v_exec)) = '42501', 'executive: write an eligibility row directly, with a chosen author';
   assert test.state_as(v_exec, 'update public.attendance_eligibility set updated_by = null, updated_at = now() - interval ''1 year''') = '42501', 'executive: rewrite who set an eligibility and when';
   assert test.state_as(v_exec, 'delete from public.finance_audit_log') = '42501', 'executive: erase the finance audit trail';
+  assert test.state_as(v_exec, format('insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''x'', ''x/y.pdf'', ''application/pdf'', 10, %L)', v_member)) = '42501', 'executive: register a document directly, in somebody else''s name';
+  assert test.state_as(v_member, format('insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by) values (''receipt'', ''x'', ''x/y.pdf'', ''application/pdf'', 10, %L)', v_member)) = '42501', 'member: register a document directly';
+  assert test.state_as(v_exec, format('insert into public.finance_claim_documents (claim_id, document_id) values (%s, 1)', v_claim)) = '42501', 'executive: link a document to a claim directly';
+  assert test.state_as(v_member, 'insert into public.finance_expense_documents (expense_id, document_id) values (1, 1)') = '42501', 'member: link a document to an expense directly';
+  assert test.state_as(v_member, 'insert into public.finance_reimbursement_documents (reimbursement_id, document_id) values (1, 1)') = '42501', 'member: link a document to a request directly';
+  assert test.state_as(v_exec, 'update public.finance_documents set uploaded_by = uploaded_by') = '42501', 'executive: rewrite a registered document';
+  assert test.state_as(v_exec, 'delete from public.finance_documents') = '42501', 'executive: delete a registered document directly';
   assert test.state_as(v_exec, 'update public.attendance_record_audit set note = ''x''') = '42501', 'executive: rewrite the attendance audit trail';
   assert test.state_as(v_exec, 'insert into public.admin_audit_log (action) values (''forged'')') = '42501', 'executive: forge an admin audit entry';
   assert test.state_as(v_exec, format('insert into public.subgroup_memberships (subgroup_id, member_id, status) values (1, %L, ''active'')', v_member)) = '42501', 'executive: add a member to a group directly';

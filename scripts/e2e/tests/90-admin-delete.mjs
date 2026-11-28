@@ -17,8 +17,10 @@ export default async function adminDelete(t, ctx) {
     }), "hist submits a reimbursement"));
     const path = `${id.hist}/${uid()}-receipt.png`;
     succeeded(await put(c.hist, "finance-private", path, png(), "image/png"), "hist uploads a receipt");
-    const doc = succeeded(await c.hist.from("finance_documents").insert({ document_type: "receipt", title: mark("History receipt"), storage_path: path, mime_type: "image/png", file_size_bytes: png().length, uploaded_by: id.hist }).select("id").single(), "receipt record");
-    succeeded(await c.hist.from("finance_reimbursement_documents").insert({ reimbursement_id: sub.reimbursement_id, document_id: doc.id }), "link the receipt");
+    succeeded(await c.hist.rpc("register_finance_document", {
+      p_storage_path: path, p_document_type: "receipt", p_title: mark("History receipt"), p_mime_type: "image/png", p_file_size_bytes: png().length,
+      p_expense_id: sub.expense_id, p_reimbursement_id: sub.reimbursement_id,
+    }), "register the receipt (the record and its links in one call)");
     succeeded(await c.execA.rpc("review_personal_reimbursement", { p_reimbursement_id: sub.reimbursement_id, p_decision: "rejected", p_review_note: "e2e: history only" }), "executive rejects it (no money moves)");
 
     refused(await c.execA.rpc("admin_delete_member", { p_target_id: id.hist }), "executive deleting a member", /Only administrators/i);

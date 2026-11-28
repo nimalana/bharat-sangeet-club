@@ -852,6 +852,8 @@ export type Database = {
           paid_by_member_id: string | null
           payment_card_last4: string | null
           purchase_date: string
+          rejected_at: string | null
+          rejected_by: string | null
           status: string
           subgroup_id: number | null
           updated_at: string
@@ -880,6 +882,8 @@ export type Database = {
           paid_by_member_id?: string | null
           payment_card_last4?: string | null
           purchase_date: string
+          rejected_at?: string | null
+          rejected_by?: string | null
           status?: string
           subgroup_id?: number | null
           updated_at?: string
@@ -908,6 +912,8 @@ export type Database = {
           paid_by_member_id?: string | null
           payment_card_last4?: string | null
           purchase_date?: string
+          rejected_at?: string | null
+          rejected_by?: string | null
           status?: string
           subgroup_id?: number | null
           updated_at?: string
@@ -941,6 +947,13 @@ export type Database = {
           {
             foreignKeyName: "finance_expenses_paid_by_member_id_fkey"
             columns: ["paid_by_member_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_rejected_by_fkey"
+            columns: ["rejected_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -2489,6 +2502,20 @@ export type Database = {
         }
         Returns: number
       }
+      register_finance_document: {
+        Args: {
+          p_claim_id?: number
+          p_document_type: string
+          p_expense_id?: number
+          p_file_size_bytes: number
+          p_mime_type: string
+          p_payment_card_last4?: string
+          p_reimbursement_id?: number
+          p_storage_path: string
+          p_title: string
+        }
+        Returns: number
+      }
       remove_finance_document: {
         Args: { p_document_id: number }
         Returns: string
@@ -3042,6 +3069,8 @@ export type Database = {
           paid_by_member_id: string | null
           payment_card_last4: string | null
           purchase_date: string
+          rejected_at: string | null
+          rejected_by: string | null
           status: string
           subgroup_id: number | null
           updated_at: string
@@ -3170,6 +3199,8 @@ export type Database = {
           paid_by_member_id: string | null
           payment_card_last4: string | null
           purchase_date: string
+          rejected_at: string | null
+          rejected_by: string | null
           status: string
           subgroup_id: number | null
           updated_at: string

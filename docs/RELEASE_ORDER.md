@@ -12,10 +12,20 @@ Everything that only adds. The deployed frontend keeps working against all of it
 
 - Every migration that is not named in section 3 (`docs/PHASE_1_MANUAL_CHECKS.md`: "the others are additive; the current production frontend keeps working against them"). A migration that is not additive does not belong here: move it to section 3.
 - `20261128010000_membership_gate_schema.sql` (membership gate, part 1): adds the account states `pending` and `rejected`, the table `signup_reviews`, the functions `review_pending_member` and `list_pending_members`, the guard trigger on `profiles.status`, the narrower directory policy, and an extra key `pending_signups` in `get_portal_bootstrap` for executives. Nobody is pending until part 2, so nothing observable changes for the deployed frontend. It goes first so that the functions the new frontend calls exist the moment it is live.
+- `20261128020000_finance_register_document.sql` (finance integrity 4.2): adds `register_finance_document(...)`. The new frontend calls it once per upload instead of writing four tables.
+- `20261128020100_finance_rejection_audit.sql`: adds `finance_expenses.rejected_by` and `rejected_at`, moves the approval fields of old declined purchases into them, and makes a decision write its own audit row. The deployed frontend never reads `approved_by` or `approved_at`.
+- `20261128020200_finance_event_evidence_at_entry.sql`: an event purchase needs its event name, date and time, attendees and schedule when it is recorded (the purchase forms already require them once "This purchase was for an event" is ticked).
+- `20261128020300_finance_claim_link_claim_lock.sql`: the claim row is locked when a claim link is written. No single caller sees a change.
 
 ## 2. Deploy the frontend
 
 The branch that carries the shell's Pending and Rejected screens and the Sign-up requests page (`features/shell/components/membership-screens.tsx`, `features/admin/components/signup-requests-panel.tsx`). Check it against the database of step 1: sign in as an executive, open Sign-up requests (it reads `list_pending_members`, which only exists after `20261128010000`); an executive's menu shows the count of people waiting.
+
+Finance (4.2), signed in as a member and as an executive:
+
+- a request with a receipt is saved and its receipt appears on it (one call to `register_finance_document`);
+- a club purchase for an event, with its event details, is accepted;
+- an executive's own approved request shows "Another executive must pay your own request." and no "Mark paid" button.
 
 Do not apply anything of section 3 before this is live and checked.
 
@@ -32,6 +42,8 @@ Each of these breaks the frontend deployed before this one, or changes what a pe
   So deploy the new frontend first; with it live a pending account sees "Your sign-up is waiting for approval by a club executive." and executives get the queue.
 
   The undo is two statements: `create or replace function private.handle_new_user()` as part 2 defines it but with `'active'` in place of the `case` (the original, without a status, is in `20260810000000_bharat_sangeet_foundation.sql`), and `alter table public.profiles alter column status set default 'active'`. Sign-ups already made stay pending until an executive approves them.
+- `20261128028000_finance_self_payment_block.sql` (finance integrity 4.2): `pay_personal_reimbursement` refuses a request the caller made themselves. The old screen still shows "Mark paid" on an executive's own approved request and would answer with the sentence "You cannot pay your own reimbursement. Ask another executive."
+- `20261128029000_finance_documents_revoke_direct_writes.sql`: removes INSERT (and any UPDATE, DELETE, TRUNCATE) on `finance_documents` and its three link tables, and the policies that only existed for those inserts. The old frontend registers an upload with direct inserts; after this file the only way is `register_finance_document`. Needs `20261128020000` applied and the new frontend live.
 
 ## Checks after step 3
 

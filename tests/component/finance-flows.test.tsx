@@ -377,10 +377,10 @@ describe("finance: the forms that save a record", () => {
     await waitFor(() => expect(reads()).toBe(2));
   });
 
-  it("a club expense: the record first with its event details, then the receipt, privately, linked to the expense only", async () => {
+  it("a club expense: the record first with its event details, then the receipt, privately, registered against the expense only", async () => {
     scriptFinance();
     fake.rpc("record_club_expense").reply(ok(31));
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
     fireEvent.click(screen.getByRole("button", { name: /Club expense/ }));
@@ -402,16 +402,16 @@ describe("finance: the forms that save a record", () => {
       p_description: "Pizza", p_vendor: "Mellow Mushroom", p_amount: 45.25, p_category: "Food", p_account_name: "Club bank account", p_payment_card_last4: "4321", p_subgroup_id: 4,
       p_club_event_id: 9, p_event_related: true, p_event_name: "Fall rehearsal", p_event_starts_at: new Date("2026-10-05T18:30").toISOString(), p_event_attendee_count: 12, p_event_schedule: "Dinner at 6",
     });
-    expect(fake.from("finance_documents", "insert").calls[0].payload).toMatchObject({ document_type: "receipt", title: "Receipt — Pizza", payment_card_last4: "4321", uploaded_by: "exec-1" });
-    expect(fake.from("finance_expense_documents", "insert").calls[0].payload).toEqual({ expense_id: 31, document_id: 55 });
-    expect(fake.from("finance_reimbursement_documents", "insert").count).toBe(0);
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_document_type: "receipt", p_title: "Receipt — Pizza", p_payment_card_last4: "4321", p_expense_id: 31 });
+    expect(rpcArgs("register_finance_document")).not.toHaveProperty("p_uploaded_by");
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_reimbursement_id: undefined, p_claim_id: undefined });
     await closed();
   });
 
   it("a member's request with a statement: the receipt and the statement are both stored and linked to the expense and the request", async () => {
     scriptFinance();
     fake.rpc("submit_member_reimbursement").reply(ok([{ expense_id: 21, reimbursement_id: 22 }]));
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance({ role: "member", userId: "member-9" });
     fireEvent.click(await screen.findByRole("button", { name: /Request reimbursement/ }));
     type("What was purchased?", "Taxi");
@@ -423,16 +423,18 @@ describe("finance: the forms that save a record", () => {
     submit();
     await waitFor(() => expect(notify.find("Reimbursement request submitted").tone).toBeUndefined());
     expect(rpcArgs("submit_member_reimbursement")).toMatchObject({ p_description: "Taxi", p_member_note: "Late night", p_event_related: false, p_event_starts_at: null, p_club_event_id: null });
-    const registered = fake.from("finance_documents", "insert").calls.map((call) => (call.payload as { document_type: string; title: string }));
-    expect(registered).toEqual([expect.objectContaining({ document_type: "receipt", title: "Receipt — Taxi" }), expect.objectContaining({ document_type: "card_statement", title: "Payment card statement" })]);
-    expect(fake.from("finance_reimbursement_documents", "insert").calls.map((call) => call.payload)).toEqual([{ reimbursement_id: 22, document_id: 55 }, { reimbursement_id: 22, document_id: 55 }]);
+    const registered = fake.rpc("register_finance_document").calls.map((call) => call.args[0] as { p_document_type: string; p_title: string; p_expense_id: number; p_reimbursement_id: number });
+    expect(registered).toEqual([
+      expect.objectContaining({ p_document_type: "receipt", p_title: "Receipt — Taxi", p_expense_id: 21, p_reimbursement_id: 22 }),
+      expect.objectContaining({ p_document_type: "card_statement", p_title: "Payment card statement", p_expense_id: 21, p_reimbursement_id: 22 }),
+    ]);
     expect(fake.storage("finance-private", "upload").count).toBe(2);
   });
 
   it("a funding claim: created in one call with its expenses, then the approval proof is stored and linked to the claim", async () => {
     scriptFinance({ expenses: [expense(), expense({ id: 2, description: "Harmonium", amount: 120 })] });
     fake.rpc("create_funding_claim").reply(ok({ id: 24 }));
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
     tab("Funding claims");
@@ -452,8 +454,8 @@ describe("finance: the forms that save a record", () => {
     expect(rpcArgs("create_funding_claim")).toEqual({
       p_title: "Fall concert food", p_funder_name: "GPSG Senate", p_award_reference: "A-1", p_heellife_reference: "", p_submission_deadline: null, p_notes: "", p_expense_ids: [1],
     });
-    expect(fake.from("finance_documents", "insert").calls[0].payload).toMatchObject({ document_type: "funding_approval", title: "Funding approval" });
-    expect(fake.from("finance_claim_documents", "insert").calls[0].payload).toEqual({ claim_id: 24, document_id: 55 });
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_document_type: "funding_approval", p_title: "Funding approval", p_claim_id: 24 });
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_expense_id: undefined, p_reimbursement_id: undefined });
     await closed();
   });
 
@@ -471,7 +473,7 @@ describe("finance: the forms that save a record", () => {
 
   it("a document for a claim: stored under the type chosen and linked to the claim", async () => {
     scriptFinance({ claims: [claim()] });
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
     tab("Funding claims");
@@ -481,14 +483,13 @@ describe("finance: the forms that save a record", () => {
     attach("file");
     submit();
     await waitFor(() => expect(notify.find("Claim document added").tone).toBeUndefined());
-    expect(fake.from("finance_documents", "insert").calls[0].payload).toMatchObject({ document_type: "bank_statement", title: "October statement" });
-    expect(fake.from("finance_claim_documents", "insert").calls[0].payload).toEqual({ claim_id: 3, document_id: 55 });
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_document_type: "bank_statement", p_title: "October statement", p_claim_id: 3 });
     await closed();
   });
 
   it("a receipt for a request: stored and linked to the purchase and the request", async () => {
     scriptFinance({ reimbursements: [reimbursement({ member_id: "exec-1" })] });
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
     tab("reimbursements");
@@ -496,9 +497,7 @@ describe("finance: the forms that save a record", () => {
     attach("file");
     submit();
     await waitFor(() => expect(notify.find("Receipt added").tone).toBeUndefined());
-    expect(fake.from("finance_documents", "insert").calls[0].payload).toMatchObject({ document_type: "receipt", title: "Receipt" });
-    expect(fake.from("finance_expense_documents", "insert").calls[0].payload).toEqual({ expense_id: 1, document_id: 55 });
-    expect(fake.from("finance_reimbursement_documents", "insert").calls[0].payload).toEqual({ reimbursement_id: 5, document_id: 55 });
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_document_type: "receipt", p_title: "Receipt", p_expense_id: 1, p_reimbursement_id: 5 });
   });
 
   it("a funding claim whose approval proof is not a file the checks accept is saved, and the person is told why the proof is missing", async () => {

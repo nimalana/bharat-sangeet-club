@@ -13,12 +13,12 @@ attendance_sessions  authenticated  SELECT
 attendance_settings  authenticated  SELECT
 events  authenticated  DELETE,INSERT,SELECT,UPDATE
 finance_audit_log  authenticated  SELECT
-finance_claim_documents  authenticated  INSERT,SELECT
-finance_documents  authenticated  INSERT,SELECT
-finance_expense_documents  authenticated  INSERT,SELECT
+finance_claim_documents  authenticated  SELECT
+finance_documents  authenticated  SELECT
+finance_expense_documents  authenticated  SELECT
 finance_expenses  authenticated  SELECT
 finance_payments  authenticated  SELECT
-finance_reimbursement_documents  authenticated  INSERT,SELECT
+finance_reimbursement_documents  authenticated  SELECT
 funding_claim_expenses  authenticated  SELECT
 funding_claims  authenticated  SELECT
 member_deactivations  authenticated  SELECT
@@ -187,30 +187,18 @@ public.finance_audit_log  [Executives view finance audit]  SELECT  to authentica
 public.finance_claim_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
-public.finance_claim_documents  [Executives manage claim document links]  ALL  to authenticated
+public.finance_claim_documents  [Executives view claim document links]  SELECT  to authenticated
     using: ( SELECT private.is_executive() AS is_executive)
-    check: ( SELECT private.is_executive() AS is_executive)
+    check: -
 public.finance_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
-public.finance_documents  [Executives manage finance documents]  ALL  to authenticated
-    using: ( SELECT private.is_executive() AS is_executive)
-    check: ( SELECT private.is_executive() AS is_executive)
-public.finance_documents  [Members register own finance documents]  INSERT  to authenticated
-    using: -
-    check: (uploaded_by = ( SELECT auth.uid() AS uid))
 public.finance_documents  [Members view permitted finance documents]  SELECT  to authenticated
     using: (( SELECT private.is_executive() AS is_executive) OR (uploaded_by = ( SELECT auth.uid() AS uid)))
     check: -
 public.finance_expense_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
-public.finance_expense_documents  [Executives manage expense document links]  ALL  to authenticated
-    using: ( SELECT private.is_executive() AS is_executive)
-    check: ( SELECT private.is_executive() AS is_executive)
-public.finance_expense_documents  [Members attach own expense documents]  INSERT  to authenticated
-    using: -
-    check: ((EXISTS ( SELECT 1 FROM finance_expenses expense WHERE ((expense.id = finance_expense_documents.expense_id) AND ((expense.created_by = ( SELECT auth.uid() AS uid)) OR (expense.paid_by_member_id = ( SELECT auth.uid() AS uid)))))) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.id = finance_expense_documents.document_id) AND (document.uploaded_by = ( SELECT auth.uid() AS uid))))))
 public.finance_expense_documents  [Members view permitted expense document links]  SELECT  to authenticated
     using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM finance_expenses expense WHERE ((expense.id = finance_expense_documents.expense_id) AND ((expense.created_by = ( SELECT auth.uid() AS uid)) OR (expense.paid_by_member_id = ( SELECT auth.uid() AS uid)))))))
     check: -
@@ -235,12 +223,6 @@ public.finance_payments  [Members view permitted payments]  SELECT  to authentic
 public.finance_reimbursement_documents  [Active members only]  ALL  RESTRICTIVE  to authenticated
     using: ( SELECT private.is_active_member() AS is_active_member)
     check: ( SELECT private.is_active_member() AS is_active_member)
-public.finance_reimbursement_documents  [Executives manage reimbursement document links]  ALL  to authenticated
-    using: ( SELECT private.is_executive() AS is_executive)
-    check: ( SELECT private.is_executive() AS is_executive)
-public.finance_reimbursement_documents  [Members attach own reimbursement documents]  INSERT  to authenticated
-    using: -
-    check: ((EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_reimbursement_documents.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))) AND (EXISTS ( SELECT 1 FROM finance_documents document WHERE ((document.id = finance_reimbursement_documents.document_id) AND (document.uploaded_by = ( SELECT auth.uid() AS uid))))))
 public.finance_reimbursement_documents  [Members view own reimbursement document links]  SELECT  to authenticated
     using: (( SELECT private.is_executive() AS is_executive) OR (EXISTS ( SELECT 1 FROM personal_reimbursements reimbursement WHERE ((reimbursement.id = finance_reimbursement_documents.reimbursement_id) AND (reimbursement.member_id = ( SELECT auth.uid() AS uid))))))
     check: -
@@ -557,6 +539,7 @@ public.pay_personal_reimbursement(p_reimbursement_id bigint, p_payment_date date
 public.record_club_expense(p_description text, p_vendor text, p_amount numeric, p_purchase_date date, p_category text, p_account_name text, p_payment_card_last4 text, p_subgroup_id bigint, p_club_event_id bigint, p_event_related boolean, p_event_name text, p_event_starts_at timestamp with time zone, p_event_attendee_count integer, p_event_schedule text)  definer
 public.record_finance_income(p_description text, p_amount numeric, p_payment_date date, p_category text, p_counterparty text, p_account_name text)  definer
 public.record_funding_claim_payment(p_claim_id bigint, p_amount numeric, p_payment_date date, p_account_name text)  definer
+public.register_finance_document(p_storage_path text, p_document_type text, p_title text, p_mime_type text, p_file_size_bytes bigint, p_payment_card_last4 text, p_expense_id bigint, p_reimbursement_id bigint, p_claim_id bigint)  definer
 public.remove_finance_document(p_document_id bigint)  definer
 public.remove_funding_claim_expense(p_claim_id bigint, p_expense_id bigint)  definer
 public.remove_subgroup_member(p_subgroup_id bigint, p_member_id uuid)  definer

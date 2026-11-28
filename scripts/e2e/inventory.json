@@ -1,5 +1,5 @@
 {
- "generatedFrom": "bldytniesexkwbtyinsi (test) on 2026-11-27 after all 63 migrations, by inventory.sql",
+ "generatedFrom": "bldytniesexkwbtyinsi (test) on 2026-11-27 after all 63 migrations, by inventory.sql; then edited by hand for 20261128020000 to 20261128029000 (register_finance_document, finance_expenses.rejected_by and rejected_at): regenerate it once those are applied",
  "tables": [
   {
    "name": "admin_audit_log",
@@ -281,7 +281,9 @@
     "created_at",
     "updated_at",
     "voided_by",
-    "voided_at"
+    "voided_at",
+    "rejected_by",
+    "rejected_at"
    ],
    "anonGrants": []
   },
@@ -1091,6 +1093,48 @@
     {
      "name": "p_account_name",
      "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "register_finance_document",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_storage_path",
+     "type": "text"
+    },
+    {
+     "name": "p_document_type",
+     "type": "text"
+    },
+    {
+     "name": "p_title",
+     "type": "text"
+    },
+    {
+     "name": "p_mime_type",
+     "type": "text"
+    },
+    {
+     "name": "p_file_size_bytes",
+     "type": "bigint"
+    },
+    {
+     "name": "p_payment_card_last4",
+     "type": "text"
+    },
+    {
+     "name": "p_expense_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_reimbursement_id",
+     "type": "bigint"
+    },
+    {
+     "name": "p_claim_id",
+     "type": "bigint"
     }
    ]
   },

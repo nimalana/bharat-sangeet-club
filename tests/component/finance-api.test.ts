@@ -267,38 +267,49 @@ describe("the finance api: funding claims", () => {
 describe("the finance api: documents", () => {
   const file = new File(["%PDF-1.4 receipt"], "receipt.pdf", { type: "application/pdf" });
   const upload = (links: Parameters<typeof uploadFinanceDocument>[0]["links"], over: Partial<Parameters<typeof uploadFinanceDocument>[0]> = {}) =>
-    uploadFinanceDocument({ file, storagePath: "member-9/abc-receipt.pdf", mimeType: "application/pdf", documentType: "receipt", title: "Receipt", cardLast4: "1234", uploadedBy: "member-9", links, ...over });
+    uploadFinanceDocument({ file, storagePath: "member-9/abc-receipt.pdf", mimeType: "application/pdf", documentType: "receipt", title: "Receipt", cardLast4: "1234", links, ...over });
 
-  it("the file goes into the private bucket first, then the record, then each link, and the document's id comes back", async () => {
-    fake.from("finance_documents", "insert").reply(ok({ id: "55" }));
+  it("the file goes into the private bucket first, then ONE call registers the record and every link, and the document's id comes back", async () => {
+    fake.rpc("register_finance_document").reply(ok(55));
     const id = await upload({ expenseId: 1, reimbursementId: 5, claimId: 3 });
     expect(id).toBe(55);
     expect(fake.calls.map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual([
-      "storage:finance-private:upload", "from:finance_documents:insert",
-      "from:finance_expense_documents:insert", "from:finance_reimbursement_documents:insert", "from:finance_claim_documents:insert",
+      "storage:finance-private:upload", "rpc:register_finance_document:register_finance_document",
     ]);
     const stored = fake.storage("finance-private", "upload").calls[0];
     expect(stored.args[0]).toBe("member-9/abc-receipt.pdf");
     expect(stored.args[1]).toBe(file);
     expect(stored.args[2]).toEqual({ contentType: "application/pdf", upsert: false });
-    const registered = fake.from("finance_documents", "insert").calls[0];
-    expect(registered.payload).toEqual({
-      document_type: "receipt", title: "Receipt", storage_path: "member-9/abc-receipt.pdf", mime_type: "application/pdf", file_size_bytes: file.size, payment_card_last4: "1234", uploaded_by: "member-9",
+    expect(rpcArgs("register_finance_document")).toEqual({
+      p_storage_path: "member-9/abc-receipt.pdf", p_document_type: "receipt", p_title: "Receipt", p_mime_type: "application/pdf",
+      p_file_size_bytes: file.size, p_payment_card_last4: "1234", p_expense_id: 1, p_reimbursement_id: 5, p_claim_id: 3,
     });
-    expect(chainOf(registered).slice(1)).toEqual([["select", "id"], ["single"]]);
-    expect(fake.from("finance_expense_documents", "insert").calls[0].payload).toEqual({ expense_id: 1, document_id: 55 });
-    expect(fake.from("finance_reimbursement_documents", "insert").calls[0].payload).toEqual({ reimbursement_id: 5, document_id: 55 });
-    expect(fake.from("finance_claim_documents", "insert").calls[0].payload).toEqual({ claim_id: 3, document_id: 55 });
+    expect(fake.rpc("register_finance_document").calls[0].seq).toBeGreaterThan(stored.seq);
   });
 
-  it("only the links that were asked for are written, and no card digits are stored as null", async () => {
-    fake.from("finance_documents", "insert").reply(ok({ id: 8 }));
+  it("nobody is named as the uploader and no table is written: the database takes the uploader from the signed-in person", async () => {
+    fake.rpc("register_finance_document").reply(ok(55));
+    await upload({ expenseId: 1 });
+    expect(Object.keys(rpcArgs("register_finance_document") as object)).not.toContain("p_uploaded_by");
+    expect(fake.calls.filter((call) => call.kind === "from")).toEqual([]);
+  });
+
+  it("only the targets that were asked for are sent, and no card digits are sent as nothing", async () => {
+    fake.rpc("register_finance_document").reply(ok(8));
     await upload({ claimId: 3 }, { cardLast4: null });
-    expect(fake.calls.map((call) => call.target)).toEqual(["finance-private", "finance_documents", "finance_claim_documents"]);
-    expect(fake.from("finance_documents", "insert").calls[0].payload).toMatchObject({ payment_card_last4: null });
+    const sent = rpcArgs("register_finance_document") as Record<string, unknown>;
+    expect(sent.p_claim_id).toBe(3);
+    expect(sent.p_expense_id).toBeUndefined();
+    expect(sent.p_reimbursement_id).toBeUndefined();
+    expect(sent.p_payment_card_last4).toBeUndefined();
   });
 
-  it("when the file cannot be stored nothing is registered", async () => {
+  it("the id comes back as a number even when the database answers with text", async () => {
+    fake.rpc("register_finance_document").reply(ok("57"));
+    expect(await upload({ expenseId: 1 })).toBe(57);
+  });
+
+  it("when the file cannot be stored nothing is registered and nothing is removed", async () => {
     fake.storage("finance-private", "upload").reply(fail("The resource already exists"));
     const error = await upload({ expenseId: 1 }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
@@ -307,17 +318,37 @@ describe("the finance api: documents", () => {
     expect(fake.calls.map((call) => call.target)).toEqual(["finance-private"]);
   });
 
-  it("when the record is refused no link is written (the stored file stays, as it did)", async () => {
-    fake.from("finance_documents", "insert").reply(fail("new row violates row-level security policy", "42501"));
-    await expect(upload({ expenseId: 1 })).rejects.toMatchObject({ message: "new row violates row-level security policy", code: "42501" });
-    expect(fake.calls.map((call) => call.target)).toEqual(["finance-private", "finance_documents"]);
+  it("when the registration is refused the database's sentence is thrown and the stored file is removed again", async () => {
+    fake.rpc("register_finance_document").reply(fail("This purchase has been voided, so documents can no longer be added", "22023"));
+    await expect(upload({ expenseId: 1 })).rejects.toMatchObject({ message: "This purchase has been voided, so documents can no longer be added", code: "22023" });
+    expect(fake.calls.map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual([
+      "storage:finance-private:upload", "rpc:register_finance_document:register_finance_document", "storage:finance-private:remove",
+    ]);
+    expect(fake.storage("finance-private", "remove").calls[0].args[0]).toEqual(["member-9/abc-receipt.pdf"]);
   });
 
-  it("a refused link is thrown after the others were sent together", async () => {
-    fake.from("finance_documents", "insert").reply(ok({ id: 9 }));
-    fake.from("finance_reimbursement_documents", "insert").reply(fail("duplicate key value violates unique constraint", "23505"));
-    await expect(upload({ expenseId: 1, reimbursementId: 5 })).rejects.toMatchObject({ code: "23505" });
-    expect(fake.from("finance_expense_documents", "insert").count).toBe(1);
+  it("a file that cannot be removed after a refusal does not hide the refusal", async () => {
+    fake.rpc("register_finance_document").reply(fail("The file must be stored in your own folder", "42501"));
+    fake.storage("finance-private", "remove").reply(rejects());
+    await expect(upload({ expenseId: 1 })).rejects.toMatchObject({ message: "The file must be stored in your own folder", code: "42501" });
+  });
+
+  it("a file that is already registered is left in the bucket: a record points at it", async () => {
+    fake.rpc("register_finance_document").reply(fail("This file has already been registered as a finance document", "23505"));
+    await expect(upload({ expenseId: 1 })).rejects.toMatchObject({ code: "23505" });
+    expect(fake.storage("*", "remove").count).toBe(0);
+  });
+
+  it("a registration that got no answer (the network went away) leaves the file: it may have gone through", async () => {
+    fake.rpc("register_finance_document").reply(rejects());
+    await expect(upload({ expenseId: 1 })).rejects.toBeInstanceOf(TypeError);
+    expect(fake.storage("*", "remove").count).toBe(0);
+  });
+
+  it("an answer with no id is a failure: the stored file is removed and the sentence is the old one", async () => {
+    fake.rpc("register_finance_document").reply(ok(null));
+    await expect(upload({ expenseId: 1 })).rejects.toMatchObject({ message: "Document record could not be created" });
+    expect(fake.storage("finance-private", "remove").count).toBe(1);
   });
 
   it("a signed link for a stored document lasts 90 seconds", async () => {
