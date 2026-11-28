@@ -16,7 +16,6 @@ import {
   pulseNeedsReload,
   queueNote,
   rosterIsStale,
-  shouldPoll,
   termChoices,
   termLabel,
 } from "../features/attendance/model.ts";
@@ -211,13 +210,6 @@ test("opening check-in on a draft makes the roster the page holds stale", () => 
   const afterOpen = { id: 5, live: { roster_count: 4, checked_in_count: 0, version: "7c1f6b0e4d35a2c94a1c0b61e4d8f3a2" } };
   assert.equal(rosterIsStale(draftRoster, afterOpen), true, "the poll reads the roster again although no one has checked in");
   assert.equal(rosterIsStale({ ...draftRoster, version: afterOpen.live.version }, afterOpen), false, "and stops once it has the new one");
-});
-
-test("the poll is paused for a hidden page and for no open meeting", () => {
-  assert.equal(shouldPoll("visible", true), true);
-  assert.equal(shouldPoll("hidden", true), false);
-  assert.equal(shouldPoll("visible", false), false);
-  assert.equal(shouldPoll(undefined, true), true, "no Page Visibility support: keep polling");
 });
 
 // ---- late answers and repeated errors

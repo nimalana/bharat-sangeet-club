@@ -223,11 +223,6 @@ export function createFailureGate() {
   };
 }
 
-// The 10 second refresh only runs for a visible page with a meeting open.
-export function shouldPoll(visibility: string | undefined, hasOpenMeeting: boolean) {
-  return hasOpenMeeting && visibility !== "hidden";
-}
-
 // Whole minutes, 0 to 1440 (the most the database accepts), or null.
 export function parseMinutesLate(value: string) {
   const text = value.trim();

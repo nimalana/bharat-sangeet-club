@@ -5,13 +5,8 @@
 // on-screen data with an empty list (Finance then showed $0.00 as the balance).
 // A failed refresh keeps what is shown and tells the person; it never blanks it.
 
-type WithError = { error?: unknown } | null | undefined;
 type ListResult<T> = { data: T[] | null; error?: unknown };
 type CountResult = { count?: number | null; error?: unknown };
-
-export function anyFailed(results: WithError[]): boolean {
-  return results.some((result) => Boolean(result?.error));
-}
 
 export function listOrKeep<T>(previous: T[], result: ListResult<T>): T[] {
   return result.error || !result.data ? previous : result.data;

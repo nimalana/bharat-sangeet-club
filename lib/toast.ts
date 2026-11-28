@@ -8,8 +8,8 @@
 // be read for its tone: most of what the migrations raise ("Only administrators
 // can change member roles", "session is not open") has none of the usual words
 // of a failure. Every call that passes such text, or a message built around it,
-// must pass "error"; tests/toast-call-sites.test.mjs fails when one does not,
-// and toast.test.mjs runs the real messages of the migrations through it.
+// must pass "error"; tests/component/toast-tone.test.tsx fails when one does not,
+// and tests/toast.test.mjs runs the real messages of the migrations through it.
 //
 // A message sent without a tone is only a fallback for the fixed messages
 // written in the screens: it is read for the ordinary words of a failure

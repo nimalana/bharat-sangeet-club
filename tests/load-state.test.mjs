@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequestGate } from "../lib/request-gate.ts";
-import { anyFailed, countOrKeep, keepRowsOnFailure, listOrKeep } from "../lib/refresh.ts";
+import { countOrKeep, keepRowsOnFailure, listOrKeep } from "../lib/refresh.ts";
 import { isChunkLoadError } from "../lib/chunk-errors.ts";
 
 // frontend-7: an older response that arrives last must not replace a newer one.
@@ -66,12 +66,6 @@ test("a failed count keeps the previous count; a real zero is accepted", () => {
   assert.equal(countOrKeep(42, { count: undefined, error: null }), 42);
   assert.equal(countOrKeep(42, { count: 0, error: null }), 0);
   assert.equal(countOrKeep(42, { count: 7, error: null }), 7);
-});
-
-test("anyFailed notices one failure among many results", () => {
-  assert.equal(anyFailed([{ error: null }, { error: undefined }, null, undefined]), false);
-  assert.equal(anyFailed([{ error: null }, { error: { message: "x" } }]), true);
-  assert.equal(anyFailed([]), false);
 });
 
 test("rows are kept on failure only for the view they were loaded for", () => {
