@@ -11,6 +11,7 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 - [2. Dialog](#2-dialog) (and the list of every dialog in the portal, with who migrates it)
 - [3. Confirm](#3-confirm) (and how every destructive action confirms today)
 - [4. States and mutations](#4-states-and-mutations): errors with Try again, loading, pending buttons, forms
+- [5. Upload progress](#5-upload-progress): `uploadWithProgress`, `UploadProgress`, and why it is a real progress bar
 
 ---
 
@@ -262,3 +263,121 @@ exactly as typed, the button works again, and the error toast stays (it does not
   already keep them. If an area finds a form that needs a draft kept across a reload, report it as `needs:`.
 
 `tests/component/states.test.tsx` has the pattern as a test ("a form: pending, the values kept on a failure, the failure toast stays").
+
+
+---
+
+## 5. Upload progress
+
+supabase-js uploads through `fetch`, and a browser's `fetch` does not say how many bytes of the request have left. A 40 MB recording shows
+nothing for a minute. Two options were weighed (plan 3.1):
+
+- **A. `uploadWithProgress`**: send the SAME request through `XMLHttpRequest`, which has `upload.onprogress`.
+- **B.** No bytes: a per-file status list (waiting, uploading, done, failed with Retry).
+
+**Decision: A, and the status list of B is the same component** (`UploadProgress` shows the status words for every row and adds the bar when
+bytes are known), so nothing is lost if an area prefers to show status only. The brief said to pick A only if A is verifiably the same request
+and testable; both are shown:
+
+- What supabase-js sends (read in `node_modules/@supabase/storage-js/src/packages/StorageFileApi.ts` `uploadOrUpdate` and
+  `supabase-js/src/lib/fetch.ts` `fetchWithAuth`): `POST {url}/storage/v1/object/{bucket}/{path}`; headers `apikey` (the publishable key),
+  `Authorization: Bearer <the session's access token, or the key when nobody is signed in>`, `x-upsert`, and `X-Client-Info` (the SDK version);
+  a `FormData` body with `cacheControl` and the file as the unnamed part (the browser writes the content type and the boundary).
+- `tests/component/upload-with-progress.test.ts` runs the **real supabase-js client** and `uploadWithProgress` against one scripted transport and
+  compares URL, method, every header, every part of the body, the returned `{ path, id, fullPath }`, and the error for a refused upload (409, 413,
+  a policy refusal, an answer with a code, an answer that is a page not JSON) and for a dropped connection (same message, same status, same code,
+  same `friendlyError` sentence). The one difference is `X-Client-Info`, which is only telemetry (the test names it). **If an upgrade of
+  supabase-js changes the request, this test fails**: that is the guard against the two drifting apart.
+- It is testable without a network: `tests/support/fake-xhr.ts` (below). 27 one-line mutations of `uploadWithProgress` were each caught by the tests.
+
+Not verified here (no real browser, no real storage): a real upload against Supabase, the CORS preflight (the header set is the same as
+fetch's minus `x-client-info`, a subset of what the preflight already allows), a real browser's `lengthComputable`. The first area that adopts it
+should upload one real file and watch the bar move.
+
+### `uploadWithProgress` (`lib/api/_core.ts`)
+
+```ts
+uploadWithProgress(client, bucket, path, file, options?, onProgress?): Promise<UploadAnswer>
+//   client      the Supabase client (only its session is read: client.auth.getSession())
+//   bucket      a LITERAL, at the call site: "recordings" (the contract check reads it, see below)
+//   path        the storage path, as for .upload()
+//   file        a File or Blob
+//   options     { upsert?: boolean (default false), cacheControl?: string (default "3600"), signal?: AbortSignal }
+//   onProgress  ({ loaded, total }) => void   bytes sent / size of the request body (a few bytes more than the file)
+// resolves, never throws:
+//   { data: { path, id, fullPath }, error: null }   or   { data: null, error: ApiError }
+```
+
+It is a drop-in for `client.storage.from(bucket).upload(path, file, { upsert })`: the answer has the same two sides, so the call site changes by one line and
+the line after it stays:
+
+```ts
+// before
+const upload = await client.storage.from("recordings").upload(path, file, { contentType: file.type, upsert: false });
+if (upload.error) throw toApiError(upload.error);
+// after
+const upload = await uploadWithProgress(client, "recordings", path, file, { upsert: false }, onProgress);
+if (upload.error) throw upload.error;   // toApiError(upload.error) also works: an ApiError is returned as it is
+```
+
+- `contentType` is not passed: supabase-js ignores that option for a `File` body too (the file part carries `file.type`). `uploadResourceFile` takes a
+  `contentType` argument that therefore never reached the server; if a file can have an empty `file.type`, build `new File([file], file.name, { type })`
+  before the upload.
+- The project URL and key come from `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, the two variables `lib/supabase.ts`
+  reads. Without them it sends nothing and answers `error.message === "The portal is not connected."`.
+- Errors: a refusal carries the server's own message and HTTP status (`error.status`), so `friendlyError(error)` says what it said for the raw
+  error. A dropped connection has the message `Failed to fetch` (so `friendlyError` gives its "connection dropped" sentence, as for supabase-js).
+  A cancelled upload (`options.signal.abort()`) has `error.code === "aborted"` and the message "The upload was cancelled.": do not show a
+  failure toast for it.
+- `onProgress` runs for every `progress` event of the browser (often several a second): put it in state, not in a toast. When `loaded >= total`
+  all bytes have left and the server is still storing the file; `UploadProgress` says "Saving" then, and reaches "Uploaded" only on the answer.
+- In development, `lib/supabase.ts`'s request log (`__supabaseRequests()`) does not list these uploads: they do not go through its `fetch`.
+
+**The contract check still sees the bucket.** `scripts/contract-check/config.json` has `"storageHelpers": [{ "name": "uploadWithProgress", "bucketArg": 1,
+"method": "upload" }]`: the extractor reads a call of that function as `storage.from(<argument 1>).upload`, checks the bucket exists and has an INSERT policy for
+authenticated, and lists a bucket that is not a literal as UNRESOLVED (the allowance is 5, so pass a literal or `npm run test:contract` fails).
+`scripts/contract-check/selftest.mjs` has the control (a valid call: nothing new) and the injected breaks (a missing bucket) for it. A new helper of this
+kind goes into that list, not around it.
+
+### `UploadProgress` (`components/ui/upload-progress.tsx`)
+
+```tsx
+type UploadItem = { id: string; name: string; status: "waiting" | "uploading" | "done" | "failed"; loaded?: number; total?: number; error?: string };
+<UploadProgress items={uploads} onRetry={(id) => send(id)} label="Recordings being uploaded" />
+```
+
+The screen owns the list (the file's header has the whole pattern: `patch(id, { loaded, total })` from `onProgress`, `{ status: "done" }` or
+`{ status: "failed", error: friendlyError(answer.error) }` from the answer; the pattern is a test in `tests/component/upload-progress.test.tsx`).
+`uploadPercent(item)` is exported for a screen that wants the number.
+
+- It renders nothing for an empty list; otherwise a list named `label` (default "Uploads"), a row per file.
+- Each row: the name; a state that is a polite `role="status"` and changes only when the STATE changes (Waiting, Uploading, Saving, Uploaded,
+  `Failed: <the sentence>`), never at every percent; while uploading a `role="progressbar"` named "Uploading <name>" with `aria-valuemin=0`,
+  `aria-valuemax=100`, `aria-valuenow` and `aria-valuetext` ("42%", or "Saving"); the percent in text for the eye (`aria-hidden`).
+- The percent is 0 to 99 while bytes are on the way. **100 means uploaded and only the answer says it.** A bar that sits at 100% while the file
+  is still being stored is a bar that lies.
+- A failed row has a `Retry` button named "Retry <name>" when `onRetry` is given; Retry calls `onRetry(id)`; the screen sets the row back to
+  `uploading` and sends the same file again. Keep the file object for it (a `Map` or a ref keyed by `id`).
+- A failure still goes to the toast as before (section 1: it stays); the row says which file failed.
+- The bar has its own border (its track alone, `--line` on `--ivory`, is 1.5:1); text colours on `--ivory` are 4.9:1 (state, percent), 8.1:1 (failed) and
+  7.2:1 (uploaded). The width change does not animate for a person who asked for less motion.
+
+Where this applies, as the areas adopt it: recordings (a take, a notation file, an archive upload: the large files), resources (`resource-upload-panel`), finance
+documents, attendance excuse proofs. The six upload call sites are in `lib/api/<area>.ts`: `uploadRecordingTake`, `uploadNotationFile`, `uploadClubArchiveFile` (recordings),
+`uploadResourceFile` (resources), `uploadFinanceDocument` (finance), `uploadExcuseProof` (attendance). None was changed here. Each takes a progress
+callback from the screen that calls it, so an adopting area adds an optional `onProgress` parameter to its upload function and passes it through.
+
+### Testing an upload (`tests/support/fake-xhr.ts`)
+
+```ts
+const xhr = installFakeXhr();                      // replaces XMLHttpRequest, sets the two public env variables; setup.ts undoes both after every test
+const done = uploadWithProgress(client, "recordings", "u/take.mp3", file, {}, onProgress);
+await xhr.waitForRequest();                        // the request goes out after the session was read, not in the same tick
+xhr.last.progress(500, 1000);                      // -> onProgress({ loaded: 500, total: 1000 })
+xhr.last.respond(200, { Id: "1", Key: "recordings/u/take.mp3" });   // or respond(413, { message: "..." }), or networkError()
+await done;
+xhr.last.url / .method / .headers / .body          // what was sent
+```
+
+Through a screen, the client is the fake client of `tests/support/fake-supabase.ts`: script `fake.signIn(...)` if the test needs a token (without a session the
+key is the bearer token, as in production).

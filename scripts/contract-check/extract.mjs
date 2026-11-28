@@ -8,7 +8,8 @@
 //   rpc      client.rpc(name, args)             name, argument names with their TS types and literal values
 //   tables   client.from(table)...              select lists, insert/update/upsert/delete payload columns,
 //                                               filter/order columns and the string literals compared with them
-//   storage  client.storage.from(bucket).xxx()  bucket and method
+//   storage  client.storage.from(bucket).xxx()  bucket and method; and a call of a helper listed in config.json
+//                                               "storageHelpers" (uploadWithProgress), read as the storage call it stands for
 //   rest     "/rest/v1/<table>?select=..."      raw PostgREST URLs (fetch with the anon key)
 //   shapes   TS row types named in config.json  property names and literal unions
 //
@@ -74,6 +75,7 @@ function inFrontend(sf) {
 const files = program.getSourceFiles().filter(inFrontend);
 const lineOf = (sf, node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 
+const storageHelpers = new Map((config.storageHelpers || []).map((h) => [h.name, h]));
 const facts = { meta: { frontend: FRONTEND, typescript: ts.version, files: files.length }, rpc: [], tables: [], storage: [], rest: [], unresolved: [], notChecked: [], otherReceivers: {}, shapes: [] };
 const unresolved = (kind, sf, node, what, why) => facts.unresolved.push({ kind, file: rel(sf.fileName), line: lineOf(sf, node), what, why });
 
@@ -392,6 +394,19 @@ for (const sf of files) {
     if (ts.isPropertyAccessExpression(node) && node.name.text === "storage" && clientKind(node.expression) && !(ts.isPropertyAccessExpression(node.parent) && node.parent.expression === node && node.parent.name.text === "from")) {
       const m = ts.isPropertyAccessExpression(node.parent) ? node.parent.name.text : "";
       if (!["listBuckets", "getBucket", "createBucket", "updateBucket", "deleteBucket", "emptyBucket"].includes(m)) unresolved("client-alias", sf, node, "client.storage", "storage client used without .from(bucket) here; calls made through it are not seen");
+    }
+
+    // a storage helper (config.json "storageHelpers"): its call is the storage call, its bucket argument the bucket
+    if (ts.isCallExpression(node) && storageHelpers.size) {
+      const callee = ts.isIdentifier(node.expression) ? node.expression : ts.isPropertyAccessExpression(node.expression) ? node.expression.name : null;
+      const helper = callee && storageHelpers.get(callee.text);
+      let decl; try { decl = helper ? checker.getResolvedSignature(node)?.declaration : undefined; } catch { decl = undefined; }
+      if (helper && decl && inFrontend(decl.getSourceFile())) {
+        const b = stringsOf(node.arguments[helper.bucketArg]), line = lineOf(sf, node);
+        const fact = { file: rel(sf.fileName), line, buckets: b.values, bucketComplete: b.complete, calls: [{ method: helper.method, line, file: rel(sf.fileName) }], label: `${helper.name}(${b.values.join("|") || node.arguments[helper.bucketArg]?.getText(sf).slice(0, 40)})` };
+        if (!b.complete) unresolved("bucket", sf, node, fact.label, b.why || "bucket is not a literal");
+        facts.storage.push(fact);
+      }
     }
 
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {

@@ -23,3 +23,15 @@
 .skeleton-row{height:56px;margin-bottom:10px}
 @keyframes skeleton-sweep{from{background-position:200% 0}to{background-position:-200% 0}}
 @media (prefers-reduced-motion:reduce){.skeleton{animation:none}}
+/* Upload progress: one row per file (components/ui/upload-progress.tsx). The bar has a border of its own: its track alone is too pale to see against the page. */
+.upload-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.upload-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 14px;border:1px solid var(--line);background:var(--ivory);padding:10px 14px}
+.upload-name{overflow-wrap:anywhere;color:var(--ink);font-size:13px;font-weight:700}
+.upload-state{color:#596f7d;font-size:12px;text-align:right}
+.upload-item[data-status="failed"] .upload-state{color:#8b2832}
+.upload-item[data-status="done"] .upload-state{color:#2f5d3a}
+.upload-bar{grid-column:1/-1;height:8px;border:1px solid var(--sage);background:var(--line);overflow:hidden}
+.upload-bar>span{display:block;height:100%;background:var(--ink);transition:width .2s linear}
+.upload-percent{grid-column:1/-1;color:#596f7d;font-size:12px}
+.upload-retry{grid-column:1/-1;justify-self:start}
+@media (prefers-reduced-motion:reduce){.upload-bar>span{transition:none}}

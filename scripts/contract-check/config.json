@@ -6,6 +6,14 @@
     "storage": 10
   },
   "maxUnresolved": 5,
+  "_storageHelpers": "Functions that make a storage request without going through client.storage.from(bucket).method(): the extractor reads a call of one of them as that storage call. bucketArg is the index of the bucket argument (it must be a literal, or it is listed as unresolved); method is the storage method the helper stands for (upload needs an INSERT policy on the bucket). uploadWithProgress (lib/api/_core.ts) sends storage-js's own upload request through XMLHttpRequest, to report progress.",
+  "storageHelpers": [
+    {
+      "name": "uploadWithProgress",
+      "bucketArg": 1,
+      "method": "upload"
+    }
+  ],
   "rowTypes": {
     "MemberProfile": {
       "table": "profiles"
