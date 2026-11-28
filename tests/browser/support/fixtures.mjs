@@ -11,7 +11,7 @@
 //   finance      requests by member1: two submitted with two receipts each, one approved (to pay), one paid; club expenses
 //                (one to claim, one to void, one on the fixture funding claim); the claim; income
 //   archive      a public concert (it must exist BEFORE `next build`: the landing page is prerendered with it) and a members-only recording
-import { ACCOUNTS, ACCOUNT_KEYS } from "../../../scripts/e2e/accounts.mjs";
+import { ACCOUNT_KEYS } from "../../../scripts/e2e/accounts.mjs";
 import { mark, RUN } from "../../../scripts/e2e/lib/ctx.mjs";
 import { png, pdf, wav } from "../../../scripts/e2e/lib/fixtures.mjs";
 import { put, uid } from "../../../scripts/e2e/lib/storage.mjs";
