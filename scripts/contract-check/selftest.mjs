@@ -189,9 +189,11 @@ function mutateReal(name, regex, replace, expect) {
   const dir = copyFrontend(`real-${name.replace(/\W+/g, "-")}`);
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (["node_modules", ".next"].includes(e.name) ? [] : walk(path.join(d, e.name))) : /\.(ts|tsx)$/.test(e.name) && !/\.d\.ts$/.test(e.name) && !/\.(test|spec)\./.test(e.name) ? [path.join(d, e.name)] : []);
   for (const file of walk(dir)) {
-    const text = fs.readFileSync(file, "utf8"); const m = text.match(regex);
+    // The first place that is code: an example in a comment (lib/api/_core.ts shows one) is not a call, so mutating it proves nothing.
+    const text = fs.readFileSync(file, "utf8");
+    const m = [...text.matchAll(new RegExp(regex.source, "g"))].find((hit) => !/^\s*(\/\/|\/\*|\*)/.test(text.slice(text.lastIndexOf("\n", hit.index) + 1, hit.index)));
     if (!m) continue;
-    fs.writeFileSync(file, text.replace(regex, replace));
+    fs.writeFileSync(file, text.slice(0, m.index) + m[0].replace(regex, replace) + text.slice(m.index + m[0].length));
     const { key, prefix } = expect(m);
     const r = run(dir);
     const hit = key ? r.keys.has(key) : [...r.keys].some((k) => k.startsWith(prefix) && !base.keys.has(k));
