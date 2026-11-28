@@ -1,6 +1,7 @@
 // Opens the whole portal (the signed-in shell) against the fake client. The one place the shell is imported:
 // if the shell moves, change the import below.
 import { render } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import Home from "../../features/shell/components/home";
 import type { ClubRole } from "../../lib/sections";
 import { fake, ok } from "./fake-supabase";
@@ -31,3 +32,6 @@ export function openPortal(options: PortalOptions = {}) {
 }
 
 export const renderPortal = (props: { publicConcerts?: Parameters<typeof Home>[0]["publicConcerts"] } = {}) => render(<Home {...props} />);
+
+/** What the server sends: the portal rendered to HTML, before any effect has run (nothing is signed in, no storage is read). */
+export const serverRenderPortal = (props: { publicConcerts?: Parameters<typeof Home>[0]["publicConcerts"] } = {}) => renderToString(<Home {...props} />);
