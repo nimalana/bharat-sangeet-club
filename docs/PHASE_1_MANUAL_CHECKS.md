@@ -66,7 +66,7 @@ The two revokes that used to be listed here (`funding_claims` insert and update,
 
 ## Release order
 
-`20261127075000_least_privilege_grants.sql` is the one migration that is **not additive**. It takes write privileges away from `authenticated` (and everything from `anon` except the public concert list) on every table the new frontend does not write directly. The frontend deployed from `main` today still writes `funding_claims` (insert, update) and `funding_claim_expenses` (insert) straight through the REST API, so the order matters:
+`20261127075000_least_privilege_grants.sql` is the migration that breaks the old frontend (the order for every file, with the few that only refuse something with a readable sentence, is in `docs/RELEASE_ORDER.md`, which supersedes this paragraph). It takes write privileges away from `authenticated` (and everything from `anon` except the public concert list) on every table the new frontend does not write directly. The frontend deployed from `main` today still writes `funding_claims` (insert, update) and `funding_claim_expenses` (insert) straight through the REST API, so the order matters:
 
 1. Apply every other migration, including the ones from the finance and attendance branches that sort before `20261127075000`. The production frontend keeps working against them.
 2. Deploy the new frontend (the branch with this file) and run the checks above on it.
