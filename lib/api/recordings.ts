@@ -56,6 +56,12 @@ export async function listRecordings(query: RecordingsQuery): Promise<{ rows: Ta
 
 // ---------------------------------------------------------------- one recording
 
+/** One recording by its id (a link to it, a reload), or null when there is none the person may read. */
+export async function fetchRecording(id: number): Promise<Tables<"recordings"> | null> {
+  const client = db();
+  return must(await client.from("recordings").select("*").eq("id", id).maybeSingle());
+}
+
 export async function listRecordingNotes(recordingId: number): Promise<Tables<"recording_notes">[]> {
   const client = db();
   return must(await client.from("recording_notes").select("*").eq("recording_id", recordingId).order("created_at")) ?? [];

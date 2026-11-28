@@ -11,7 +11,7 @@ import { ShruthiCompanion } from "../../features/recordings/components/shruthi-c
 import { WaveformPlayer } from "../../features/recordings/components/waveform-player";
 import { setCacheOwner } from "../../lib/cache";
 import { flush, notifySpy, userOf } from "../support/helpers";
-import { fail, fake, ok } from "../support/fake-supabase";
+import { deferred, fail, fake, ok } from "../support/fake-supabase";
 import { routeUploadsToFakeClient } from "./content-uploads";
 
 // Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
@@ -346,7 +346,7 @@ describe("the studio: a take recorded in the browser", () => {
     renderRecordings();
     const studio = await openNewStudio();
     fireEvent.click(studio.getByRole("tab", { name: "Record audio" }));
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
     expect(await studio.findByRole("alert")).toHaveTextContent("This browser does not support direct recording. Try uploading a file instead.");
   });
 
@@ -357,9 +357,9 @@ describe("the studio: a take recorded in the browser", () => {
     renderRecordings();
     const studio = await openNewStudio();
     fireEvent.click(studio.getByRole("tab", { name: "Record audio" }));
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
     expect(await studio.findByRole("alert")).toHaveTextContent("Microphone or camera access was blocked. Allow access in your browser, then try again.");
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
     await waitFor(() => expect(studio.getByRole("alert")).toHaveTextContent("We could not start the recording. Try another input or upload a file instead."));
     expect(getUserMedia).toHaveBeenNthCalledWith(1, { audio: true, video: false });
   });
@@ -372,7 +372,7 @@ describe("the studio: a take recorded in the browser", () => {
     renderRecordings();
     const studio = await openNewStudio();
     fireEvent.click(studio.getByRole("tab", { name: "Record audio" }));
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
     expect(await studio.findByRole("alert")).toHaveTextContent("We could not start the recording. Try another input or upload a file instead.");
     expect(stopTrack).toHaveBeenCalledTimes(1);
   });
@@ -389,11 +389,11 @@ describe("the studio: a take recorded in the browser", () => {
     const studio = await openNewStudio();
     fireEvent.click(studio.getByRole("tab", { name: "Record video" }));
     expect(studio.getByText("Camera ready when you are")).toBeInTheDocument();
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
-    await studio.findByRole("button", { name: "■ Stop recording" });
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
+    await studio.findByRole("button", { name: "Stop recording" });
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true, video: true });
     expect((document.querySelector(".recording-capture-card video") as HTMLVideoElement & { srcObject: unknown }).srcObject).toBe(stream);
-    fireEvent.click(studio.getByRole("button", { name: "■ Stop recording" }));
+    fireEvent.click(studio.getByRole("button", { name: "Stop recording" }));
     expect(await studio.findByText(/^recording-\d+\.webm$/)).toBeInTheDocument();
     fireEvent.change(studio.getByLabelText("Title"), { target: { value: "On camera" } });
     fireEvent.click(studio.getByRole("button", { name: "Publish to subgroup" }));
@@ -411,10 +411,10 @@ describe("the studio: a take recorded in the browser", () => {
     const { notify } = renderRecordings();
     const studio = await openNewStudio();
     fireEvent.click(studio.getByRole("tab", { name: "Record audio" }));
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
-    await studio.findByRole("button", { name: "■ Stop recording" });
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
+    await studio.findByRole("button", { name: "Stop recording" });
     expect(recorders[0].mimeType).toBe("");
-    fireEvent.click(studio.getByRole("button", { name: "■ Stop recording" }));
+    fireEvent.click(studio.getByRole("button", { name: "Stop recording" }));
     await studio.findByText(/^recording-\d+\.webm$/);
     fireEvent.change(studio.getByLabelText("Title"), { target: { value: "Plain" } });
     fireEvent.click(studio.getByRole("button", { name: "Publish to subgroup" }));
@@ -430,8 +430,8 @@ describe("the studio: a take recorded in the browser", () => {
     renderRecordings();
     const studio = await openNewStudio();
     fireEvent.click(studio.getByRole("tab", { name: "Record audio" }));
-    fireEvent.click(studio.getByRole("button", { name: "● Start recording" }));
-    await studio.findByRole("button", { name: "■ Stop recording" });
+    fireEvent.click(studio.getByRole("button", { name: "Start recording" }));
+    await studio.findByRole("button", { name: "Stop recording" });
     fireEvent.click(studio.getByRole("button", { name: "Close recording studio" }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Recording studio" })).not.toBeInTheDocument());
     expect(recorders[0].state).toBe("inactive");
@@ -450,13 +450,13 @@ describe("the studio: a take recorded in the browser", () => {
     fireEvent.click(studio.getByRole("tab", { name: "Record audio" }));
     expect(studio.getByText("Microphone ready when you are")).toBeInTheDocument();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
-    await act(async () => { fireEvent.click(studio.getByRole("button", { name: "● Start recording" })); });
+    await act(async () => { fireEvent.click(studio.getByRole("button", { name: "Start recording" })); });
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true, video: false });
     expect(recorders[0].mimeType).toBe("audio/webm;codecs=opus");
     expect(recorders[0].state).toBe("recording");
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(studio.getByText("Recording 0:03")).toBeInTheDocument();
-    await act(async () => { fireEvent.click(studio.getByRole("button", { name: "■ Stop recording" })); });
+    await act(async () => { fireEvent.click(studio.getByRole("button", { name: "Stop recording" })); });
     vi.useRealTimers();
     expect(stopTrack).toHaveBeenCalled();
     expect(await studio.findByText(/^recording-\d+\.webm$/)).toBeInTheDocument();
@@ -504,35 +504,80 @@ describe("a recording's window", () => {
     expect(screen.getByText("No notation attached yet.")).toBeInTheDocument();
   });
 
-  it("a take that cannot be signed says so, and the player never appears", async () => {
+  // Phase 3.1: a take that cannot be signed is said in the place of the player, with Try again (it used to be "Loading the recording…" for ever).
+  it("a take that cannot be signed says so in the place of the player, and Try again signs it again", async () => {
     listReads().reply(ok([rec(1, "Varnam take")], { count: 1 }));
     fake.from("recording_notes", "select").reply(ok([]));
-    fake.storage("recordings", "createSignedUrl").reply(fail("Object not found"));
-    const { notify } = renderRecordings();
+    fake.storage("recordings", "createSignedUrl").replyOnce(fail("Object not found")).reply(ok({ signedUrl: "https://files.test/recordings/u-me/take-1.mp3?again" }));
+    renderRecordings();
     fireEvent.click(await screen.findByRole("button", { name: /Varnam take/ }));
-    await waitFor(() => expect(notify.find("This recording could not be opened").tone).toBe("error"));
-    expect(screen.getByText("Loading the recording…")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("This recording could not be opened.");
+    expect(screen.queryByText("Loading the recording…")).not.toBeInTheDocument();
     expect(wave.instances).toHaveLength(0);
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(wave.instances).toHaveLength(1));
+    expect(wave.instances[0].options.url).toBe("https://files.test/recordings/u-me/take-1.mp3?again");
+    expect(screen.queryByText("This recording could not be opened.")).not.toBeInTheDocument();
   });
 
-  it("a notation file opens in a new tab through a link signed for 15 minutes, with no opener", async () => {
+  it("while the notation is first read the dialog says so; a first read that fails is not 'No notation attached yet', and Try again reads it", async () => {
+    const first = deferred();
     listReads().reply(ok([rec(1, "Varnam take")], { count: 1 }));
-    fake.from("recording_notes", "select").reply(ok([note(2, "Sargam", { note_type: "file", storage_path: "u-me/sargam.pdf" })]));
+    fake.from("recording_notes", "select").replyOnce(first.reply).reply(ok([note(2, "Alap")]));
+    renderRecordings();
+    fireEvent.click(await screen.findByRole("button", { name: /Varnam take/ }));
+    expect(await screen.findByText("Loading the notation")).toBeInTheDocument();
+    expect(screen.queryByText("No notation attached yet.")).not.toBeInTheDocument();
+    await act(async () => { first.resolve(fail("boom")); });
+    const alert = await screen.findByText("The notation could not be loaded.");
+    expect(screen.queryByText("No notation attached yet.")).not.toBeInTheDocument();
+    fireEvent.click(within(alert.parentElement as HTMLElement).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Alap body")).toBeInTheDocument();
+    expect(screen.queryByText("The notation could not be loaded.")).not.toBeInTheDocument();
+  });
+
+  // Phase 3.3: a notation file opens in a preview over the recording (PreviewDialog), not in another tab.
+  it("a notation file opens in a preview over the recording, through a link signed for 15 minutes", async () => {
+    listReads().reply(ok([rec(1, "Varnam take")], { count: 1 }));
+    fake.from("recording_notes", "select").reply(ok([note(2, "Sargam", { note_type: "file", storage_path: "u-me/sargam.pdf", mime_type: "application/pdf" })]));
+    renderRecordings();
+    fireEvent.click(await screen.findByRole("button", { name: /Varnam take/ }));
+    const opener = await screen.findByRole("button", { name: /Sargam/ });
+    opener.focus(); // a click focuses a button in a browser; fireEvent does not
+    fireEvent.click(opener);
+    const preview = await screen.findByRole("dialog", { name: "Sargam" });
+    const frame = await within(preview).findByTitle("Sargam (PDF)");
+    expect(frame).toHaveAttribute("src", "https://files.test/recording-notations/u-me/sargam.pdf?signed");
+    expect(within(preview).getByRole("link", { name: "Open in a new tab" })).toHaveAttribute("rel", "noopener noreferrer");
+    expect(signedFor("recording-notations")[0].args).toEqual(["u-me/sargam.pdf", 900]);
+    expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Sargam" })).not.toBeInTheDocument();
+    // The recording is still open under it, and focus is back on the button that opened the notation.
+    expect(screen.getByRole("dialog", { name: "Varnam take" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Sargam/ }));
+  });
+
+  it("a notation file of a kind the browser cannot show offers a download in the preview", async () => {
+    listReads().reply(ok([rec(1, "Varnam take")], { count: 1 }));
+    fake.from("recording_notes", "select").reply(ok([note(2, "Lyrics.docx", { note_type: "file", storage_path: "u-me/lyrics.docx", mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })]));
+    renderRecordings();
+    fireEvent.click(await screen.findByRole("button", { name: /Varnam take/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Lyrics\.docx/ }));
+    const preview = await screen.findByRole("dialog", { name: "Lyrics.docx" });
+    expect(await within(preview).findByRole("link", { name: "Download Lyrics.docx" })).toHaveAttribute("href", "https://files.test/recording-notations/u-me/lyrics.docx?signed");
+  });
+
+  it("a notation file that cannot be signed is said in the preview and opens nothing", async () => {
+    listReads().reply(ok([rec(1, "Varnam take")], { count: 1 }));
+    fake.from("recording_notes", "select").reply(ok([note(2, "Sargam", { note_type: "file", storage_path: "u-me/sargam.pdf", mime_type: "application/pdf" })]));
+    fake.storage("recording-notations", "createSignedUrl").reply(fail("Object not found"));
     renderRecordings();
     fireEvent.click(await screen.findByRole("button", { name: /Varnam take/ }));
     fireEvent.click(await screen.findByRole("button", { name: /Sargam/ }));
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith("https://files.test/recording-notations/u-me/sargam.pdf?signed", "_blank", "noopener,noreferrer"));
-    expect(signedFor("recording-notations")[0].args).toEqual(["u-me/sargam.pdf", 900]);
-  });
-
-  it("a notation file that cannot be signed says so and opens nothing", async () => {
-    listReads().reply(ok([rec(1, "Varnam take")], { count: 1 }));
-    fake.from("recording_notes", "select").reply(ok([note(2, "Sargam", { note_type: "file", storage_path: "u-me/sargam.pdf" })]));
-    fake.storage("recording-notations", "createSignedUrl").reply(fail("Object not found"));
-    const { notify } = renderRecordings();
-    fireEvent.click(await screen.findByRole("button", { name: /Varnam take/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Sargam/ }));
-    await waitFor(() => expect(notify.find("This notation file could not be opened").tone).toBe("error"));
+    const preview = await screen.findByRole("dialog", { name: "Sargam" });
+    expect(await within(preview).findByRole("alert")).toHaveTextContent("Object not found");
     expect(window.open).not.toHaveBeenCalled();
   });
 });
