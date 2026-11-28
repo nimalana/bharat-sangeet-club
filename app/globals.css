@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source not "../scripts/css-split";
 
 @theme inline {
   --color-ivory: var(--ivory);
