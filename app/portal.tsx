@@ -12,10 +12,8 @@ import type { AccountStatus, Announcement, ArchiveItem, ClubEvent, ScopeFilter, 
 import type { PublicConcert } from "../lib/public-concerts";
 import { countOrKeep, listOrKeep } from "../lib/refresh";
 import { createRequestGate } from "../lib/request-gate";
-import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../lib/sections";
+import { SECTION_LABELS, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../lib/sections";
 import { supabase } from "../lib/supabase";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
 import { LoadingBlock } from "../components/ui/loading-block";
 import { PageTitle } from "../components/ui/page-title";
 import { SectionBoundary } from "../components/ui/section-boundary";
@@ -30,6 +28,11 @@ import { MembersPage } from "../features/members/components/members-page";
 import { LoginScreen, pendingSignupNameKey } from "../features/public/components/login-screen";
 import { PublicSite } from "../features/public/components/public-site";
 import { ArchiveModal } from "../features/recordings/components/archive-modal";
+import { BootstrapFailedScreen } from "../features/shell/components/bootstrap-failed-screen";
+import { LoadingScreen } from "../features/shell/components/loading-screen";
+import { PortalPageMenu } from "../features/shell/components/portal-page-menu";
+import { SectionRefused } from "../features/shell/components/section-refused";
+import { SetupScreen } from "../features/shell/components/setup-screen";
 
 // Each heavy screen is its own bundle, loaded when it is first opened, so the
 // audio libraries and finance code are not downloaded to read the calendar.
@@ -326,31 +329,3 @@ function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | 
     </main>
   );
 }
-
-function PortalPageMenu({ section, role, onNavigate }: { section: Section; role: ClubRole; onNavigate: (section: Section) => void }) {
-  const [open, setOpen] = useState(false); const shell = useRef<HTMLDivElement>(null);
-  const groups = menuGroups(role);
-  const pages = menuPages(role);
-  useEffect(() => {
-    function close(event: MouseEvent) { if (!shell.current?.contains(event.target as Node)) setOpen(false); }
-    function escape(event: KeyboardEvent) { if (event.key === "Escape") { setOpen(false); shell.current?.querySelector<HTMLButtonElement>(".page-menu-trigger")?.focus(); } }
-    document.addEventListener("mousedown", close); document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
-  }, []);
-  function go(page: Section) { onNavigate(page); setOpen(false); }
-  return <div className="portal-navigation" ref={shell}><nav className="primary-navigation" aria-label="Portal navigation">{pages.map((page) => <button className={page === section ? "active" : ""} aria-current={page === section ? "page" : undefined} key={page} onClick={() => go(page)}>{SECTION_LABELS[page]}</button>)}</nav><div className="page-menu-shell"><button className="page-menu-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span><small>Navigate</small><b>{SECTION_LABELS[section]}</b></span><i aria-hidden="true">⌄</i></button>{open && <div className="page-menu" role="menu" aria-label="All pages">{groups.map((group) => <div className="page-menu-group" key={group.title}><p>{group.title}</p>{group.pages.map((page) => <button role="menuitem" className={page === section ? "selected" : ""} key={page} onClick={() => go(page)}><span>{SECTION_LABELS[page]}</span>{group.clubWide && <small>Club-wide</small>}{page === section && <i>✓</i>}</button>)}</div>)}<span className="menu-count">{pages.length} destinations</span></div>}</div></div>;
-}
-
-function SectionRefused({ label, onHome }: { label: string; onHome: () => void }) {
-  return <section className="section-shell page-section"><EmptyState title={`${label} is not available to your account`} text="Ask a club administrator if you think you should have access." /><div className="mt-4 flex justify-center"><Button variant="secondary" onClick={onHome}>Back to Overview</Button></div></section>;
-}
-
-function BootstrapFailedScreen({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {
-  return <main className="loading-screen" role="alert">
-    <h2>We could not load your club profile</h2>
-    <p>Check your connection and try again. Nothing has been changed.</p>
-    <div className="flex flex-wrap justify-center gap-2"><Button onClick={onRetry}>Try again</Button><Button variant="secondary" onClick={onSignOut}>Sign out</Button></div>
-  </main>;
-}
-function LoadingScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><p>Opening the club archive…</p></main>; }
-function SetupScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
