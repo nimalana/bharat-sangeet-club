@@ -35,21 +35,25 @@ export default async function finance(t, ctx) {
   const paymentRow = (paymentId) => one(c.execA.from("finance_payments").select("*").eq("id", paymentId).single(), `read payment ${paymentId}`);
   const message = (error) => `${error.message || ""} ${error.details || ""}`;
 
-  // The app's uploadDocument(): file to finance-private, a finance_documents record, then the links.
+  // The app's uploadDocument(): the file goes to finance-private, then ONE register_finance_document call creates the record and every
+  // link (the four document tables take no direct writes: 20261128029000). On a refusal the stored file is removed, as the app does.
+  const registerDoc = (client, params) => client.rpc("register_finance_document", params);
   async function uploadDoc(client, userId, { type = "receipt", title, buffer = png(), mime = "image/png", name = "receipt.png", last4 = null, links = {} }) {
     const path = `${userId}/${uid()}-${name}`;
     const up = await put(client, BUCKET, path, buffer, mime);
     if (up.error) throw new Error(`upload of ${type} to ${BUCKET} failed: ${describeError(up.error)}`);
-    const saved = await client.from("finance_documents").insert({ document_type: type, title, storage_path: path, mime_type: mime, file_size_bytes: buffer.length, payment_card_last4: last4, uploaded_by: userId }).select("id").single();
-    if (saved.error) throw new Error(`document record for ${type} failed: ${describeError(saved.error)}`);
-    const documentId = Number(saved.data.id);
-    const requests = [];
-    if (links.expenseId) requests.push(client.from("finance_expense_documents").insert({ expense_id: links.expenseId, document_id: documentId }));
-    if (links.reimbursementId) requests.push(client.from("finance_reimbursement_documents").insert({ reimbursement_id: links.reimbursementId, document_id: documentId }));
-    if (links.claimId) requests.push(client.from("finance_claim_documents").insert({ claim_id: links.claimId, document_id: documentId }));
-    for (const res of await Promise.all(requests)) if (res.error) throw new Error(`linking ${type} failed: ${describeError(res.error)}`);
-    return { id: documentId, path, buffer };
+    const saved = await registerDoc(client, {
+      p_storage_path: path, p_document_type: type, p_title: title, p_mime_type: mime, p_file_size_bytes: buffer.length, p_payment_card_last4: last4 ?? undefined,
+      p_expense_id: links.expenseId || undefined, p_reimbursement_id: links.reimbursementId || undefined, p_claim_id: links.claimId || undefined,
+    });
+    if (saved.error) {
+      await client.storage.from(BUCKET).remove([path]);
+      throw new Error(`registering ${type} failed: ${describeError(saved.error)}`);
+    }
+    return { id: Number(saved.data), path, buffer };
   }
+  // A direct write to one of the four document tables: refused for everybody with "permission denied" (42501).
+  const directRefused = (res, label) => equal(refused(res, label, /permission denied/i).code, "42501", `${label}: error code`);
 
   // Once remove_finance_document has dropped the record, the file is an unregistered file in the owner's folder: the owner (and an
   // executive) can delete it through the Storage API (20261127050200). Returns how many objects the API removed.
@@ -75,6 +79,8 @@ export default async function finance(t, ctx) {
     const expenseId = Number(succeeded(await c.execA.rpc("record_club_expense", {
       p_description: description, p_vendor: "E2E Vendor", p_amount: amount, p_purchase_date: today(), p_category: "Supplies",
       p_account_name: "Club bank account", p_payment_card_last4: "4321", p_event_related: eventRelated,
+      // An event purchase is recorded with its event details (20261128020200); the flyer or agenda is what the claim still lacks.
+      ...(eventRelated ? { p_event_name: mark("E2E rehearsal"), p_event_starts_at: new Date(Date.now() + 86400000).toISOString(), p_event_attendee_count: 12, p_event_schedule: "Doors 6pm, music 7pm" } : {}),
     }), `record_club_expense ${label}`));
     const doc = receipt ? await uploadDoc(c.execA, id.execA, { type: "receipt", title: mark(`Receipt ${label}`), last4: "4321", links: { expenseId } }) : null;
     return { id: expenseId, description, doc };
@@ -133,8 +139,8 @@ export default async function finance(t, ctx) {
     nothingHappened(await c.member1.from("finance_payments").insert({ direction: "inflow", purpose: "income", amount: 1, description: mark("forged income") }).select(), "member1 inserting a payment");
     equal(money((await reimbursementRow("member1", s.r1.reimbursementId)).requested_amount), 45.5, "amount after the direct write attempts");
 
-    refused(await c.member1.rpc("remove_finance_document", { p_document_id: s.r1.doc.id }), "removing the only receipt of a waiting request", /needs a receipt/i);
-    refused(await c.member2.rpc("remove_finance_document", { p_document_id: s.r1.doc.id }), "another member removing the receipt", /not found/i);
+    refused(await c.member1.rpc("remove_finance_document", { p_document_id: s.r1.doc2.id }), "removing the only receipt of a waiting request", /needs a receipt/i);
+    refused(await c.member2.rpc("remove_finance_document", { p_document_id: s.r1.doc2.id }), "another member removing the receipt", /not found/i);
     const direct = await c.member1.storage.from(BUCKET).remove([s.r1.doc.path]);
     equal((direct.data || []).length, 0, "objects removed straight from storage while the record exists");
     succeeded(await sign(c.member1, BUCKET, s.r1.doc.path, 60), "the registered receipt is still signable");
@@ -154,6 +160,9 @@ export default async function finance(t, ctx) {
     refused(await c.member1.rpc("update_member_reimbursement", {
       p_reimbursement_id: s.r2.reimbursementId, p_description: s.r2.description, p_vendor: "x", p_amount: 5, p_purchase_date: today(), p_category: "Supplies", p_payment_card_last4: "1234",
     }), "editing a withdrawn request", /already been decided/i);
+    const lateDoc = (extra) => ({ p_storage_path: `${id.member1}/${uid()}-late.png`, p_document_type: "receipt", p_title: mark("late receipt"), p_mime_type: "image/png", p_file_size_bytes: 10, ...extra });
+    refused(await registerDoc(c.member1, lateDoc({ p_expense_id: s.r2.expenseId, p_reimbursement_id: s.r2.reimbursementId })), "a receipt added to a withdrawn request", /already been decided/i);
+    refused(await registerDoc(c.member1, lateDoc({ p_expense_id: s.r2.expenseId })), "a receipt added to a withdrawn purchase", /has been voided/i);
   });
 
   await t.observe("the receipt of a withdrawn request can no longer be removed by the member or by an executive (remove_finance_document refuses)", async () => {
@@ -283,6 +292,8 @@ export default async function finance(t, ctx) {
     equal((await reimbursementRow("execA", s.r3.reimbursementId)).status, "submitted", "status after the refused self-reviews");
     succeeded(await c.execA.rpc("review_personal_reimbursement", { p_reimbursement_id: s.r3.reimbursementId, p_decision: "approved" }), "execA approves execB's request");
     await moved({ spending: 22 }, "after the other executive approves");
+    refused(await c.execB.rpc("pay_personal_reimbursement", { p_reimbursement_id: s.r3.reimbursementId, p_payment_date: today() }), "an executive paying their own request", /cannot pay your own/i);
+    equal((await reimbursementRow("execA", s.r3.reimbursementId)).status, "approved", "status after the refused self-payment");
     succeeded(await c.execA.rpc("pay_personal_reimbursement", { p_reimbursement_id: s.r3.reimbursementId, p_payment_date: today() }), "execA pays execB's request");
     await moved({ available_cash: -22, pending_reimbursement_total: -22, pending_reimbursement_count: -1 }, "after paying the executive's request");
 
@@ -291,12 +302,14 @@ export default async function finance(t, ctx) {
     const rejected = firstRow(succeeded(await c.execA.rpc("review_personal_reimbursement", { p_reimbursement_id: s.r4.reimbursementId, p_decision: "rejected", p_review_note: "Not a club expense" }), "reject"));
     equal([rejected.status, rejected.approved_amount, rejected.review_note], ["rejected", null, "Not a club expense"], "rejected reimbursement");
     equal((await reimbursementRow("member2", s.r4.reimbursementId)).review_note, "Not a club expense", "what the member reads");
-    equal((await expenseRow("member2", s.r4.expenseId)).status, "rejected", "expense status");
+    const declined = await expenseRow("member2", s.r4.expenseId);
+    equal([declined.status, declined.rejected_by, declined.approved_by, declined.approved_at], ["rejected", id.execA, null, null], "expense after the decline: the rejection is recorded as one, with no approval");
+    equal(rowsOf(await c.execA.from("finance_audit_log").select("action").eq("entity_type", "personal_reimbursements").eq("entity_id", s.r4.reimbursementId).eq("action", "rejected"), "audit rows").length, 1, "one audit row says the request was rejected");
     await moved({ pending_reimbursement_total: -8, pending_reimbursement_count: -1 }, "after the rejection");
     refused(await c.execA.rpc("review_personal_reimbursement", { p_reimbursement_id: s.r4.reimbursementId, p_decision: "approved" }), "approving a rejected request", /submitted reimbursement not found/i);
   });
 
-  await t.test("finance files are guarded: another member's folder, another file type, an oversized file, a record in someone else's name, and a link to someone else's expense are all refused", async () => {
+  await t.test("finance files are guarded: another member's folder, another file type, an oversized file, a path that is not yours, a file that is not there, someone else's expense, a statement that is not a PDF, the same file twice and every direct write are refused", async () => {
     const intoOther = await put(c.member2, BUCKET, `${id.member1}/${uid()}-x.png`, png(), "image/png");
     ok(intoOther.error, "member2 uploaded into member1's folder");
     const wrongType = await put(c.member2, BUCKET, `${id.member2}/${uid()}-x.txt`, text("not allowed"), "text/plain");
@@ -304,14 +317,35 @@ export default async function finance(t, ctx) {
     const big = Buffer.alloc(10 * 1024 * 1024 + 1, 1);
     const tooBig = await put(c.member2, BUCKET, `${id.member2}/${uid()}-big.pdf`, big, "application/pdf");
     ok(tooBig.error, "a file over 10 MB was accepted by finance-private");
-    const own = await uploadDoc(c.member2, id.member2, { type: "receipt", title: mark("member2 own receipt"), links: {} });
-    refused(await c.member2.from("finance_documents").insert({ document_type: "receipt", title: mark("in someone else's name"), storage_path: `${id.member2}/${uid()}-y.png`, mime_type: "image/png", file_size_bytes: 10, uploaded_by: id.member1 }), "record in another member's name");
-    refused(await c.member2.from("finance_expense_documents").insert({ expense_id: s.r1.expenseId, document_id: own.id }), "linking own file to another member's expense");
-    refused(await c.member2.from("finance_documents").insert({ document_type: "bank_statement", title: mark("statement as an image"), storage_path: own.path, mime_type: "image/png", file_size_bytes: 10, uploaded_by: id.member2 }), "a statement that is not a PDF");
-    // tidy: the unlinked record of member2's own file
-    const gone = succeeded(await c.member2.rpc("remove_finance_document", { p_document_id: own.id }), "member2 removes an unlinked document");
-    equal(gone, own.path, "path returned");
-    equal(await deleteFinanceFile(c.member2, gone), 1, "member2 deleting the file of the document they just removed"); // same rule as the replace-a-receipt test
+
+    // A file member2 really stored in their own folder, and what the registration (the only way to write a document record) says to it.
+    const mine = `${id.member2}/${uid()}-own.png`;
+    succeeded(await put(c.member2, BUCKET, mine, png(), "image/png"), "member2 stores a file in their own folder");
+    const reg = (client, path, over = {}) => registerDoc(client, { p_storage_path: path, p_document_type: "receipt", p_title: mark("guarded"), p_mime_type: "image/png", p_file_size_bytes: 10, ...over });
+    refused(await reg(c.member2, mine, { p_expense_id: s.r1.expenseId }), "registering own file against another member's expense", /Expense not found/i);
+    refused(await reg(c.member2, mine, { p_reimbursement_id: s.r1.reimbursementId }), "registering own file against another member's request", /Reimbursement request not found/i);
+    refused(await reg(c.member2, `${id.member1}/${uid()}-y.png`, { p_expense_id: s.r4.expenseId, p_reimbursement_id: s.r4.reimbursementId }), "a record for a path in another member's folder", /own folder/i);
+    refused(await reg(c.member2, mine, { p_document_type: "bank_statement", p_expense_id: s.r4.expenseId, p_reimbursement_id: s.r4.reimbursementId }), "a statement that is not a PDF", /PDF documents/i);
+    refused(await reg(c.member2, mine, { p_mime_type: "text/plain", p_expense_id: s.r4.expenseId, p_reimbursement_id: s.r4.reimbursementId }), "a type the bucket does not take", /PDF, JPEG or PNG/i);
+    refused(await reg(c.member2, mine), "a document attached to nothing", /Attach the document/i);
+    refused(await reg(c.member2, mine, { p_expense_id: s.r4.expenseId, p_reimbursement_id: s.r4.reimbursementId }), "a receipt for the member's own request that was already declined", /already been decided/i);
+    refused(await reg(c.member2, mine, { p_claim_id: 1 }), "a member attaching a document to a claim", /executive/i);
+    // Executives: somebody else's path (the rest of what executives are refused is in the club expense test below).
+    refused(await reg(c.execA, mine, { p_expense_id: s.r1.expenseId }), "an executive registering a member's file", /own folder/i);
+    refused(await reg(c.execA, s.r1.doc2.path, { p_expense_id: s.r1.expenseId, p_reimbursement_id: s.r1.reimbursementId }), "an executive registering a member's registered file", /own folder/i);
+    // The direct writes the old frontend made are closed for everybody (20261128029000).
+    const row = (by, path) => ({ document_type: "receipt", title: mark("direct"), storage_path: path, mime_type: "image/png", file_size_bytes: 10, uploaded_by: by });
+    directRefused(await c.member2.from("finance_documents").insert(row(id.member2, `${id.member2}/${uid()}-direct.png`)), "member2 inserting a document record in their own folder");
+    directRefused(await c.member2.from("finance_documents").insert(row(id.member1, `${id.member2}/${uid()}-y.png`)), "member2 inserting a record in another member's name");
+    directRefused(await c.execA.from("finance_documents").insert(row(id.member1, `${id.execA}/${uid()}-direct.png`)), "an executive inserting a record in a member's name");
+    directRefused(await c.member2.from("finance_expense_documents").insert({ expense_id: s.r1.expenseId, document_id: s.r1.doc2.id }), "member2 linking to another member's expense");
+    directRefused(await c.member2.from("finance_reimbursement_documents").insert({ reimbursement_id: s.r4.reimbursementId, document_id: s.r1.doc2.id }), "member2 linking to a request");
+    directRefused(await c.execA.from("finance_claim_documents").insert({ claim_id: 1, document_id: s.r1.doc2.id }), "an executive linking a document to a claim");
+    directRefused(await c.execA.from("finance_documents").update({ title: mark("renamed") }).eq("id", s.r1.doc2.id), "an executive renaming a registered document");
+    directRefused(await c.execA.from("finance_documents").delete().eq("id", s.r1.doc2.id), "an executive deleting a registered document");
+    // The registered document is as it was, and member2's loose file is theirs to delete (it was never registered).
+    equal(rowsOf(await c.member1.from("finance_documents").select("id,uploaded_by").eq("id", s.r1.doc2.id), "re-read the document"), [{ id: s.r1.doc2.id, uploaded_by: id.member1 }], "the registered document after the refused writes");
+    equal(await deleteFinanceFile(c.member2, mine), 1, "member2 deleting the file that was never registered");
   });
 
   // ---- club expenses and income -------------------------------------------------------------------------
@@ -334,12 +368,25 @@ export default async function finance(t, ctx) {
     equal(line, { description: mark("Venue deposit renamed"), counterparty: "Hall B", category: "Venue" }, "ledger line follows the edit");
     await moved({}, "after the rename");
 
+    // Registering a document on a club purchase: a path with no file behind it, a registered file again, a member, and two registrations of one new file at once.
+    const doc = (path, over = {}) => ({ p_storage_path: path, p_document_type: "receipt", p_title: mark("club purchase paper"), p_mime_type: "image/png", p_file_size_bytes: 10, p_expense_id: s.e1.id, ...over });
+    refused(await registerDoc(c.execA, doc(`${id.execA}/${uid()}-never-uploaded.png`)), "a path with no file behind it", /not found in storage/i);
+    refused(await registerDoc(c.execA, doc(s.e1.doc.path)), "a registered file again", /already been registered/i);
+    refused(await registerDoc(c.member1, doc(`${id.member1}/${uid()}-x.png`)), "a member adding a document to a club purchase", /Expense not found/i);
+    const raced = `${id.execA}/${uid()}-race.png`;
+    succeeded(await put(c.execA, BUCKET, raced, png(), "image/png"), "execA stores the file for the race");
+    const race = await Promise.all([registerDoc(c.execA, doc(raced)), registerDoc(c.execA, doc(raced))]);
+    equal(race.filter((x) => !x.error).length, 1, "registrations of one file that went through");
+    equal(race.filter((x) => x.error).map((x) => /already been registered/i.test(x.error.message)), [true], "the other one is refused in words");
+    equal(rowsOf(await c.execA.from("finance_documents").select("id").eq("storage_path", raced), "the raced file's records").length, 1, "records of the raced file");
+
     refused(await c.member1.rpc("void_finance_expense", { p_expense_id: s.e1.id, p_reason: "member void" }), "member voiding", /executive/i);
     refused(await c.execA.rpc("void_finance_expense", { p_expense_id: s.e1.id, p_reason: " " }), "void without a reason", /Say why/i);
     const voided = firstRow(succeeded(await c.execA.rpc("void_finance_expense", { p_expense_id: s.e1.id, p_reason: "Entered twice" }), "void expense"));
     equal([voided.status, voided.void_reason], ["voided", "Entered twice"], "voided expense");
     equal((await one(c.execA.from("finance_payments").select("status").eq("expense_id", s.e1.id).eq("purpose", "direct_expense").single(), "payment after void")).status, "voided", "payment status after the expense is voided");
     await moved({ available_cash: 80, spending: -80 }, "after voiding the club expense");
+    refused(await registerDoc(c.execA, doc(`${id.execA}/${uid()}-after-void.png`)), "a document added to a voided purchase", /has been voided/i);
     refused(await c.execA.rpc("void_finance_expense", { p_expense_id: s.e1.id, p_reason: "again" }), "voiding twice", /already voided/i);
     refused(await c.execA.rpc("update_finance_expense", { p_expense_id: s.e1.id, p_description: "x y", p_vendor: "", p_category: "Venue" }), "editing a voided expense", /voided expense cannot be edited/i);
 
@@ -401,11 +448,11 @@ export default async function finance(t, ctx) {
     // A statement must be a PDF: the database refuses an image, and the stray file is removed by the executive.
     const stray = `${id.execA}/${uid()}-statement.png`;
     succeeded(await put(c.execA, BUCKET, stray, png(), "image/png"), "upload of the stray image");
-    refused(await c.execA.from("finance_documents").insert({ document_type: "bank_statement", title: mark("statement as image"), storage_path: stray, mime_type: "image/png", file_size_bytes: 10, uploaded_by: id.execA }), "a bank statement that is an image");
+    refused(await registerDoc(c.execA, { p_storage_path: stray, p_document_type: "bank_statement", p_title: mark("statement as image"), p_mime_type: "image/png", p_file_size_bytes: 10, p_claim_id: s.claim1.id }), "a bank statement that is an image", /PDF documents/i);
     equal(await deleteFinanceFile(c.execA, stray), 1, "the executive deleting the stray, unregistered file"); // an unregistered file is visible to its uploader and to executives (20261127050200)
     await uploadDoc(c.execA, id.execA, { type: "card_statement", title: mark("Card statement"), buffer: pdf("card"), mime: "application/pdf", name: "card.pdf", links: { claimId: s.claim1.id } });
     const text4 = message(refused(await claimStatus(s.claim1.id, "ready"), "ready with the event expense still incomplete", /still needs/i));
-    ok(text4.includes("event flyer") && !text4.includes("bank or card statement"), `only the event details remain: ${text4}`);
+    ok(text4.includes("event flyer") && !text4.includes("bank or card statement"), `only the event flyer or agenda remains: ${text4}`);
 
     refused(await c.execA.rpc("remove_funding_claim_expense", { p_claim_id: s.claim1.id, p_expense_id: 999999999 }), "removing an expense that is not on the claim", /not on this claim/i);
     const trimmed = firstRow(succeeded(await c.execA.rpc("remove_funding_claim_expense", { p_claim_id: s.claim1.id, p_expense_id: s.e4.id }), "remove the event expense"));
@@ -432,6 +479,11 @@ export default async function finance(t, ctx) {
     refused(await c.execA.rpc("remove_finance_document", { p_document_id: s.e2.doc.id }), "removing the only receipt of a claimed expense", /only receipt|submitted funding claim/i);
     const claimDocs = rowsOf(await c.execA.from("finance_claim_documents").select("document_id").eq("claim_id", s.claim1.id), "claim documents");
     refused(await c.execA.rpc("remove_finance_document", { p_document_id: Number(claimDocs[0].document_id) }), "removing a document of a submitted claim", /submitted funding claim/i);
+
+    const afterSubmit = (type) => ({ p_storage_path: `${id.execA}/${uid()}-after-submit.pdf`, p_document_type: type, p_title: mark("after submitting"), p_mime_type: "application/pdf", p_file_size_bytes: 10, p_claim_id: s.claim1.id });
+    refused(await registerDoc(c.execA, afterSubmit("bank_statement")), "a statement added to a submitted claim", /with the funder/i);
+    refused(await registerDoc(c.execA, afterSubmit("funding_approval")), "the funding approval replaced on a submitted claim", /with the funder/i);
+    refused(await registerDoc(c.execA, { ...afterSubmit("receipt"), p_claim_id: undefined, p_expense_id: s.e2.id }), "a receipt added to an expense of a submitted claim", /submitted/i);
 
     refused(await c.member1.rpc("set_funding_claim_status", { p_claim_id: s.claim1.id, p_status: "approved", p_approved_amount: 10 }), "member approving a claim", /executive/i);
     refused(await claimStatus(s.claim1.id, "approved"), "approval without an amount", /Enter the amount/i);
