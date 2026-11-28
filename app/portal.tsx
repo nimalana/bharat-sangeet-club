@@ -26,6 +26,8 @@ import { SectionBoundary } from "../components/ui/section-boundary";
 import { ToastProvider, ToastViewport, useToast } from "../components/ui/toast";
 import { AnnouncementFeed, type AnnouncementManage } from "../features/announcements/components/announcement-feed";
 import { ScopeFilterBar } from "../features/announcements/components/scope-filter-bar";
+import { CalendarView } from "../features/calendar/components/calendar-view";
+import { EventModal } from "../features/calendar/components/event-modal";
 import dynamic from "next/dynamic";
 import { SubgroupSpaces } from "../features/groups/components/subgroup-spaces";
 import { MembersPage } from "../features/members/components/members-page";
@@ -411,47 +413,6 @@ function SectionRefused({ label, onHome }: { label: string; onHome: () => void }
   return <section className="section-shell page-section"><EmptyState title={`${label} is not available to your account`} text="Ask a club administrator if you think you should have access." /><div className="mt-4 flex justify-center"><Button variant="secondary" onClick={onHome}>Back to Overview</Button></div></section>;
 }
 
-function EventModal({ user, groups, editing, onClose, onSaved, notify }: { user: User; groups: Subgroup[]; editing?: ClubEvent; onClose: () => void; onSaved: () => void; notify: Notify }) {
-  const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return; setSaving(true);
-    const form = new FormData(event.currentTarget);
-    const subgroupId = String(form.get("subgroup_id") || "");
-    const fields = { title: String(form.get("title") || ""), description: String(form.get("description") || ""), starts_at: new Date(String(form.get("starts_at") || "")).toISOString(), location: String(form.get("location") || ""), subgroup_id: subgroupId ? Number(subgroupId) : null };
-    const result = editing
-      ? await supabase.from("events").update(fields).eq("id", editing.id).select("id")
-      : await supabase.from("events").insert({ ...fields, created_by: user.id }).select("id");
-    setSaving(false);
-    // An update that matches no row returns no error, so check that something was written.
-    if (result.error || !result.data?.length) notify(friendlyError(result.error, "This date could not be saved. It may have been removed."), "error"); else onSaved();
-  }
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}>×</button><p className="eyebrow">EXECUTIVE TOOL</p><h2>{editing ? "Edit this date" : "Add an important date"}</h2><label>Audience<select name="subgroup_id" defaultValue={editing?.subgroup_id ?? ""}><option value="">Whole club</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>Title<input name="title" required defaultValue={editing?.title ?? ""} placeholder="Concert, rehearsal, meeting…" /></label><label>Date and time<input name="starts_at" type="datetime-local" required defaultValue={editing ? toLocalInputValue(editing.starts_at) : undefined} /></label><label>Location<input name="location" defaultValue={editing?.location ?? ""} placeholder="Room, venue, or online" /></label><label>Details<input name="description" defaultValue={editing?.description ?? ""} placeholder="Anything members should know" /></label><Button type="submit" disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Add to calendar"}</Button></form></div>;
-}
-
-function CalendarView({ events, groups, canManage, onEdit, onDelete }: { events: ClubEvent[]; groups: Subgroup[]; canManage: boolean; onEdit: (event: ClubEvent) => void; onDelete: (eventId: number) => void }) {
-  const [cursor, setCursor] = useState(() => { const today = new Date(); return new Date(today.getFullYear(), today.getMonth(), 1); });
-  const year = cursor.getFullYear(); const month = cursor.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
-  const calendarStart = new Date(year, month, 1 - firstDay);
-  const days = Array.from({ length: 42 }, (_, index) => { const day = new Date(calendarStart); day.setDate(calendarStart.getDate() + index); return day; });
-  const today = new Date();
-  const sameDay = (left: Date, right: Date) => left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
-  const agendaEvents = events.filter((event) => {
-    const date = new Date(event.starts_at);
-    return date.getFullYear() === year && date.getMonth() === month;
-  }).sort((left, right) => new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime());
-  const agendaDays = agendaEvents.reduce<Array<{ key: string; date: Date; events: ClubEvent[] }>>((daysForAgenda, event) => {
-    const date = new Date(event.starts_at);
-    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    const existingDay = daysForAgenda.find((day) => day.key === key);
-    if (existingDay) existingDay.events.push(event);
-    else daysForAgenda.push({ key, date, events: [event] });
-    return daysForAgenda;
-  }, []);
-
-  return <div className="month-calendar"><div className="calendar-controls"><button onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="Previous month">←</button><h2>{cursor.toLocaleString("en-US", { month: "long", year: "numeric" })}</h2><div><button className="today-button" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>Today</button><button onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="Next month">→</button></div></div><div className="weekday-row">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{days.map((day) => { const dayEvents = events.filter((item) => sameDay(new Date(item.starts_at), day)); return <div className={`calendar-cell ${day.getMonth() !== month ? "outside" : ""} ${sameDay(day, today) ? "today" : ""}`} key={day.toISOString()}><span className="day-number">{day.getDate()}</span><div className="day-events">{dayEvents.map((item) => <div className="calendar-event" key={item.id} title={[item.description, item.location].filter(Boolean).join(" · ")}><time>{new Date(item.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time><b>{item.title}</b><small className="calendar-scope">{item.subgroup_id ? groups.find((group) => group.id === item.subgroup_id)?.name || "Group" : "Club-wide"}</small>{item.location && <small>{item.location}</small>}{canManage && <><button className="calendar-edit" onClick={() => onEdit(item)} aria-label={`Edit ${item.title}`}>✎</button><button onClick={() => onDelete(item.id)} aria-label={`Delete ${item.title}`}>×</button></>}</div>)}</div></div>; })}</div><div className="calendar-agenda">{agendaDays.length ? agendaDays.map((day) => <section className="calendar-agenda-day" key={day.key}><h3><time dateTime={day.date.toISOString()}>{day.date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</time></h3><div>{day.events.map((item) => <article className="calendar-agenda-event" key={item.id}><time dateTime={item.starts_at}>{new Date(item.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time><b>{item.title}</b><small className="calendar-scope">{item.subgroup_id ? groups.find((group) => group.id === item.subgroup_id)?.name || "Group" : "Club-wide"}</small>{item.location && <small>{item.location}</small>}{item.description && <p>{item.description}</p>}{canManage && <><button className="calendar-edit" onClick={() => onEdit(item)} aria-label={`Edit ${item.title}`}>✎</button><button onClick={() => onDelete(item.id)} aria-label={`Delete ${item.title}`}>×</button></>}</article>)}</div></section>) : <p className="calendar-agenda-empty">No dates in this view.</p>}</div>{events.length === 0 && <p className="calendar-empty">No dates in this view.</p>}</div>;
-}
-
 function PublicSite({ onSignIn, initialRecordings }: { onSignIn: () => void; initialRecordings: PublicConcert[] | null }) {
   // The list comes from the server (cached five minutes). Only when the server
   // could not read it does the browser load it, as it always did.
@@ -545,4 +506,3 @@ function BootstrapFailedScreen({ onRetry, onSignOut }: { onRetry: () => void; on
 }
 function LoadingScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><p>Opening the club archive…</p></main>; }
 function SetupScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
-function toLocalInputValue(value: string) { const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
