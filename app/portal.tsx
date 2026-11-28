@@ -35,7 +35,7 @@ import { ArchiveModal } from "../features/recordings/components/archive-modal";
 // audio libraries and finance code are not downloaded to read the calendar.
 // A screen whose file cannot be fetched is caught by SectionBoundary in the shell.
 const SectionLoading = () => <LoadingBlock role="status">Loading…</LoadingBlock>;
-const AttendancePage = dynamic(() => import("./attendance").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
+const AttendancePage = dynamic(() => import("../features/attendance/components/attendance-page").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
 const FinancePage = dynamic(() => import("./finance").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
 const ResourceLibrary = dynamic(() => import("../features/resources/components/resource-library").then((module) => module.ResourceLibrary), { ssr: false, loading: SectionLoading });
 const RecordingWorkspace = dynamic(() => import("../features/recordings/components/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });

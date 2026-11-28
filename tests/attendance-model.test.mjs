@@ -19,7 +19,7 @@ import {
   shouldPoll,
   termChoices,
   termLabel,
-} from "../components/attendance/attendance-model.ts";
+} from "../features/attendance/model.ts";
 
 const thresholds = { warning: 2, critical: 3 };
 const profile = (id, name) => ({ id, full_name: name, email: `${id}@x.test` });

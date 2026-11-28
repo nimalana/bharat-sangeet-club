@@ -24,7 +24,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { AttendancePage } from "../../app/attendance";
+import { AttendancePage } from "../../features/attendance/components/attendance-page";
 import { setCacheOwner } from "../../lib/cache";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, rejects, type Call } from "../support/fake-supabase";

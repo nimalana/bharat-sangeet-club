@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { friendlyError } from "../../lib/errors";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { friendlyError } from "../../../lib/errors";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
 
 type CorrectableSession = { id: number; title: string; starts_at: string; status: "draft" | "open" | "closed" | "canceled"; cancel_reason?: string | null };
 type Done = () => void | Promise<void>;

@@ -2,25 +2,25 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { friendlyError } from "../lib/errors";
-import type { AttendanceStatus } from "../lib/db";
-import { canManageClub } from "../lib/permissions";
-import { readCache, writeCache } from "../lib/cache";
-import { usePolling } from "../lib/hooks/use-polling";
-import { supabase } from "../lib/supabase";
-import type { Notify } from "../lib/toast";
-import { Button } from "../components/ui/button";
-import { ConfirmDialog } from "../components/ui/confirm-dialog";
-import { ErrorBlock } from "../components/ui/error-block";
-import { FormDialog, type FormField } from "../components/ui/form-dialog";
-import { LoadingBlock } from "../components/ui/loading-block";
-import { ClearMarkButton, SessionCorrections, ThresholdSettings, WithdrawExcuseButton } from "../components/attendance/attendance-corrections";
+import { friendlyError } from "../../../lib/errors";
+import type { AttendanceStatus } from "../../../lib/db";
+import { canManageClub } from "../../../lib/permissions";
+import { readCache, writeCache } from "../../../lib/cache";
+import { usePolling } from "../../../lib/hooks/use-polling";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { ErrorBlock } from "../../../components/ui/error-block";
+import { FormDialog, type FormField } from "../../../components/ui/form-dialog";
+import { LoadingBlock } from "../../../components/ui/loading-block";
+import { ClearMarkButton, SessionCorrections, ThresholdSettings, WithdrawExcuseButton } from "./attendance-corrections";
 import {
   DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, applyPulse, createFailureGate, createSequencer, flaggedSummaries, nextListLimit, normalizeOverview, overallRate, parseMinutesLate,
   pulseNeedsReload, queueNote, rosterIsStale, termChoices, termLabel,
   type AbsenceCategory, type AttendanceOverview, type AttendanceSession, type ClubRole, type EligibilityStatus, type Excuse, type Pulse,
   type Remediation, type Roster,
-} from "../components/attendance/attendance-model";
+} from "../model";
 
 type Workspace = { id: number; name: string };
 type ScopeFilter = "all" | "club" | number;
