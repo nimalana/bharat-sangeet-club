@@ -25,9 +25,11 @@ export function FormDialog({ open, title, description, fields, submitLabel, dang
     const form = new FormData(event.currentTarget);
     onSubmit(Object.fromEntries(fields.map((field) => [field.name, String(form.get(field.name) ?? "").trim()])));
   }
-  return <Dialog open={open} onClose={busy ? () => {} : onCancel} className="max-w-[520px]">
-    <h2 className="m-0 text-2xl">{title}</h2>
-    {description && <p className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">{description}</p>}
+  // A form does not close on a click beside it (what was typed would be lost); Escape and Cancel still do. With no fields it is a plain
+  // confirmation and the backdrop cancels. While `busy` nothing closes it.
+  return <Dialog open={open} onClose={onCancel} dismissible={!busy} closeOnBackdrop={fields.length === 0} labelledBy="form-dialog__title" describedBy={description ? "form-dialog__description" : undefined} className="max-w-[520px]">
+    <h2 id="form-dialog__title" className="m-0 text-2xl">{title}</h2>
+    {description && <p id="form-dialog__description" className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">{description}</p>}
     <form className="mt-4 grid gap-3" onSubmit={submit}>
       {fields.map((field) => {
         const id = `form-dialog-${field.name}`;

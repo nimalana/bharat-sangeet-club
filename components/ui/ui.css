@@ -16,3 +16,5 @@
 .scope-badge{margin-bottom:14px;border:0;border-bottom:1px solid var(--carolina);background:transparent;padding:0 0 5px;color:#286a9c}
 .toast{border-radius:0;background:var(--ink);box-shadow:8px 10px 24px rgba(23,37,47,.18)}
 .toast.error{border-left:4px solid #e3a1a8}
+/* The dialog panel takes the focus itself when it has nothing to focus (tabIndex -1): no ring around the whole panel. */
+[role="dialog"]:focus,[role="dialog"]:focus-visible{outline:none!important;box-shadow:none!important}
