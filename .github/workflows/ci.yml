@@ -59,6 +59,10 @@ jobs:
           fi
       - name: Contract check (with selftest)
         run: npm run test:contract:selftest
+      # lib/database.types.ts is generated from the database (docs/ARCHITECTURE.md). Fails when a table, column, enum or
+      # function of the migrations differs from it, so a migration without regenerated types cannot merge.
+      - name: Types drift (with selftest)
+        run: npm run test:types-drift:selftest
 
   database:
     runs-on: ubuntu-24.04

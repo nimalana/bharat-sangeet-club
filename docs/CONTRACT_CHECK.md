@@ -133,11 +133,23 @@ code pattern a real-code mutation looks for, the case says so instead of passing
 | `config.json` | row types and RPC shapes to compare, floors, `maxUnresolved`, accepted findings |
 | `selftest.mjs` | proof that the check catches what it claims |
 | `event-target-scan.mjs` | P1-08 scan |
+| `types-drift.mjs`, `types-drift-selftest.mjs` | `lib/database.types.ts` against the replayed database, and the proof that it catches each kind of drift (`npm run test:types-drift`, `npm run test:types-drift:selftest`; see below) |
 | `probe.sql` | role probes of what the UI does, as the real roles (informational, `--probes`) |
 
 Environment: `REPO`, `FRONTEND` (check a copy of the source against the real migrations), `CONTRACT_OUT` (keep `facts.json`,
 `report.json`, `report.txt`, `replay.log`), `CONTRACT_DB=existing` (use the `PGHOST`/`PGPORT` already set, for example to run
 several mutations against one cluster), `VERBOSE=1`.
+
+## Types drift (`npm run test:types-drift`)
+
+`lib/database.types.ts` is generated from a real database (docs/ARCHITECTURE.md). `types-drift.mjs` reads it with the
+TypeScript parser and compares it with the catalog of the replayed cluster, so a migration that adds a column, changes a
+type or adds an RPC without regenerating the types fails CI (job `contract`, step "Types drift"). It compares the tables,
+views, enums (values in order, and the runtime `Constants` copy), columns (type, nullable, optional in Insert, `never`
+for identity ALWAYS and generated columns), foreign keys (columns, referenced table, `isOneToOne`) and functions
+(arguments with their optional flags, return shape). A foreign key to another schema (`profiles.id` to `auth.users`) is
+not in the generator's output and is not compared. `run.sh --types-drift --selftest` first breaks a temporary copy of the
+types in 13 ways and a clone of the replayed database in 10 ways, and fails when one is not reported.
 
 ## After R2
 

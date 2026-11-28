@@ -4,6 +4,9 @@
 #   scripts/contract-check/run.sh                run the check (about 10 seconds)
 #   scripts/contract-check/run.sh --selftest     also prove the check catches each kind of break (see selftest.mjs)
 #   scripts/contract-check/run.sh --probes       also print the role probes (probe.sql, informational)
+#   scripts/contract-check/run.sh --types-drift  only check lib/database.types.ts against the replayed database
+#                                                (types-drift.mjs; npm run test:types-drift). With --selftest it also proves
+#                                                the drift check catches each kind of break (types-drift-selftest.mjs).
 #
 # 1. replays every migration on a throwaway PostgreSQL 16 cluster (scripts/db-replay.sh, schema only: no SQL suites)
 # 2. extract.mjs: every Supabase call in the frontend, read with the TypeScript checker
@@ -24,8 +27,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${REPO:-$(cd "$HERE/../.." && pwd)}"
 export FRONTEND="${FRONTEND:-$REPO}"
-SELFTEST=0; PROBES=0
-for arg in "$@"; do case "$arg" in --selftest) SELFTEST=1 ;; --probes) PROBES=1 ;; *) echo "unknown option $arg" >&2; exit 2 ;; esac; done
+SELFTEST=0; PROBES=0; TYPES_ONLY=0
+for arg in "$@"; do case "$arg" in --selftest) SELFTEST=1 ;; --probes) PROBES=1 ;; --types-drift) TYPES_ONLY=1 ;; *) echo "unknown option $arg" >&2; exit 2 ;; esac; done
 
 tmproot="${TMPDIR:-/tmp}"; [ "${#tmproot}" -le 60 ] || tmproot=/tmp   # a unix socket path is limited to about 107 bytes
 WORK=""; OUT=""; STARTED=0
@@ -63,6 +66,12 @@ else
 fi
 
 status=0
+if [ "$TYPES_ONLY" = "1" ]; then
+  if [ "$SELFTEST" = "1" ]; then node "$HERE/types-drift-selftest.mjs" || status=1; fi
+  echo "--- types drift: lib/database.types.ts against the replayed database"
+  node "$HERE/types-drift.mjs" || status=1
+  exit $status
+fi
 if [ "$SELFTEST" = "1" ]; then
   node "$HERE/selftest.mjs" || status=1
 fi

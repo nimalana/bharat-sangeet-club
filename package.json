@@ -15,6 +15,8 @@
     "test:db": "scripts/db-replay.sh",
     "test:contract": "scripts/contract-check/run.sh",
     "test:contract:selftest": "scripts/contract-check/run.sh --selftest",
+    "test:types-drift": "scripts/contract-check/run.sh --types-drift",
+    "test:types-drift:selftest": "scripts/contract-check/run.sh --types-drift --selftest",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "lint:ratchet": "node scripts/lint-ratchet.mjs",
     "db:generate": "drizzle-kit generate",
