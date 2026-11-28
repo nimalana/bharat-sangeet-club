@@ -78,7 +78,7 @@ export type SubgroupMembership = Pick<Tables<"subgroup_memberships">, "subgroup_
 
 // profiles.status is text with a CHECK constraint. A member is active or deactivated; a person who signed in for the first time is
 // "pending" until an executive approves the sign-up, or "rejected" when one declined it (they are not members and are never listed as such).
-export type MemberStatus = "active" | "deactivated";
+type MemberStatus = "active" | "deactivated";
 export type AccountStatus = MemberStatus | "pending" | "rejected";
 
 export type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: MemberStatus };
