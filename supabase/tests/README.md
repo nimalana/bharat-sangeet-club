@@ -54,6 +54,21 @@ The scripts need no other connection to the `postgres` database while they
 clone it. The lock order they check is written in
 `20261127050000_finance_claim_locking.sql`.
 
+## Tests that need rows from before a migration
+
+Every SQL test runs on a database that already holds all the migrations, built
+from empty, so it cannot show what a migration does to rows that existed before
+it (a data copy, a backfill). `concurrency/75_resources_legacy_copy.sh` does:
+it creates its own database in the same cluster, replays only the migrations
+that sort before `20260907000000_unified_resources_library.sql`, seeds legacy
+archive items and resource links, applies that one file, checks which rows were
+copied and how, then applies it again (with new legacy rows, an edited copy and
+a path that already has a row) to show the copy is safe to repeat. It sits in
+`concurrency/` only because `scripts/db-replay.sh` already runs every script
+there; it uses one connection and leaves the replayed database alone. Run it by
+hand the same way as the finance one. For another migration with a data step,
+copy it and change the target file name and the seed.
+
 ## The grants matrix and new tables
 
 Migration `20261127075000_least_privilege_grants.sql` took the hosted default
