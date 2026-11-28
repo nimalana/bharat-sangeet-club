@@ -25,6 +25,14 @@ describe("expectNoSeriousViolations", () => {
     await expect(expectNoSeriousViolations(container)).rejects.toThrow(/label \(critical\)/);
   });
 
+  it("audits an iframe as an element (no title is reported) without trying to enter it, which jsdom cannot do", async () => {
+    // eslint-disable-next-line jsx-a11y/iframe-has-title -- the missing title is what the test needs axe to find
+    const { container } = render(<div><iframe src="about:blank" /></div>);
+    expect((await seriousViolations(container)).map((violation) => violation.rule)).toEqual(["frame-title"]);
+    const { container: titled } = render(<div><iframe src="about:blank" title="Score (PDF)" /></div>);
+    expect(await seriousViolations(titled)).toEqual([]);
+  });
+
   it("does not report moderate findings (a skipped heading level) and does not run colour contrast", async () => {
     const { container } = render(<div><h1>One</h1><h4 style={{ color: "#fff", background: "#fff" }}>Four, white on white</h4></div>);
     expect(await seriousViolations(container)).toEqual([]);

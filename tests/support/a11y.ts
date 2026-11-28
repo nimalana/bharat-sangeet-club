@@ -12,6 +12,9 @@
 // the buttons and the text is therefore NOT verified by these tests: it is checked by the ratios written in docs/UI_PATTERNS.md and
 // by the coordinator's axe run on the real pages in a real browser.
 //
+// An <iframe> is audited as an element (a missing title is reported) but its CONTENT is not: axe sends a message to the frame's window,
+// which jsdom does not have (it throws "Respondable target must be a frame in the current window"), so `iframes: false`.
+//
 // A fragment is audited as it is: it needs no landmark and no <h1>. A page-level rule that still reports on a fragment is a real
 // finding of the component (a dialog without a name, a button without a name, a label that points nowhere).
 import axe from "axe-core";
@@ -27,7 +30,7 @@ export type AxeViolation = { rule: string; impact: string; help: string; targets
 
 /** The serious and critical violations of an element (or of the whole document), as plain data. Exported for the helper's own test. */
 export async function seriousViolations(target: Element | Document = document): Promise<AxeViolation[]> {
-  const results = await axe.run(target as axe.ElementContext, { rules: DISABLED_IN_JSDOM, resultTypes: ["violations"] });
+  const results = await axe.run(target as axe.ElementContext, { rules: DISABLED_IN_JSDOM, resultTypes: ["violations"], iframes: false });
   return results.violations
     .filter((violation) => REPORTED.includes(violation.impact))
     .map((violation) => ({ rule: violation.id, impact: String(violation.impact), help: violation.help, targets: violation.nodes.map((node) => node.target.join(" ")) }));

@@ -12,6 +12,7 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 - [3. Confirm](#3-confirm) (and how every destructive action confirms today)
 - [4. States and mutations](#4-states-and-mutations): errors with Try again, loading, pending buttons, forms
 - [5. Upload progress](#5-upload-progress): `uploadWithProgress`, `UploadProgress`, and why it is a real progress bar
+- [6. Preview](#6-preview): `PreviewDialog` for an image, a PDF, a recording, a video
 
 ---
 
@@ -381,3 +382,43 @@ xhr.last.url / .method / .headers / .body          // what was sent
 
 Through a screen, the client is the fake client of `tests/support/fake-supabase.ts`: script `fake.signIn(...)` if the test needs a token (without a session the
 key is the bearer token, as in production).
+
+
+---
+
+## 6. Preview
+
+`components/ui/preview-dialog.tsx`: a stored file shown in the portal's `Dialog` instead of leaving the page (resources, recordings, finance documents,
+attendance proofs).
+
+```tsx
+<PreviewDialog
+  open={previewing !== null} onClose={() => setPreviewing(null)} title={previewing?.title ?? ""}
+  load={async () => ({ url: await signedUrl(previewing!.path), mime: previewing!.mime, name: previewing!.fileName })}
+/>
+```
+
+- `load(): Promise<{ url, mime, name }>` is the area's own signed-link function (`signResourceFile`, `signRecordingUrl`, ...). A function that answers
+  `string | null` is wrapped so that `null` throws: `const url = await sign(path); if (!url) throw new Error("The file could not be opened."); return {...}`
+  (an answer with an empty `url` is treated as a failure too). It runs **each time the dialog opens**, and again on Try again, so a link that expired
+  while the dialog was closed is never shown. It does not run again when the screen renders again (the latest function is used when it does run).
+  Under React's StrictMode (development) it runs twice at an opening, and only the answer of the last one is shown.
+- Shown with the browser's own elements and nothing else, as the platform's Content-Security-Policy expects (the storage origin in `img-src`,
+  `media-src`, `frame-src`): `<img alt={name}>` for an image, `<iframe title="{name} (PDF)">` for a PDF, `<audio controls>` / `<video controls>` named
+  after the file for a recording or a video, and for any other file a sentence with a `Download {name}` link. No script fetches the file and there is no
+  `blob:` URL. `previewKind(mime, name)` (exported) says which: the type decides, and only an empty or `application/octet-stream` type falls back to the
+  extension. A screen can use it to show "Preview" only for a file that can be previewed and "Download" for the rest.
+- Every shown file has the link **Open in a new tab** (`target="_blank" rel="noopener noreferrer"`).
+- States: **Loading the preview…** is a polite status. A failure is `role="alert"` with the sentence of the error (`friendlyError`, fallback "The file could
+  not be opened.") and **Try again**. An image or a recording that does not load from its link (an expired or refused link) is the same alert, "The file
+  could not be shown.", and Try again asks `load()` for a fresh link. A PDF in an iframe cannot report that, so a refused PDF link shows the browser's own
+  error page inside the frame.
+- It is a `Dialog`: named by `title`, Escape / Close / the backdrop close it, focus starts on **Close** and goes back to the button that opened it, the page
+  behind is inert and cannot scroll.
+
+Not verified here (no real browser): that a real browser plays an `<audio>` with a signed link, renders a PDF in the frame, and how Tab moves into and out of
+a PDF viewer (jsdom has no frames; axe audits the iframe element and its title but not what is inside). Check one PDF by keyboard in a real browser: Tab from
+Close should enter the PDF, and Shift+Tab / Tab should reach Close and Open in a new tab again.
+
+An `<a download>` on a cross-origin signed link is ignored by browsers (they navigate instead): for files that only download, "Open in a new tab" is the
+dependable link, and `Download {name}` works when the storage answers with a `Content-Disposition`.
