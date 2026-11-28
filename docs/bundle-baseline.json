@@ -1,50 +1,50 @@
 {
   "schema": 1,
-  "generated": "2026-11-27T23:02:38.480Z",
-  "commit": "988b3b7",
-  "branch": "phase-2-5-r1-contract",
+  "generated": "2026-11-28T04:42:00.397Z",
+  "commit": "1a5a616",
+  "branch": "phase-2-5-r5-clean",
   "next": "16.2.6",
   "source": "route-bundle-stats",
   "placeholderEnv": true,
   "routes": {
     "/": {
-      "jsRaw": 973986,
-      "jsGzip": 273831,
-      "jsBrotli": 235262,
-      "cssRaw": 145928,
-      "cssGzip": 26970,
-      "cssBrotli": 23034,
+      "jsRaw": 940037,
+      "jsGzip": 265505,
+      "jsBrotli": 227266,
+      "cssRaw": 146182,
+      "cssGzip": 27025,
+      "cssBrotli": 23073,
       "jsChunks": 9,
       "cssFiles": 2
     },
     "/_not-found": {
-      "jsRaw": 516675,
-      "jsGzip": 146208,
-      "jsBrotli": 125476,
-      "cssRaw": 145928,
-      "cssGzip": 26970,
-      "cssBrotli": 23034,
+      "jsRaw": 516726,
+      "jsGzip": 146235,
+      "jsBrotli": 125494,
+      "cssRaw": 146182,
+      "cssGzip": 27025,
+      "cssBrotli": 23073,
       "jsChunks": 6,
       "cssFiles": 2
     },
     "/meetings": {
-      "jsRaw": 516675,
-      "jsGzip": 146208,
-      "jsBrotli": 125476,
-      "cssRaw": 145928,
-      "cssGzip": 26970,
-      "cssBrotli": 23034,
+      "jsRaw": 516726,
+      "jsGzip": 146235,
+      "jsBrotli": 125494,
+      "cssRaw": 146182,
+      "cssGzip": 27025,
+      "cssBrotli": 23073,
       "jsChunks": 6,
       "cssFiles": 2
     }
   },
   "totals": {
-    "jsRawAll": 1556996,
-    "jsGzipAll": 436991,
-    "jsChunksAll": 16,
-    "lazyRaw": 583010,
-    "lazyGzip": 163160,
-    "lazyBrotli": 142663,
-    "lazyChunks": 7
+    "jsRawAll": 1549871,
+    "jsGzipAll": 437085,
+    "jsChunksAll": 17,
+    "lazyRaw": 609834,
+    "lazyGzip": 171580,
+    "lazyBrotli": 149229,
+    "lazyChunks": 8
   }
 }

@@ -1,30 +1,44 @@
-# Bundle size baseline (Phase 2.5, R0)
+# Bundle size baseline (Phase 2.5, R0; reset in R5)
 
 R0 of the refactoring plan: bundle size per route is reported before and after every step, and "per-route bundles no larger
-than before" is part of the definition of done (R7). This is the "before".
+than before" is part of the definition of done (R7). The first baseline (R0, commit `988b3b7`) had `/` at 273.8 kB gzip. After the data
+layer and the file moves (R2, R3) `/` was at 280.4 kB; the R5 bundle diet (below) brought it to 265.5 kB, and this file now holds that
+number, so the gain cannot be given back unnoticed.
 
 | | |
 |---|---|
-| Date | 27 November 2026 |
-| Commit | `988b3b7` on `phase-2-5-r1-contract` (product code identical to `phase-2-latency` 4dc9c1a: R1 changes no file under `app/`, `components/`, `lib/`) |
+| Date | 28 November 2026 |
+| Commit | `1a5a616` on `phase-2-5-r5-clean` (R5 bundle diet, on top of the refactored `phase-2-5-r3`; the R0 numbers were taken at `988b3b7`) |
 | Next.js | 16.2.6, Turbopack (`next build`) |
 | Built with | `NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=ci-placeholder` (the CI values; they are inlined into the bundle, so sizes differ by a few bytes with real values) |
 | Data | `docs/bundle-baseline.json` |
 
 | Route | First-load JS gzip | brotli | raw | JS chunks | CSS gzip | CSS raw |
 |---|---:|---:|---:|---:|---:|---:|
-| `/` (the whole portal) | 273.8 kB | 235.3 kB | 974.0 kB | 9 | 27.0 kB | 145.9 kB |
-| `/meetings` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 27.0 kB | 145.9 kB |
-| `/_not-found` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 27.0 kB | 145.9 kB |
+| `/` (the whole portal) | 265.5 kB | 227.3 kB | 940.0 kB | 9 | 27.0 kB | 146.2 kB |
+| `/meetings` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 27.0 kB | 146.2 kB |
+| `/_not-found` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 27.0 kB | 146.2 kB |
 
 kB = 1000 bytes, as Next prints. gzip is level 9, brotli quality 11. Also in the JSON: JS that no route loads on a first visit
-("lazy"): 163.2 kB gzip, 583.0 kB raw, 7 chunks. That is the legacy-browser polyfill chunk, the Tone.js / wavesurfer.js chunk loaded
-on demand by the recording player, and a few small split chunks.
+("lazy"): 171.6 kB gzip, 609.8 kB raw, 8 chunks. That is the legacy-browser polyfill chunk, the Tone.js / wavesurfer.js chunk loaded
+on demand by the recording player, the attendance, finance and resources screens, and a few small split chunks (the R0 value was 163.2 kB
+in 7 chunks: the data layer and hooks of R2/R3 add code to the screens that were already loaded on demand).
 
 What this means for the refactor: about 146 kB gzip of every route is Next/React and the shared layout, and the portal itself
-adds 128 kB gzip on `/`. Splitting `app/page.tsx` (R3) should keep `/` at or below 273.8 kB; moving code behind `next/dynamic`
-lowers `/` and raises "lazy", which the compare output shows separately so that moved code is not mistaken for removed code. All CSS
-(`globals.css`, 145.9 kB raw, one file in every route) is shared by the three routes; R4 changes this number.
+adds 119 kB gzip on `/`. Moving code behind `next/dynamic` lowers `/` and raises "lazy", which the compare output shows
+separately so that moved code is not mistaken for removed code. All CSS (`globals.css`, 146.2 kB raw, one file in every route) is shared
+by the three routes; R4 changes this number.
+
+### R5 bundle diet: where the bytes were and what was done
+
+After R2/R3 the first load of `/` had grown from 273.8 to 280.4 kB. A sourcemap build (`productionBrowserSourceMaps`, per-module bytes
+of the first-load chunks, compared with the same build of `988b3b7`) showed: the portal's own code had grown by 5.7 kB gzip (the data
+layer, hooks and smaller files), everything from packages was within 1 kB of before, and `framer-motion` was 36 kB gzip of the first load
+(`motion-dom` 27 kB, `framer-motion` 8 kB), used only by the beat strip of the dashboard (`features/dashboard/components/talam-measure.tsx`,
+`animate` and `transition` on a few spans). That component now uses `m` under `LazyMotion features={domMin}` (the animation set without layout,
+drag and gestures): `/` 280.4 to 265.5 kB (-14.9 kB), identical animation at every step of a fake clock (tests/component/talam-measure*.test.tsx).
+What is still in the first load: Next and React about 147 kB, the Supabase client about 55 kB (auth 27, realtime 15, storage 5, postgrest 4, the rest 4),
+framer-motion about 21 kB, the portal about 36 kB.
 
 ## How it is measured
 
