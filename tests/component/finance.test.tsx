@@ -221,6 +221,24 @@ describe("finance: Mark paid", () => {
     expect(payCalls()).toHaveLength(0);
   });
 
+  it("an executive's own approved request has no Mark paid button and says another executive must pay it (the database refuses it too)", async () => {
+    scriptFinance({ reimbursements: [reimbursement({ member_id: "exec-1" })] });
+    renderFinance();
+    await waitForLoad();
+    tab("reimbursements");
+    expect(await screen.findByText("Another executive must pay your own request.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark paid" })).not.toBeInTheDocument();
+    expect(payCalls()).toHaveLength(0);
+  });
+
+  it("another member's approved request still shows Mark paid, and no note about paying it", async () => {
+    renderFinance();
+    await waitForLoad();
+    tab("reimbursements");
+    expect(await screen.findByRole("button", { name: "Mark paid" })).toBeInTheDocument();
+    expect(screen.queryByText("Another executive must pay your own request.")).not.toBeInTheDocument();
+  });
+
   it("a double click on the confirmation sends one payment (both clicks land before the screen can switch the button off)", async () => {
     const paying = deferred();
     fake.rpc("pay_personal_reimbursement").reply(paying.reply);
@@ -620,7 +638,7 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
   ];
   it.each(flows)("%s: the dialog waits for a slow refresh for 15 s, then moves on and says the change was saved", async (_name, run) => {
     scriptFinance({ reimbursements: [reimbursement({ status: "submitted", member_id: "exec-1" })] });
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
     hangOnRefresh();
     const notify = await loaded();
     run();
@@ -662,7 +680,7 @@ describe("finance: saving requests and documents", () => {
 
   beforeEach(() => {
     scriptFinance();
-    fake.from("finance_documents", "insert").reply(ok({ id: 55 }));
+    fake.rpc("register_finance_document").reply(ok(55));
   });
 
   it("a request is saved first, then its receipt is uploaded privately and linked to the expense and the request", async () => {
@@ -678,9 +696,9 @@ describe("finance: saving requests and documents", () => {
     const upload = fake.storage("finance-private", "upload").calls[0];
     expect(String(upload.args[0])).toMatch(/^member-9\/[0-9a-f-]{36}-taxi-receipt\.pdf$/);
     expect(upload.args[2]).toMatchObject({ contentType: "application/pdf", upsert: false });
-    expect(fake.from("finance_documents", "insert").calls[0].payload).toMatchObject({ document_type: "receipt", storage_path: upload.args[0], uploaded_by: "member-9" });
-    expect(fake.from("finance_expense_documents", "insert").calls[0].payload).toEqual({ expense_id: 1, document_id: 55 });
-    expect(fake.from("finance_reimbursement_documents", "insert").calls[0].payload).toEqual({ reimbursement_id: 5, document_id: 55 });
+    expect(fake.rpc("register_finance_document").calls[0].args[0]).toMatchObject({ p_document_type: "receipt", p_storage_path: upload.args[0], p_expense_id: 1, p_reimbursement_id: 5 });
+    expect(fake.rpc("register_finance_document").count).toBe(1);
+    expect(fake.calls.filter((call) => call.kind === "from" && call.op === "insert")).toEqual([]);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
@@ -710,6 +728,19 @@ describe("finance: saving requests and documents", () => {
     fireEvent.submit(form);
     await waitFor(() => expect(notify.find("Purchase date cannot be in the future").tone).toBe("error"));
     expect(fake.storage("finance-private", "upload").calls).toHaveLength(0);
+  });
+
+  it("a receipt the database refuses to register is an error with the database's sentence, and the file just stored is taken out of the bucket again", async () => {
+    asked();
+    fake.rpc("register_finance_document").reply(fail("This request has already been decided, so documents can no longer be added", "22023"));
+    const notify = renderFinance({ role: "member", userId: "member-9" });
+    const form = await openRequestForm();
+    attach("receipt", pdf());
+    fireEvent.submit(form);
+    await waitFor(() => expect(notify.find("Request saved; This request has already been decided, so documents can no longer be added").tone).toBe("error"));
+    const upload = fake.storage("finance-private", "upload").calls[0];
+    expect(fake.storage("finance-private", "remove").calls[0].args[0]).toEqual([upload.args[0]]);
+    expect(fake.calls.filter((call) => call.kind === "from" && call.op === "insert")).toEqual([]);
   });
 
   it("the wait for the refresh after saving a request is bounded too: 15 s, then it is told the request was saved", async () => {

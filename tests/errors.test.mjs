@@ -92,3 +92,42 @@ test("friendlyError says the same about the ApiError as about the raw error, for
   assert.equal(friendlyError(toApiError(null), fallback), fallback);
   assert.equal(friendlyError(toApiError(new Error("Failed to fetch"))), "The connection dropped. Check your internet and try again.");
 });
+
+// Phase 4.2: the sentences the finance functions added raise. friendlyError replaces anything that looks like a raw database
+// message, so each of these is checked to reach the person as written (the first letter in capitals, as it always did). The
+// same list is checked from the database side in supabase/tests/81_finance_register.test.sql (test.raw_looking).
+test("every sentence register_finance_document and the Phase 4.2 finance rules raise reaches the person as it was written", () => {
+  const raised = [
+    ["authentication required", "42501"],
+    ["Your access to the portal has been deactivated", "42501"],
+    ["Choose what kind of document this is", "22023"],
+    ["Give the document a title of 180 characters or fewer", "22023"],
+    ["Choose a document to upload", "22023"],
+    ["Finance documents must be 10 MB or smaller", "22023"],
+    ["Upload a PDF, JPEG or PNG file", "22023"],
+    ["Statements must be uploaded as PDF documents, not screenshots", "22023"],
+    ["card last four must contain four digits", "22023"],
+    ["Attach the document to a purchase, a reimbursement request or a funding claim", "22023"],
+    ["The file must be stored in your own folder", "42501"],
+    ["Reimbursement request not found", "P0002"],
+    ["That request belongs to a different purchase", "22023"],
+    ["This request has already been decided, so documents can no longer be added", "22023"],
+    ["Expense not found", "P0002"],
+    ["This purchase has been voided, so documents can no longer be added", "22023"],
+    ["This purchase has already been decided, so documents can no longer be added", "22023"],
+    ["This expense is on a funding claim that has been submitted, so its documents are locked", "22023"],
+    ["This request is part of a funding claim, so documents cannot be added. Ask an executive.", "22023"],
+    ["executive permission required", "42501"],
+    ["funding claim not found", "P0002"],
+    ["This funding claim has been voided, so documents can no longer be added", "22023"],
+    ["This funding claim is with the funder, so its documents are locked. Only the HeelLife submission and proof of payment can be added now.", "22023"],
+    ["The file was not found in storage. Upload it again.", "22023"],
+    ["That file was uploaded by someone else", "42501"],
+    ["This file has already been registered as a finance document", "23505"],
+    ["An event purchase needs the event name, date and time, number of attendees and schedule", "22023"],
+    ["You cannot pay your own reimbursement. Ask another executive.", "42501"],
+  ];
+  for (const [message, code] of raised) {
+    assert.equal(friendlyError({ message, code }), message[0].toUpperCase() + message.slice(1), `${code}: ${message}`);
+  }
+});

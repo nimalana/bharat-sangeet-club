@@ -282,38 +282,43 @@ export async function recordFundingClaimPayment(payment: { claimId: number; amou
 export type DocumentLinks = { expenseId?: number; reimbursementId?: number; claimId?: number };
 
 /**
- * Stores a file and registers it, in this order: (1) the file goes into the private bucket under `storagePath`,
- * (2) the finance_documents row is inserted, (3) the link rows (expense, request, claim) are inserted together. A failure at a
- * step stops there: a file whose row was refused stays in the bucket, a row whose link was refused stays registered. Returns the
- * document's id. The checks on the file (size, type) and the path are the screen's (lib/finance-upload.ts).
+ * Stores a file and registers it, in this order: (1) the file goes into the private bucket under `storagePath`, (2) ONE call to
+ * register_finance_document creates the document record and every link (expense, request, claim) in a single transaction, and
+ * checks that the file is there, is in the caller's own folder, and that the target still takes documents. Returns the document's
+ * id. The uploader is the signed-in person: the database decides it, the caller cannot name anybody else.
+ *
+ * When the database REFUSES the registration (it answered with an error) the file just stored has nothing behind it, so it is
+ * removed again (best effort: the person is shown the refusal, not a second failure). Two cases leave the file alone: an
+ * "already registered" answer (23505: a record exists and points at this very file), and a call that never got an answer (the
+ * network went away: the registration may have succeeded, and removing the file then would leave a record with nothing behind it).
+ * The checks on the file (size, type) and the path are the screen's (lib/finance-upload.ts).
  */
 export async function uploadFinanceDocument(upload: {
   file: File; storagePath: string; mimeType: string; documentType: string; title: string;
-  cardLast4: string | null; uploadedBy: string; links: DocumentLinks;
+  cardLast4: string | null; links: DocumentLinks;
 }): Promise<number> {
   const db = connected();
   const uploaded = await db.storage.from("finance-private").upload(upload.storagePath, upload.file, { contentType: upload.mimeType, upsert: false });
   if (uploaded.error) throw toApiError(uploaded.error);
-  const saved = await db.from("finance_documents").insert({
-    document_type: upload.documentType,
-    title: upload.title,
-    storage_path: upload.storagePath,
-    mime_type: upload.mimeType,
-    file_size_bytes: upload.file.size,
-    payment_card_last4: upload.cardLast4,
-    uploaded_by: upload.uploadedBy,
-  }).select("id").single();
-  if (saved.error) throw toApiError(saved.error, saved.status);
-  if (!saved.data) throw new ApiError("Document record could not be created");
-  const documentId = Number(saved.data.id);
-  const linkRequests = [];
-  if (upload.links.expenseId) linkRequests.push(db.from("finance_expense_documents").insert({ expense_id: upload.links.expenseId, document_id: documentId }));
-  if (upload.links.reimbursementId) linkRequests.push(db.from("finance_reimbursement_documents").insert({ reimbursement_id: upload.links.reimbursementId, document_id: documentId }));
-  if (upload.links.claimId) linkRequests.push(db.from("finance_claim_documents").insert({ claim_id: upload.links.claimId, document_id: documentId }));
-  const linked = await Promise.all(linkRequests);
-  const linkError = linked.find((request) => request.error)?.error;
-  if (linkError) throw toApiError(linkError);
-  return documentId;
+  let documentId: number | null;
+  try {
+    documentId = must(await db.rpc("register_finance_document", {
+      p_storage_path: upload.storagePath, p_document_type: upload.documentType, p_title: upload.title,
+      p_mime_type: upload.mimeType, p_file_size_bytes: upload.file.size,
+      p_payment_card_last4: upload.cardLast4 ?? undefined,
+      p_expense_id: upload.links.expenseId || undefined,
+      p_reimbursement_id: upload.links.reimbursementId || undefined,
+      p_claim_id: upload.links.claimId || undefined,
+    }));
+  } catch (error) {
+    if (error instanceof ApiError && error.code !== "23505") await removeStoredFile("finance-private", upload.storagePath).catch(() => null);
+    throw error;
+  }
+  if (documentId === null || documentId === undefined) {
+    await removeStoredFile("finance-private", upload.storagePath).catch(() => null);
+    throw new ApiError("Document record could not be created");
+  }
+  return Number(documentId);
 }
 
 /** A link (valid for 90 seconds) to open one stored document. An answer with no link and no error is a refusal with no message. */
