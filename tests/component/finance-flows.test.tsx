@@ -52,7 +52,8 @@ function renderFinance(options: { role?: "member" | "executive" | "admin"; userI
 
 const card = (label: string) => screen.getByText(label).parentElement!.querySelector("strong")!.textContent;
 const waitForLoad = () => waitFor(() => expect(screen.getByText("Available cash")).toBeInTheDocument());
-const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
+// The open tab is kept in the address, which is written a moment after the click (a microtask): the async act lets it land.
+const tab = async (name: string) => { await act(async () => { fireEvent.click(screen.getByRole("tab", { name })); }); };
 const dialog = () => screen.getByRole("dialog");
 const field = (label: string | RegExp) => within(dialog()).getByLabelText(label);
 const type = (label: string | RegExp, value: string) => fireEvent.change(field(label), { target: { value } });
@@ -68,7 +69,7 @@ describe("finance: an executive answers a member's request", () => {
     scriptFinance(data);
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: buttonName }));
     return notify;
   }
@@ -109,7 +110,7 @@ describe("finance: an executive answers a member's request", () => {
     scriptFinance({ reimbursements: [reimbursement({ member_id: "exec-1" })] });
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     expect(await screen.findByText("Another executive must review your own request.")).toBeInTheDocument();
     for (const name of ["Approve", "Decline", "Request changes"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
   });
@@ -129,7 +130,7 @@ describe("finance: voiding and editing expenses", () => {
     scriptFinance(data);
     const notify = renderFinance();
     await waitForLoad();
-    tab("expenses");
+    await tab("expenses");
     fireEvent.click(await screen.findByRole("button", { name: buttonName }));
     return notify;
   }
@@ -181,7 +182,7 @@ describe("finance: voiding and editing expenses", () => {
     });
     renderFinance();
     await waitForLoad();
-    tab("expenses");
+    await tab("expenses");
     const row = (text: string) => screen.getByText(text).closest(".finance-table-row") as HTMLElement;
     expect(within(row("Tabla repair")).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(within(row("Tabla repair")).getByRole("button", { name: "Void" })).toBeInTheDocument();
@@ -264,7 +265,7 @@ describe("finance: the funder's answers and a claim's expenses", () => {
     scriptFinance(data);
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     await screen.findByText("Fall concert");
     return notify;
   }
@@ -441,7 +442,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     // Nothing chosen: the button is off and says what it would create.
     expect(within(dialog()).getByRole("button", { name: "Create claim · $0.00" })).toBeDisabled();
@@ -467,7 +468,7 @@ describe("finance: the forms that save a record", () => {
     scriptFinance();
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     attach("funding_approval");
     submit();
@@ -480,7 +481,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /Document/ }));
     type("Document type", "bank_statement");
     type("Title", "October statement");
@@ -496,7 +497,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: /Add receipt/ }));
     attach("file");
     submit();
@@ -509,7 +510,7 @@ describe("finance: the forms that save a record", () => {
     fake.rpc("create_funding_claim").reply(ok({ id: 24 }));
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     fireEvent.click(within(dialog()).getByLabelText("Include Tabla repair"));
     submit();
@@ -529,7 +530,7 @@ describe("finance: opening a stored document", () => {
     scriptFinance(WITH_RECEIPT);
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "▤ Taxi receipt" }));
     await waitFor(() => expect(window.open).toHaveBeenCalledWith("https://files.test/finance-private/member-9/taxi.pdf?signed", "_blank", "noopener,noreferrer"));
     expect(fake.storage("finance-private", "createSignedUrl").calls[0].args).toEqual(["member-9/taxi.pdf", 90]);
@@ -540,7 +541,7 @@ describe("finance: opening a stored document", () => {
     fake.storage("finance-private", "createSignedUrl").reply(fail("Object not found"));
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "▤ Taxi receipt" }));
     await waitFor(() => expect(notify.find("This finance document could not be opened").tone).toBe("error"));
     expect(window.open).not.toHaveBeenCalled();

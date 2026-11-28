@@ -9,6 +9,7 @@
 // Supabase is in lib/api/finance.ts.
 import type { User } from "@supabase/supabase-js";
 import { useMemo, useState } from "react";
+import { useUrlState } from "../../../lib/hooks/use-url-state";
 import { canManageClub } from "../../../lib/permissions";
 import { createSingleFlight } from "../../../lib/single-flight";
 import type { ClubRole, EventOption, GroupOption } from "../../../lib/db";
@@ -21,8 +22,9 @@ import { useFinanceDocuments } from "../hooks/use-finance-documents";
 import { useFinanceForms } from "../hooks/use-finance-forms";
 import { useActionRunner } from "../hooks/use-action-runner";
 import { useOneClickChanges } from "../hooks/use-one-click-changes";
+import { parseFlow, parseView } from "../address";
 import { deriveFinance, filterPayments } from "../model";
-import type { FinanceView } from "../types";
+import type { FinanceFlow, FinanceView } from "../types";
 import { FinanceChangeDialogs } from "./change-dialogs";
 import { ClaimPaymentDialog, NewClaimDialog } from "./claim-dialogs";
 import { ClaimDocumentDialog, ReceiptDialog } from "./document-dialogs";
@@ -46,9 +48,12 @@ export function FinancePage({ user, role, groups, events }: {
   events: EventOption[];
 }) {
   const canManage = canManageClub(role);
-  const [view, setView] = useState<FinanceView>(canManage ? "overview" : "reimbursements");
+  // The open tab and the ledger's activity filter are in the address (?tab=, ?flow=); what is typed in the search box is not.
+  const [openTab, setView] = useUrlState<FinanceView>("tab", { parse: parseView, defaultValue: canManage ? "overview" : "reimbursements", history: "push" });
+  const [flowFilter, setFlowFilter] = useUrlState<FinanceFlow>("flow", { parse: parseFlow, defaultValue: "all", history: "replace" });
+  // A member has the one tab: a link to another is read as theirs, and the address is left alone.
+  const view: FinanceView = canManage ? openTab : "reimbursements";
   const [query, setQuery] = useState("");
-  const [flowFilter, setFlowFilter] = useState("all");
   // The one-click changes and the correction dialog run one at a time: they share this single flight.
   const [flight] = useState(createSingleFlight);
 

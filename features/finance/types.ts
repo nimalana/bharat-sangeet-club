@@ -4,6 +4,8 @@ import type { ClaimDocument, ClaimExpense, ExpenseDocument, Expense, FinanceDocu
 import type { FormField } from "../../components/ui/form-dialog";
 
 export type FinanceView = "overview" | "expenses" | "reimbursements" | "claims";
+// The cash ledger's activity filter: everything, a direction, or one purpose.
+export type FinanceFlow = "all" | "inflow" | "outflow" | "member_reimbursement" | "external_reimbursement";
 export type FinanceModal = "reimbursement" | "expense" | "income" | "claim" | null;
 // One-click changes that need a yes first: paying out money, and sending a claim to the funder (it cannot go back to editing).
 export type FinanceConfirm = { kind: "pay"; request: Reimbursement } | { kind: "submit"; claim: FundingClaim } | null;

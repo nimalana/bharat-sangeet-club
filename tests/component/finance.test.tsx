@@ -102,14 +102,15 @@ function renderFinance(options: { role?: "member" | "executive" | "admin"; userI
 
 const card = (label: string) => screen.getByText(label).parentElement!.querySelector("strong")!.textContent;
 const waitForLoad = () => waitFor(() => expect(card("Available cash")).toBe("$1,234.00"));
-const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
+// The open tab is kept in the address, which is written a moment after the click (a microtask): the async act lets it land.
+const tab = async (name: string) => { await act(async () => { fireEvent.click(screen.getByRole("tab", { name })); }); };
 const dialog = () => screen.getByRole("dialog");
 const payCalls = () => fake.rpc("pay_personal_reimbursement").calls;
 const claimCalls = () => fake.rpc("set_funding_claim_status").calls;
 
 async function startMarkPaid() {
   await waitForLoad();
-  tab("reimbursements");
+  await tab("reimbursements");
   fireEvent.click(await screen.findByRole("button", { name: "Mark paid" }));
   fireEvent.click(within(dialog()).getByRole("button", { name: "Mark paid" }));
 }
@@ -186,7 +187,7 @@ describe("finance: reading the screen's data", () => {
     await startMarkPaid();
     expect(await screen.findByText(/could not be refreshed/)).toBeInTheDocument();
     expect(card("Available cash")).toBe("$1,234.00");
-    tab("overview");
+    await tab("overview");
     expect(screen.getByText("Reimbursement: Tabla repair")).toBeInTheDocument();
     expect(notify.find("Some finance records could not be loaded").tone).toBe("error");
   });
@@ -222,7 +223,7 @@ describe("finance: Mark paid", () => {
   it("asks first: the button opens a confirmation and sends nothing until it is confirmed", async () => {
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "Mark paid" }));
     expect(payCalls()).toHaveLength(0);
     expect(within(dialog()).getByText("Mark this reimbursement as paid?")).toBeInTheDocument();
@@ -235,7 +236,7 @@ describe("finance: Mark paid", () => {
     scriptFinance({ reimbursements: [reimbursement({ member_id: "exec-1" })] });
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     expect(await screen.findByText("Another executive must pay your own request.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Mark paid" })).not.toBeInTheDocument();
     expect(payCalls()).toHaveLength(0);
@@ -244,7 +245,7 @@ describe("finance: Mark paid", () => {
   it("another member's approved request still shows Mark paid, and no note about paying it", async () => {
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     expect(await screen.findByRole("button", { name: "Mark paid" })).toBeInTheDocument();
     expect(screen.queryByText("Another executive must pay your own request.")).not.toBeInTheDocument();
   });
@@ -254,7 +255,7 @@ describe("finance: Mark paid", () => {
     fake.rpc("pay_personal_reimbursement").reply(paying.reply);
     renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "Mark paid" }));
     const confirmButton = within(dialog()).getByRole("button", { name: "Mark paid" });
     act(() => { confirmButton.click(); confirmButton.click(); });
@@ -325,7 +326,7 @@ const READY_AND_DRAFT: Partial<Data> = {
 describe("finance: claim status", () => {
   async function openClaims() {
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     await screen.findByText("Fall concert");
   }
   const claimCard = (title: string) => screen.getByText(title).closest("article") as HTMLElement;
@@ -352,7 +353,7 @@ describe("finance: claim status", () => {
     scriptFinance({ claims: [claim({ id: 4, title: "Spring workshop", status: "draft" })] });
     renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     const button = within(await screen.findByText("Spring workshop").then((node) => node.closest("article") as HTMLElement)).getByRole("button", { name: "Mark ready" });
     expect(button).toBeDisabled();
     fireEvent.click(button);
@@ -407,7 +408,7 @@ describe("finance: corrections cannot overlap", () => {
     await waitForLoad();
     // Idle: the payment ledger's Void is on.
     expect(screen.getByRole("button", { name: "Void payment: Reimbursement: Tabla repair" })).toBeEnabled();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "Mark paid" }));
     fireEvent.click(within(dialog()).getByRole("button", { name: "Mark paid" }));
     await screen.findByRole("button", { name: "Paying…" });
@@ -415,11 +416,11 @@ describe("finance: corrections cannot overlap", () => {
     for (const name of ["Void payment", "Void"]) {
       for (const button of screen.getAllByRole("button", { name })) expect(button, name).toBeDisabled();
     }
-    tab("expenses");
+    await tab("expenses");
     for (const button of screen.getAllByRole("button", { name: /^(Void|Edit)$/ })) expect(button).toBeDisabled();
-    tab("overview");
+    await tab("overview");
     expect(screen.getByRole("button", { name: "Void payment: Reimbursement: Tabla repair" })).toBeDisabled();
-    tab("Funding claims");
+    await tab("Funding claims");
     expect(screen.getByRole("button", { name: "Void claim" })).toBeDisabled();
     await act(async () => { paying.resolve(ok(null)); });
     await waitFor(() => expect(screen.getByRole("button", { name: "Void claim" })).toBeEnabled());
@@ -480,7 +481,7 @@ describe("finance: removing a document", () => {
     fake.rpc("remove_finance_document").reply(removeAnswer);
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "Remove Taxi receipt" }));
     fireEvent.submit(dialog().querySelector("form")!);
     return notify;
@@ -529,7 +530,7 @@ describe("finance: removing a document", () => {
     fake.rpc("remove_finance_document").reply(fail("A request needs at least one receipt"));
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: "Remove Taxi receipt" }));
     fireEvent.submit(dialog().querySelector("form")!);
     await waitFor(() => expect(notify.find("A request needs at least one receipt").tone).toBe("error"));
@@ -550,7 +551,7 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
     return notify;
   }
   async function confirmPay() {
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     fireEvent.click(within(dialog()).getByRole("button", { name: "Mark paid" }));
     await advance(1);
@@ -597,7 +598,7 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
     fake.rpc("set_funding_claim_status").reply(fail("A claim that is submitted cannot be marked submitted"));
     hangOnRefresh();
     const notify = await loaded();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(within(screen.getByText("Fall concert").closest("article") as HTMLElement).getByRole("button", { name: "Back to editing" }));
     await advance(REFRESH_WAIT_MS);
     expect(notify.find(SLOW_UNSAVED).tone).toBe("error");
@@ -609,7 +610,7 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
     fake.rpc("set_funding_claim_status").reply(ok(null));
     hangOnRefresh();
     const notify = await loaded();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(within(screen.getByText("Fall concert").closest("article") as HTMLElement).getByRole("button", { name: "Back to editing" }));
     await advance(REFRESH_WAIT_MS);
     expect(notify.find(SLOW_SAVED).tone).toBe("success");
@@ -618,29 +619,29 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
   // Every flow that saves something and then waits for the lists (not only Mark paid and the dialogs).
   const pdfFile = () => new File(["%PDF-1.4"], "statement.pdf", { type: "application/pdf" });
   const attachTo = (name: string) => fireEvent.change(dialog().querySelector(`input[name="${name}"]`)!, { target: { files: [pdfFile()] } });
-  const flows: Array<[string, () => void]> = [
+  const flows: Array<[string, () => void | Promise<void>]> = [
     ["a club expense with its receipt", () => {
       fake.rpc("record_club_expense").reply(ok(12));
       fireEvent.click(screen.getByRole("button", { name: /Club expense/ }));
       attachTo("receipt");
       fireEvent.submit(dialog().querySelector("form")!);
     }],
-    ["a funding claim with its approval proof", () => {
+    ["a funding claim with its approval proof", async () => {
       fake.rpc("create_funding_claim").reply(ok({ id: 3 }));
-      tab("Funding claims");
+      await tab("Funding claims");
       fireEvent.click(screen.getByRole("button", { name: /New funding claim/ }));
       fireEvent.click(within(dialog()).getByLabelText("Include Tabla repair"));
       attachTo("funding_approval");
       fireEvent.submit(dialog().querySelector("form")!);
     }],
-    ["a receipt added to a request", () => {
-      tab("reimbursements");
+    ["a receipt added to a request", async () => {
+      await tab("reimbursements");
       fireEvent.click(screen.getByRole("button", { name: /Add receipt/ }));
       attachTo("file");
       fireEvent.submit(dialog().querySelector("form")!);
     }],
-    ["a document added to a claim", () => {
-      tab("Funding claims");
+    ["a document added to a claim", async () => {
+      await tab("Funding claims");
       fireEvent.click(screen.getByRole("button", { name: /Document/ }));
       attachTo("file");
       fireEvent.submit(dialog().querySelector("form")!);
@@ -651,7 +652,7 @@ describe("finance: the wait for the refresh is bounded (15 s)", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     hangOnRefresh();
     const notify = await loaded();
-    run();
+    await run();
     await advance(1);
     await advance(REFRESH_WAIT_MS - 100);
     expect(notify.messages()).not.toContain(SLOW_SAVED);
@@ -823,7 +824,7 @@ describe("finance: a failure that shows the database's own sentence is announced
     fake.storage("finance-private", "upload").reply(cheerful());
     const notify = renderFinance();
     await waitForLoad();
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /New funding claim/ }));
     fireEvent.click(within(dialog()).getByLabelText("Include Tabla repair"));
     attach("funding_approval", pdf());
@@ -840,13 +841,13 @@ describe("finance: a failure that shows the database's own sentence is announced
     fake.rpc("record_funding_claim_payment").reply(cheerful());
     const notify = renderFinance();
     await waitForLoad();
-    tab("reimbursements");
+    await tab("reimbursements");
     fireEvent.click(await screen.findByRole("button", { name: /Add receipt/ }));
     attach("file", pdf());
     fireEvent.submit(dialog().querySelector("form")!);
     await waitFor(() => expect(toneOf(notify)).toEqual(["error"]));
     fireEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
-    tab("Funding claims");
+    await tab("Funding claims");
     fireEvent.click(await screen.findByRole("button", { name: /Document/ }));
     attach("file", pdf());
     fireEvent.submit(dialog().querySelector("form")!);
