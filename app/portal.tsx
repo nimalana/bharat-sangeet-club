@@ -14,6 +14,7 @@ import { must } from "../lib/api/_core";
 import { useQuery } from "../lib/hooks/use-query";
 import { removeStoredFile } from "../lib/storage";
 import type { Notify } from "../lib/toast";
+import type { AccountStatus, Announcement, ArchiveItem, ClubEvent, MemberProfile, ScopeFilter, Subgroup, SubgroupMembership } from "../lib/portal-types";
 import type { PublicConcert } from "../lib/public-concerts";
 import { countOrKeep, listOrKeep } from "../lib/refresh";
 import { createRequestGate } from "../lib/request-gate";
@@ -43,18 +44,8 @@ const ResourceLibrary = dynamic(() => import("./resources").then((module) => mod
 const RecordingWorkspace = dynamic(() => import("../components/recordings/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
 const ClubArchiveManager = dynamic(() => import("../components/recordings/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
 
-// Rows are the generated table types (lib/db.ts), narrowed to the columns the shell reads; what only the UI knows is added next to them.
-type ArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
-  & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">> & { type: "recording"; signedUrl?: string };
-type ClubEvent = Pick<Tables<"events">, "id" | "title" | "description" | "starts_at" | "location" | "created_at" | "subgroup_id">;
-type Announcement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "published_at" | "subgroup_id">;
-type Subgroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode" | "archived_at">;
-type SubgroupMembership = Pick<Tables<"subgroup_memberships">, "subgroup_id" | "member_id" | "status" | "membership_role">;
 type MemberDirectory = { members: MemberProfile[]; groups: Subgroup[]; memberships: SubgroupMembership[] };
-type AccountStatus = "active" | "deactivated"; // profiles.status is text with a CHECK constraint
 type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: AccountStatus } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
-type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: AccountStatus };
-type ScopeFilter = "all" | "club" | number;
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
 
 function sectionFromUrl(): Section {
