@@ -37,7 +37,7 @@ Access rules and audit (4.3, 4.4), signed in as the person named:
 - an executive still sees and opens it;
 - a person who left a group no longer sees that group's attendance history and can still see the groups they are in;
 - every save still works: an announcement, an event, an archive upload, a recording (draft and publish), a resource folder and a resource upload, a funding claim (the screens send the person's own id; a refusal here says "... must be the signed-in member");
-- an executive who changes a group, event or announcement can then find the change with `select * from list_content_audit(20)` (SQL editor or REST rpc as an executive).
+- an executive who changes a group, event or announcement can then find the change by calling the REST rpc `list_content_audit` with their own session (it answers 42501 in the plain SQL editor, which has no signed-in person; as the database owner read `select * from public.content_audit_log order by id desc limit 20` instead).
 
 Do not apply anything of section 3 before this is live and checked.
 
