@@ -471,3 +471,7 @@ input::placeholder,textarea::placeholder{color:#65757e;opacity:1}
 .recording-load-more{margin-top:12px;justify-self:center;border:1px solid var(--line);background:var(--paper);padding:10px 18px;font-size:12px;font-weight:600;cursor:pointer}.recording-load-more:hover,.recording-load-more:focus-visible{border-color:var(--carolina)}
 .toast.error{border-left:4px solid #e3a1a8}
 .finance-page button:disabled{opacity:.55;cursor:not-allowed}
+/* The member check-in button sits on a dark card: the Button's primary variant forces white text (!important) on the paper background passed by the screen, so the label was white on white. Tailwind's utilities live in a cascade layer, and for !important declarations a layered rule beats an unlayered one, so this rule is in the same layer, where the higher specificity wins. */
+@layer utilities{.attendance-checkin button{color:var(--ink)!important}}
+/* At phone width the code field and button stuck out of the card by about 17px: a 1fr track will not shrink below its content, minmax(0,1fr) will. */
+@media(max-width:680px){.attendance-checkin{grid-template-columns:minmax(0,1fr)}.attendance-checkin>div{min-width:0}.attendance-checkin input{box-sizing:border-box;width:100%}}

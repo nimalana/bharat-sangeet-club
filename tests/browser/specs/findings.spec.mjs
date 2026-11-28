@@ -30,7 +30,6 @@ test.describe("member", () => {
   test.use({ role: "member" });
 
   test("F1: the Check in button's label can be read against its background", async ({ page }) => {
-    knownProblem("F1: the Check in button is white text on a white background (the primary Button's !text-white beats the text-[var(--ink)] the attendance screen passes), so a member cannot see the label");
     await openScreen(page, "attendance");
     const button = page.locator(".attendance-checkin").getByRole("button", { name: "Check in" });
     await expect(button).toBeVisible();
@@ -43,7 +42,6 @@ test.describe("member", () => {
   });
 
   test("F2: on a phone the check-in code field and button stay inside their card", async ({ page }) => {
-    knownProblem("F2: at 390 px wide the code input and the Check in button are wider than the card and stick out of its right edge");
     await page.setViewportSize({ width: 390, height: 844 });
     await openScreen(page, "attendance");
     const card = page.locator(".attendance-checkin");
