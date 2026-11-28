@@ -22,7 +22,7 @@
     "lint:boundaries": "node scripts/check-boundaries.mjs",
     "lint:boundaries:selftest": "node scripts/check-boundaries.mjs --selftest",
     "knip": "knip",
-    "test:unit": "node --test tests/archive-sharing.test.mjs tests/attendance-display.test.mjs tests/attendance-model.test.mjs tests/bootstrap.test.mjs tests/boundaries.test.mjs tests/bounded-wait.test.mjs tests/dates.test.mjs tests/errors.test.mjs tests/finance-summary.test.mjs tests/format.test.mjs tests/load-state.test.mjs tests/permissions.test.mjs tests/public-concerts.test.mjs tests/recordings-model.test.mjs tests/resources-query.test.mjs tests/sections.test.mjs tests/single-flight.test.mjs tests/storage-remove.test.mjs tests/toast.test.mjs",
+    "test:unit": "node --test tests/archive-sharing.test.mjs tests/attendance-display.test.mjs tests/attendance-model.test.mjs tests/bootstrap.test.mjs tests/boundaries.test.mjs tests/bounded-wait.test.mjs tests/dates.test.mjs tests/errors.test.mjs tests/finance-summary.test.mjs tests/format.test.mjs tests/load-state.test.mjs tests/permissions.test.mjs tests/public-concerts.test.mjs tests/recordings-model.test.mjs tests/resources-query.test.mjs tests/sections.test.mjs tests/security-headers.test.mjs tests/single-flight.test.mjs tests/storage-remove.test.mjs tests/toast.test.mjs",
     "test:browser": "NODE_USE_ENV_PROXY=1 playwright test -c tests/browser/playwright.config.mjs",
     "test:browser:update": "E2E_SHOTS=update NODE_USE_ENV_PROXY=1 playwright test -c tests/browser/playwright.config.mjs",
     "test:browser:compare": "node tests/browser/tools/compare-screenshots.mjs",
