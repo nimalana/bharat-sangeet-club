@@ -6,8 +6,8 @@
 //   - only serious and critical violations count (a skipped heading level is moderate: not reported);
 //   - colour contrast is the one rule that is off (jsdom cannot compute it);
 //   - tabOrder walks the real tab order, Shift+Tab goes back, and the focused name is the aria-label first.
-import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { expectNoSeriousViolations, seriousViolations } from "../support/a11y";
 import { focusedName, keyboardUser, tabOrder } from "../support/keyboard";
 
@@ -40,4 +40,14 @@ describe("keyboard helpers", () => {
     expect(await tabOrder(user, 5)).toEqual(["Close", "Read more", "Search", "(page)", "Close"]);
     expect(await tabOrder(user, 2, { shift: true })).toEqual(["(page)", "Search"]);
   });
+
+  it("with fake timers on, a click and typing still finish (Testing Library needs a clock it can move)", async () => {
+    vi.useFakeTimers();
+    const user = keyboardUser({ fakeTimers: true });
+    const seen: string[] = [];
+    render(<div><button onClick={() => seen.push("clicked")}>Go</button><input aria-label="Name" onChange={(event) => seen.push(event.target.value)} /></div>);
+    await user.click(screen.getByRole("button", { name: "Go" }));
+    await user.type(screen.getByLabelText("Name"), "ab");
+    expect(seen).toEqual(["clicked", "a", "ab"]);
+  }, 3000);
 });

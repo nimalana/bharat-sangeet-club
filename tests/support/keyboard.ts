@@ -6,11 +6,14 @@
 //   await user.keyboard("{Escape}");
 //   expect(await tabOrder(user, 4)).toEqual(["Cancel", "Delete", "Cancel", "Delete"]);   // the trap wraps
 //
-// With fake timers (vi.useFakeTimers()) pass { fakeTimers: true }, or user-event waits on a clock that never moves.
+// With fake timers (vi.useFakeTimers()) pass { fakeTimers: true }, or user-event waits on a clock that never moves. (Testing Library
+// only moves a fake clock for it when it finds a `jest` global; the helper gives it one that calls Vitest's clock. tests/component/setup.ts
+// removes it after the test.)
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
 export function keyboardUser(options: { fakeTimers?: boolean } = {}) {
+  if (options.fakeTimers) vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime.bind(vi) });
   return userEvent.setup(options.fakeTimers ? { advanceTimers: vi.advanceTimersByTime.bind(vi) } : {});
 }
 

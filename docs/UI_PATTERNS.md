@@ -10,6 +10,7 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 - [1. Toast](#1-toast)
 - [2. Dialog](#2-dialog) (and the list of every dialog in the portal, with who migrates it)
 - [3. Confirm](#3-confirm) (and how every destructive action confirms today)
+- [4. States and mutations](#4-states-and-mutations): errors with Try again, loading, pending buttons, forms
 
 ---
 
@@ -182,3 +183,82 @@ claim ready or back to editing (`updateClaimStatus`); sign out (`use-portal-sess
 
 A `ConfirmDialog` that is open while its action runs (`busy`) cannot be dismissed; its failure is a toast that stays (section 1), the dialog
 stays open for another try or Cancel.
+
+---
+
+## 4. States and mutations
+
+What a screen shows while it waits, when a load fails, and while a button's action runs. Plan 3.1: "error state with Retry instead of the empty
+state on failed loads; skeleton rows; every mutation button disabled while pending (P2-11); forms keep contents on failure".
+
+### 4.1 A read: loading, failed, empty, data
+
+Four different things; never show one for another. A failed first load is NOT the empty state ("No members yet" for a database that did not
+answer is a lie).
+
+| State | Show | With |
+|---|---|---|
+| First read on the way | `SkeletonRows` (a list) or `LoadingBlock` (a line) | `loading` of `useQuery`, or your own flag |
+| First read failed | `ErrorBlock` with Try again | `failed && data === undefined`, `retry()` |
+| A refresh failed, rows on screen | the rows, plus `LoadErrorBanner` (it exists) | `failed && data !== undefined` |
+| Read fine, nothing there | `EmptyState` | `data.length === 0` |
+
+```tsx
+const { data, loading, failed, retry } = useQuery({ userId: user.id, key: "members", load });
+if (failed && data === undefined) return <ErrorBlock message="The members could not be loaded." onRetry={() => void retry()} role="alert" />;
+if (loading) return <SkeletonRows rows={5} label="Loading the members" />;
+if (!data?.length) return <EmptyState title="No members yet" text="..." />;
+```
+
+- `ErrorBlock({ message, onRetry, className?, role?, busy? })` (`components/ui/error-block.tsx`): the message and a small Try again button (it
+  exists; the markup without `role` and `busy` is unchanged). `role="alert"` announces it when it replaces the content; `busy` disables the button
+  while the retry runs. Say what failed and what the person can do ("could not be loaded"), not the raw error.
+- `LoadingBlock({ children, role? })`: the line of text; `role="status"` for a placeholder that should be announced. Unchanged.
+- `SkeletonRows({ rows = 3, label = "Loading", className? })` and `Skeleton({ className })` (`components/ui/skeleton.tsx`): bars of the shape of the
+  content, pure CSS (`.skeleton`, 56 px rows; size a `Skeleton` with a class), the sweep stops under `prefers-reduced-motion`. The bars are
+  `aria-hidden`; a screen reader hears one polite `role="status"` with `label`. Give `label` the screen's name for what is loading.
+- `EmptyState({ title, text, className? })`: unchanged.
+- `useQuery` (`lib/hooks/use-query.ts`), additions only: `error` (what `load` threw; `undefined` after a good read) and `retry()`. `retry()` clears `failed`
+  and `error` at once, sets `loading` again when there is nothing to show (so the skeleton replaces the error while it tries), keeps the
+  rows of a failed refresh on screen, reads, and resolves when the read has settled. `refetch()` is as before.
+- A screen that reads without `useQuery` (several reads keyed together, `settle`): give its own `failed` state the same treatment: an ErrorBlock
+  whose `onRetry` loads again, `busy` while it does.
+
+### 4.2 A mutation: pending, exclusive, toast
+
+```tsx
+const { notify } = useToast();
+const save = useAsyncAction(notify, { exclusive: true });
+<Button pending={save.pending} onClick={() => save.run(() => saveThing(values), { fallback: "It could not be saved.", success: "Saved" })}>Save</Button>
+```
+
+- `Button` gets `pending` (`components/ui/button.tsx`): the button is `disabled` and `aria-busy="true"`, and looks as a disabled button does (opacity,
+  no pointer). A second click cannot be sent. Do not change the label to a spinner; keep the words.
+- `useAsyncAction(notify?, { exclusive? })` (`lib/hooks/use-async-action.ts`): `{ pending, error, run(action, { fallback?, success? }), clearError }` as before.
+  New: `exclusive: true` makes a `run()` that starts while another is running do nothing (the action is not called, no toast; it returns
+  `{ ok: false, skipped: true, message: "" }`), so a double click that lands before the button has re-rendered sends one request. Leave it off
+  for one hook that serves a list of rows (overlapping runs are allowed, `pending` stays up until the last one settles).
+- A run that fails sends the friendly sentence to `notify(..., "error")`: that toast STAYS (section 1); a success sends `success` and fades.
+- A screen that tracks which row is busy (a key, `pendingKey`) keeps doing so and passes `pending={pendingKey === key}` to that row's button.
+
+Where this applies (plan P2-11 names these): attendance (create a session, mark, roster changes), groups (roster changes, requests), finance (the several
+actions), every dialog's submit button: each shows the pending state on the button that was pressed and blocks a second press.
+
+### 4.3 A form: keep what was typed
+
+The rule: **a failure never clears a form or closes its dialog. Only a success does.** Pending while it runs; on failure the values are
+exactly as typed, the button works again, and the error toast stays (it does not fade, the person can read it and fix the input).
+
+- Never `form.reset()`, `setValues(initial)` or `close()` in a `catch`, in an `if (error)` branch or before the call has answered. Reset and close
+  after the outcome is `ok`: `const outcome = await save.run(...); if (outcome.ok) { reset(); close(); }`.
+- Read `FormData` before the first `await` (a handler that awaits loses `event.currentTarget`; keep a reference to the form element).
+- Uncontrolled fields (`defaultValue`, `FormData`) keep their text across a failed submit as long as the dialog or form stays mounted; do not
+  re-key it (`key={...}`) from the failure path.
+- A dialog that holds the form stays open on failure (`dismissible={!save.pending}`); Escape and Cancel still close it when nothing is running.
+- Checked in the code today: the only `form.reset()` calls are in success paths (`attendance/hooks/use-absence-form.ts` after the form was
+  saved, `admin/components/admin-page.tsx` after the announcement was published). Look for the same in your area: a `setX("")` or a
+  `close()` that runs before the result is known.
+- No `useFormDraft` helper was added: with uncontrolled fields and this rule nothing is lost, and the screens that hold values in state
+  already keep them. If an area finds a form that needs a draft kept across a reload, report it as `needs:`.
+
+`tests/component/states.test.tsx` has the pattern as a test ("a form: pending, the values kept on a failure, the failure toast stays").

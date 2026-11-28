@@ -18,3 +18,8 @@
 .toast.error{border-left:4px solid #e3a1a8}
 /* The dialog panel takes the focus itself when it has nothing to focus (tabIndex -1): no ring around the whole panel. */
 [role="dialog"]:focus,[role="dialog"]:focus-visible{outline:none!important;box-shadow:none!important}
+/* Skeleton: the bars a screen shows while its first read is on the way. No motion for a person who asked for less of it. */
+.skeleton{display:block;background:linear-gradient(90deg,var(--line) 0%,var(--carolina-pale) 50%,var(--line) 100%);background-size:200% 100%;animation:skeleton-sweep 1.6s ease-in-out infinite}
+.skeleton-row{height:56px;margin-bottom:10px}
+@keyframes skeleton-sweep{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skeleton{animation:none}}

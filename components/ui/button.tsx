@@ -16,6 +16,11 @@ const sizes: Record<ButtonSize, string> = {
   sm: "min-h-9 px-3 text-[0.68rem]",
 };
 
-export function Button({ className, variant = "primary", size = "default", type = "button", ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; ref?: Ref<HTMLButtonElement> }) {
-  return <button ref={ref} type={type} className={cn("inline-flex max-w-full items-center justify-center gap-2 rounded-none font-bold tracking-[0.02em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--carolina)] disabled:cursor-not-allowed disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
+// `pending`: the button's action is running. It is disabled (so a second click cannot send the action twice, and it looks as a disabled
+// button does) and says so to assistive technology (aria-busy). Pair it with the pending flag of useAsyncAction:
+//   <Button pending={save.pending} onClick={() => save.run(...)}>Save</Button>
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; pending?: boolean; ref?: Ref<HTMLButtonElement> };
+
+export function Button({ className, variant = "primary", size = "default", type = "button", ref, pending = false, disabled, ...props }: ButtonProps) {
+  return <button ref={ref} type={type} disabled={disabled || pending} aria-busy={pending || undefined} className={cn("inline-flex max-w-full items-center justify-center gap-2 rounded-none font-bold tracking-[0.02em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--carolina)] disabled:cursor-not-allowed disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
 }
