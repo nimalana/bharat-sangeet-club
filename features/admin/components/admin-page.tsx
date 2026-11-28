@@ -2,13 +2,15 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import type { ClubRole, Tables, TablesInsert } from "../../../lib/db";
+import { changeMemberRole, listAdminAnnouncements, listAdminMembers, listAuditLog, publishAnnouncement, updateMemberProfile, type AuditEntry } from "../../../lib/api/admin";
+import { listAllMemberships } from "../../../lib/api/groups";
+import { settle } from "../../../lib/api/settle";
+import type { ClubRole } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { formatDate } from "../../../lib/format";
 import type { Announcement, MemberProfile, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
 import { listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -23,7 +25,7 @@ export function AdminPage({ user, groups, notify }: { user: User; groups: Subgro
   const [members, setMembers] = useState<MemberProfile[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [audit, setAudit] = useState<Array<Pick<Tables<"admin_audit_log">, "id" | "action" | "actor_email" | "target_email" | "details" | "created_at">>>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [editingMember, setEditingMember] = useState<MemberProfile | null>(null);
   const [savingMember, setSavingMember] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -33,57 +35,53 @@ export function AdminPage({ user, groups, notify }: { user: User; groups: Subgro
   const [loadGate] = useState(createRequestGate);
 
   const load = useCallback(async () => {
-    if (!supabase) return;
     const isCurrent = loadGate.begin();
     const [membersResult, announcementsResult, auditResult, membershipResult] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role,status,phone,class_year,specialty,joined_at").order("full_name").limit(2000),
-      supabase.from("announcements").select("*").order("is_pinned", { ascending: false }).order("published_at", { ascending: false }).limit(50),
-      supabase.from("admin_audit_log").select("id,action,actor_email,target_email,details,created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
+      settle(listAdminMembers()),
+      settle(listAdminAnnouncements()),
+      settle(listAuditLog()),
+      settle(listAllMemberships()),
     ]);
     if (!isCurrent()) return;
     if (membersResult.error || membershipResult.error || announcementsResult.error || auditResult.error) notify("Some admin data could not be loaded", "error");
     // A list that failed keeps what is shown (an empty roster would read as "no members").
-    setMembers((current) => listOrKeep(current, membersResult as { data: MemberProfile[] | null; error?: unknown }));
-    setMemberships((current) => listOrKeep(current, membershipResult as { data: SubgroupMembership[] | null; error?: unknown }));
-    setAnnouncements((current) => listOrKeep(current, announcementsResult as { data: Announcement[] | null; error?: unknown }));
+    setMembers((current) => listOrKeep(current, membersResult));
+    setMemberships((current) => listOrKeep(current, membershipResult));
+    setAnnouncements((current) => listOrKeep(current, announcementsResult));
     setAudit((current) => listOrKeep(current, auditResult));
     setLoading(false);
   }, [loadGate, notify]);
   useEffect(() => { load(); }, [load]);
 
   async function changeRole(member: MemberProfile, nextRole: ClubRole) {
-    if (!supabase || member.role === nextRole) return;
-    const { error } = await supabase.rpc("admin_change_member_role", { p_target_id: member.id, p_new_role: nextRole });
+    if (member.role === nextRole) return;
+    const { error } = await settle(changeMemberRole(member.id, nextRole));
     if (error) notify(friendlyError(error), "error"); else { notify(`${member.full_name || member.email} is now ${nextRole}`); load(); }
   }
   async function saveMemberProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !editingMember) return;
+    if (!editingMember) return;
     setSavingMember(true);
     const form = new FormData(event.currentTarget);
     const subgroupIds = form.getAll("subgroup_id").map((value) => Number(value)).filter((value) => Number.isInteger(value));
-    const { error } = await supabase.rpc("admin_update_member_profile", {
-      p_target_id: editingMember.id,
-      p_full_name: String(form.get("full_name") || ""),
-      p_phone: String(form.get("phone") || ""),
-      p_class_year: String(form.get("class_year") || ""),
-      p_specialty: String(form.get("specialty") || ""),
-      p_subgroup_ids: subgroupIds,
-    });
+    const { error } = await settle(updateMemberProfile(editingMember.id, {
+      fullName: String(form.get("full_name") || ""),
+      phone: String(form.get("phone") || ""),
+      classYear: String(form.get("class_year") || ""),
+      specialty: String(form.get("specialty") || ""),
+      subgroupIds,
+    }));
     setSavingMember(false);
     if (error) notify(friendlyError(error), "error");
     else { setEditingMember(null); notify(`${editingMember.full_name || editingMember.email} was updated`); load(); }
   }
   async function createAnnouncement(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return;
+    event.preventDefault();
     // Keep a reference: event.currentTarget is cleared once the handler awaits.
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const subgroupId = String(form.get("subgroup_id") || "");
-    const payload: TablesInsert<"announcements"> = { title: String(form.get("title")), body: String(form.get("body")), is_pinned: form.get("is_pinned") === "on", created_by: user.id };
-    if (subgroupId) payload.subgroup_id = Number(subgroupId);
-    const { error } = await supabase.from("announcements").insert(payload);
+    const { error } = await settle(publishAnnouncement({ title: String(form.get("title")), body: String(form.get("body")), isPinned: form.get("is_pinned") === "on", createdBy: user.id, subgroupId: subgroupId ? Number(subgroupId) : null }));
     if (error) notify(friendlyError(error), "error"); else { formElement.reset(); notify("Announcement published"); load(); }
   }
 

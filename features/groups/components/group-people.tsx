@@ -2,12 +2,14 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import type { ClubRole, EnrollmentMode, GroupRole, RpcReturns, Tables } from "../../../lib/db";
+import { addSubgroupMember, leaveSubgroup, listSubgroupRoster, removeSubgroupMember, reviewSubgroupRequest, setSubgroupArchived, setSubgroupEnrollmentMode, setSubgroupMemberRole, updateSubgroup, type RosterRow } from "../../../lib/api/groups";
+import { listAddableMembers, type MemberCandidate } from "../../../lib/api/members";
+import { settle } from "../../../lib/api/settle";
+import type { ClubRole, EnrollmentMode, GroupRole, Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { canRemoveGroupMember, groupCapabilities } from "../../../lib/permissions";
 import { createRequestGate } from "../../../lib/request-gate";
 import { createSingleFlight } from "../../../lib/single-flight";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -16,8 +18,6 @@ import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 
 export type ManagedGroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode"> & Partial<Pick<Tables<"subgroups">, "archived_at">>;
-type RosterRow = RpcReturns<"list_subgroup_roster">[number]; // what list_subgroup_roster returns, row by row
-type Candidate = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 type Pending =
   | { kind: "remove"; row: RosterRow }
   | { kind: "decline"; row: RosterRow }
@@ -44,16 +44,15 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
   const [pending, setPending] = useState<Pending>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidates, setCandidates] = useState<MemberCandidate[]>([]);
   const [candidateQuery, setCandidateQuery] = useState("");
 
   const loadRoster = useCallback(async () => {
-    if (!supabase) return;
     const isCurrent = loadGate.begin();
-    const { data, error } = await supabase.rpc("list_subgroup_roster", { p_subgroup_id: group.id });
+    const { data, error } = await settle(listSubgroupRoster(group.id));
     if (!isCurrent()) return;
     if (error) setLoadError(friendlyError(error, "The roster could not be loaded."));
-    else { setLoadError(""); setRoster((data || []) as RosterRow[]); }
+    else { setLoadError(""); setRoster(data || []); }
     setLoading(false);
   }, [group.id, loadGate]);
 
@@ -64,11 +63,11 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
   const requests = roster.filter((row) => row.status === "pending" || row.status === "waitlisted");
   const members = roster.filter((row) => row.status === "active");
 
-  async function run(key: string, action: () => PromiseLike<{ error: { message?: string; code?: string } | null }>, success: string) {
+  async function run(key: string, action: () => Promise<unknown>, success: string) {
     const outcome = await flight.run(async () => {
       setBusyKey(key);
       try {
-        const { error } = await action();
+        const { error } = await settle(action());
         if (error) { notify(friendlyError(error), "error"); return false; }
         notify(success, "success");
         return true;
@@ -81,37 +80,36 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
   }
 
   async function review(row: RosterRow, decision: "approve" | "waitlist" | "decline") {
-    const client = supabase; if (!client) return;
     const name = row.full_name || row.email;
-    const done = await run(`${decision}-${row.member_id}`, () => client.rpc("review_subgroup_request", { p_subgroup_id: group.id, p_member_id: row.member_id, p_decision: decision }), decision === "approve" ? `${name} joined ${group.name}` : decision === "waitlist" ? `${name} was waitlisted` : `Request from ${name} declined`);
+    const done = await run(`${decision}-${row.member_id}`, () => reviewSubgroupRequest(group.id, row.member_id, decision), decision === "approve" ? `${name} joined ${group.name}` : decision === "waitlist" ? `${name} was waitlisted` : `Request from ${name} declined`);
     // Reload either way: a failure usually means someone else already reviewed it.
     await loadRoster();
     if (done) await onGroupChanged();
   }
 
   async function changeRole(row: RosterRow, nextRole: GroupRole) {
-    const client = supabase; if (!client || row.membership_role === nextRole) return;
-    await run(`role-${row.member_id}`, () => client.rpc("set_subgroup_member_role", { target_subgroup_id: group.id, target_member_id: row.member_id, next_role: nextRole }), `${row.full_name || row.email} is now a ${roleLabels[nextRole].toLowerCase()}`);
+    if (row.membership_role === nextRole) return;
+    await run(`role-${row.member_id}`, () => setSubgroupMemberRole(group.id, row.member_id, nextRole), `${row.full_name || row.email} is now a ${roleLabels[nextRole].toLowerCase()}`);
     await loadRoster();
   }
 
   async function confirmPending() {
-    const client = supabase; if (!client || !pending) return;
+    if (!pending) return;
     if (pending.kind === "decline") {
       const row = pending.row;
       await review(row, "decline");
       setPending(null);
     } else if (pending.kind === "remove") {
       const row = pending.row;
-      await run("confirm", () => client.rpc("remove_subgroup_member", { p_subgroup_id: group.id, p_member_id: row.member_id }), `${row.full_name || row.email} was removed from ${group.name}`);
+      await run("confirm", () => removeSubgroupMember(group.id, row.member_id), `${row.full_name || row.email} was removed from ${group.name}`);
       setPending(null); await loadRoster();
     } else if (pending.kind === "leave") {
-      const done = await run("confirm", () => client.rpc("leave_subgroup", { p_subgroup_id: group.id }), `You left ${group.name}`);
+      const done = await run("confirm", () => leaveSubgroup(group.id), `You left ${group.name}`);
       setPending(null);
       if (done) { await onGroupChanged(); onLeft(); }
     } else {
       const archiving = !group.archived_at;
-      const done = await run("confirm", () => client.rpc("set_subgroup_archived", { p_subgroup_id: group.id, p_archived: archiving }), archiving ? `${group.name} was archived` : `${group.name} was restored`);
+      const done = await run("confirm", () => setSubgroupArchived(group.id, archiving), archiving ? `${group.name} was archived` : `${group.name} was restored`);
       setPending(null);
       if (done) { await onGroupChanged(); if (archiving) onLeft(); }
     }
@@ -119,20 +117,17 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
 
   async function openAdd() {
     setShowAdd(true); setCandidateQuery("");
-    if (!supabase) return;
-    const { data, error } = await supabase.from("profiles").select("id,full_name,email").eq("status", "active").order("full_name").limit(1000);
-    if (error) notify(friendlyError(error, "Members could not be loaded."), "error"); else setCandidates((data || []) as Candidate[]);
+    const { data, error } = await settle(listAddableMembers());
+    if (error) notify(friendlyError(error, "Members could not be loaded."), "error"); else setCandidates(data || []);
   }
 
-  async function addMember(candidate: Candidate) {
-    const client = supabase; if (!client) return;
-    const done = await run(`add-${candidate.id}`, () => client.rpc("add_subgroup_member", { p_subgroup_id: group.id, p_member_id: candidate.id }), `${candidate.full_name || candidate.email} was added to ${group.name}`);
+  async function addMember(candidate: MemberCandidate) {
+    const done = await run(`add-${candidate.id}`, () => addSubgroupMember(group.id, candidate.id), `${candidate.full_name || candidate.email} was added to ${group.name}`);
     if (done) { await loadRoster(); await onGroupChanged(); }
   }
 
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const client = supabase; if (!client) return;
     const form = new FormData(event.currentTarget);
     const nextName = String(form.get("name") || "");
     const nextDescription = String(form.get("description") || "");
@@ -140,9 +135,9 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
     const outcome = await flight.run(async () => {
       setBusyKey("settings");
       try {
-        const updated = await client.rpc("update_subgroup", { p_subgroup_id: group.id, p_name: nextName, p_description: nextDescription });
+        const updated = await settle(updateSubgroup(group.id, nextName, nextDescription));
         const modeResult = !updated.error && can.canChangeEnrollment && nextMode !== group.enrollment_mode
-          ? await client.rpc("set_subgroup_enrollment_mode", { p_subgroup_id: group.id, p_mode: nextMode })
+          ? await settle(setSubgroupEnrollmentMode(group.id, nextMode))
           : { error: null };
         return updated.error || modeResult.error;
       } finally { setBusyKey(""); }

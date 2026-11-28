@@ -2,6 +2,8 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { createSubgroup, listGroupAnnouncements, listGroupRecordings, listMyMemberships, listOthersWaitingRequests, listSubgroups, postGroupAnnouncement, requestSubgroupEnrollment } from "../../../lib/api/groups";
+import { settle } from "../../../lib/api/settle";
 import type { ClubRole, EnrollmentMode } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { formatDate, initials } from "../../../lib/format";
@@ -9,7 +11,6 @@ import { canManageClub, canPostToGroup } from "../../../lib/permissions";
 import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
 import { listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
-import { supabase } from "../../../lib/supabase";
 import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { EmptyState } from "../../../components/ui/empty-state";
@@ -34,43 +35,35 @@ export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, 
   const [loadGate] = useState(createRequestGate);
 
   const load = useCallback(async () => {
-    if (!supabase) return;
     const isCurrent = loadGate.begin();
     const [groupResult, membershipResult, archiveResult, announcementResult, requestResult] = await Promise.all([
-      supabase.from("subgroups").select("id,name,description,enrollment_mode,archived_at").order("name"),
-      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", user.id),
-      supabase.from("archive_items").select("*").eq("type", "recording").not("subgroup_id", "is", null).order("created_at", { ascending: false }).limit(500),
-      supabase.from("announcements").select("*").not("subgroup_id", "is", null).order("published_at", { ascending: false }).limit(300),
+      settle(listSubgroups()),
+      settle(listMyMemberships(user.id)),
+      settle(listGroupRecordings()),
+      settle(listGroupAnnouncements()),
       // Row-level security returns other people's waiting requests only to executives and to that group's leaders and managers.
-      supabase.from("subgroup_memberships").select("subgroup_id").in("status", ["pending", "waitlisted"]).neq("member_id", user.id),
+      settle(listOthersWaitingRequests(user.id)),
     ]);
     if (!isCurrent()) return;
     if (groupResult.error || membershipResult.error || archiveResult.error || announcementResult.error) notify("Some group information could not be loaded", "error");
     // A list that failed keeps what is shown instead of becoming empty.
     if (!requestResult.error) {
       const counts: Record<number, number> = {};
-      for (const row of (requestResult.data || []) as Array<{ subgroup_id: number }>) counts[row.subgroup_id] = (counts[row.subgroup_id] || 0) + 1;
+      for (const row of requestResult.data || []) counts[row.subgroup_id] = (counts[row.subgroup_id] || 0) + 1;
       setRequestCounts(counts);
     }
-    setGroups((current) => listOrKeep(current, groupResult as { data: Subgroup[] | null; error?: unknown }));
-    setMemberships((current) => listOrKeep(current, membershipResult as { data: SubgroupMembership[] | null; error?: unknown }));
-    setItems((current) => listOrKeep(current, archiveResult as { data: ArchiveItem[] | null; error?: unknown }));
-    setAnnouncements((current) => listOrKeep(current, announcementResult as { data: Announcement[] | null; error?: unknown }));
+    setGroups((current) => listOrKeep(current, groupResult));
+    setMemberships((current) => listOrKeep(current, membershipResult));
+    setItems((current) => listOrKeep(current, archiveResult));
+    setAnnouncements((current) => listOrKeep(current, announcementResult));
     setLoading(false);
   }, [loadGate, notify, user.id]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function open(item: ArchiveItem) {
-    if (!supabase) return;
-    const { data, error } = await supabase.storage.from("club-archive").createSignedUrl(item.storage_path, 300);
-    if (error || !data) notify("This file could not be opened"); else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-  }
-
   async function requestEnrollment(group: Subgroup) {
-    if (!supabase) return;
     setJoining(group.id); setInlineMessage("");
-    const { data, error } = await supabase.rpc("request_subgroup_enrollment", { target_subgroup_id: group.id });
+    const { data, error } = await settle(requestSubgroupEnrollment(group.id));
     setJoining(null);
     if (error) { setInlineMessage(error.message); return; }
     const membership = data as SubgroupMembership;
@@ -81,13 +74,13 @@ export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, 
   }
 
   async function createGroup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return;
+    event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const { data, error } = await supabase.rpc("create_subgroup", {
-      subgroup_name: String(form.get("name") || ""),
-      subgroup_description: String(form.get("description") || ""),
-      subgroup_mode: String(form.get("enrollment_mode") || "approval") as EnrollmentMode, // the form's select offers exactly the enum's values
-    });
+    const { data, error } = await settle(createSubgroup({
+      name: String(form.get("name") || ""),
+      description: String(form.get("description") || ""),
+      mode: String(form.get("enrollment_mode") || "approval") as EnrollmentMode, // the form's select offers exactly the enum's values
+    }));
     if (error) { notify(friendlyError(error), "error"); return; }
     const created = data as Subgroup;
     setShowCreate(false); await load(); onGroupsChanged();
@@ -96,9 +89,9 @@ export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, 
   }
 
   async function createGroupAnnouncement(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase || !active) return;
+    event.preventDefault(); if (!active) return;
     const form = new FormData(event.currentTarget);
-    const { error } = await supabase.from("announcements").insert({ title: String(form.get("title") || ""), body: String(form.get("body") || ""), is_pinned: form.get("is_pinned") === "on", subgroup_id: active.id, created_by: user.id });
+    const { error } = await settle(postGroupAnnouncement({ title: String(form.get("title") || ""), body: String(form.get("body") || ""), isPinned: form.get("is_pinned") === "on", subgroupId: active.id, createdBy: user.id }));
     if (error) { notify(friendlyError(error), "error"); return; }
     setShowAnnouncement(false); await load(); notify(`Announcement posted to ${active.name}`);
   }
@@ -111,8 +104,6 @@ export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, 
   const discoverGroups = listedGroups.filter((group) => !canEnter(group.id));
   const activeMembership = (id: number) => { const membership = membershipFor(id); return membership?.status === "active" ? membership : undefined; };
   const active = listedGroups.find((group) => group.id === selectedGroupId && canEnter(group.id));
-  const groupItems = items.filter((item) => item.subgroup_id === active?.id);
-  const recordings = groupItems.filter((item) => item.type === "recording");
   const groupAnnouncements = announcements.filter((item) => item.subgroup_id === active?.id);
 
   if (loading) return <section className="section-shell page-section"><LoadingBlock>Loading the archive…</LoadingBlock></section>;

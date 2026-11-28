@@ -2,11 +2,11 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useState } from "react";
-import { must } from "../../../lib/api/_core";
+import { getMemberDirectory, updateOwnContact, type MemberDirectory } from "../../../lib/api/members";
+import { settle } from "../../../lib/api/settle";
 import { initials } from "../../../lib/format";
 import { useQuery } from "../../../lib/hooks/use-query";
-import type { MemberProfile, ScopeFilter, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
-import { supabase } from "../../../lib/supabase";
+import type { ScopeFilter } from "../../../lib/portal-types";
 import type { Notify } from "../../../lib/toast";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -15,25 +15,13 @@ import { LoadErrorBanner } from "../../../components/ui/load-error";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { PageTitle } from "../../../components/ui/page-title";
 
-type MemberDirectory = { members: MemberProfile[]; groups: Subgroup[]; memberships: SubgroupMembership[] };
-
 export function MembersPage({ user, notify }: { user: User; notify: Notify }) {
   // Reopening the directory shows the last data at once and refreshes behind it; a failed refresh keeps the directory already
   // shown instead of emptying it (lib/hooks/use-query.ts).
   const directory = useQuery<MemberDirectory>({
     userId: user.id,
     key: "members",
-    enabled: Boolean(supabase),
-    load: async () => {
-      const client = supabase;
-      if (!client) throw new Error("Supabase is not configured");
-      const [memberResult, groupResult, membershipResult] = await Promise.all([
-        client.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name").limit(2000),
-        client.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
-        client.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
-      ]);
-      return { members: (must(memberResult) || []) as MemberProfile[], groups: (must(groupResult) || []) as Subgroup[], memberships: (must(membershipResult) || []) as SubgroupMembership[] };
-    },
+    load: getMemberDirectory,
     onError: () => notify("The member directory could not be loaded"),
   });
   const { members, groups, memberships } = directory.data || { members: [], groups: [], memberships: [] };
@@ -51,9 +39,9 @@ export function MembersPage({ user, notify }: { user: User; notify: Notify }) {
     return matchesSearch && matchesGroup;
   });
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase) return; setSaving(true);
+    event.preventDefault(); setSaving(true);
     const form = new FormData(event.currentTarget);
-    const { error } = await supabase.from("profiles").update({ full_name: String(form.get("full_name") || ""), phone: String(form.get("phone") || ""), class_year: String(form.get("class_year") || ""), specialty: String(form.get("specialty") || "") }).eq("id", user.id);
+    const { error } = await settle(updateOwnContact(user.id, { fullName: String(form.get("full_name") || ""), phone: String(form.get("phone") || ""), classYear: String(form.get("class_year") || ""), specialty: String(form.get("specialty") || "") }));
     setSaving(false); if (error) notify(error.message, "error"); else { notify("Your contact information was updated"); setEditing(false); loadMembers(); }
   }
   if (loading) return <section className="section-shell page-section"><LoadingBlock>Loading the archive…</LoadingBlock></section>;
