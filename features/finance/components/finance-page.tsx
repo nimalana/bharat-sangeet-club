@@ -33,7 +33,11 @@ import { FundingClaims } from "./funding-claims";
 import { IncomeDialog } from "./income-dialog";
 import { ClubExpenseDialog, ReimbursementDialog } from "./purchase-dialogs";
 import { ReimbursementList } from "./reimbursement-list";
+import { FinancePanel, FinanceTabs } from "./finance-tabs";
 import { FinanceSummaryCards } from "./summary-cards";
+
+const MANAGER_VIEWS: FinanceView[] = ["overview", "expenses", "reimbursements", "claims"];
+const MEMBER_VIEWS: FinanceView[] = ["reimbursements"];
 
 export function FinancePage({ user, role, groups, events }: {
   user: User;
@@ -80,9 +84,9 @@ export function FinancePage({ user, role, groups, events }: {
 
     <FinanceSummaryCards canManage={canManage} summary={summary} reimbursements={reimbursements} finance={finance} />
 
-    <div className="finance-tabs" role="tablist">{(canManage ? ["overview", "expenses", "reimbursements", "claims"] : ["reimbursements"] as FinanceView[]).map((item) => <button key={item} role="tab" aria-selected={view === item} className={view === item ? "active" : ""} onClick={() => setView(item as FinanceView)}>{item === "claims" ? "Funding claims" : item}</button>)}</div>
+    <FinanceTabs views={canManage ? MANAGER_VIEWS : MEMBER_VIEWS} value={view} onChange={setView} />
 
-    <>
+    <FinancePanel view={view}>
       {canManage && view === "overview" && <FinanceOverview payments={payments} filteredPayments={filteredPayments} query={query} setQuery={setQuery} flowFilter={flowFilter} setFlowFilter={setFlowFilter} askVoidPayment={ask.askVoidPayment} changing={changing} pendingReimbursements={pendingReimbursements} expenseById={expenseById} claims={claims} claimChecklist={claimChecklist} setView={setView} />}
 
       {canManage && view === "expenses" && <ExpenseRegister expenses={expenses} profileById={profileById} lockedExpenseIds={lockedExpenseIds} changing={changing} askEditExpense={ask.askEditExpense} askVoidExpense={ask.askVoidExpense} />}
@@ -90,7 +94,7 @@ export function FinancePage({ user, role, groups, events }: {
       {view === "reimbursements" && <ReimbursementList user={user} canManage={canManage} reimbursements={reimbursements} reimbursementDocuments={reimbursementDocuments} expenseById={expenseById} profileById={profileById} documentById={documentById} activePayments={activePayments} changing={changing} pendingKey={pendingKey} openDocument={openDocument} askRemoveDocument={ask.askRemoveDocument} setReceiptRequestId={setReceiptRequestId} askEditRequest={ask.askEditRequest} askWithdrawRequest={ask.askWithdrawRequest} askDecline={ask.askDecline} askRequestChanges={ask.askRequestChanges} askApprove={ask.askApprove} setConfirming={setConfirming} askVoidPayment={ask.askVoidPayment} askVoidExpense={ask.askVoidExpense} />}
 
       {canManage && view === "claims" && <FundingClaims claims={claims} claimChecklist={claimChecklist} changing={changing} pendingKey={pendingKey} setModal={setModal} setClaimUploadId={setClaimUploadId} setClaimPaymentId={setClaimPaymentId} setConfirming={setConfirming} updateClaimStatus={changes.updateClaimStatus} askClaimDecision={ask.askClaimDecision} askVoidClaim={ask.askVoidClaim} askRemoveClaimExpense={ask.askRemoveClaimExpense} askAddClaimExpense={ask.askAddClaimExpense} />}
-    </>
+    </FinancePanel>
     </>}
 
     {modal === "reimbursement" && <ReimbursementDialog groups={groups} events={events} eventRelated={eventRelated} setEventRelated={setEventRelated} saving={saving} uploads={uploads} recorded={recorded} onRetryUpload={retryUpload} onSubmit={forms.submitReimbursement} onClose={closeDialogs} />}

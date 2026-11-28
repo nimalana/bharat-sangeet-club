@@ -19,7 +19,7 @@ export const reimbursement = (over: Record<string, unknown> = {}) => ({
   id: 5, expense_id: 1, member_id: "member-9", requested_amount: 80, approved_amount: 80, status: "approved", member_note: "", review_note: "",
   created_at: "2026-10-02T15:00:00Z", reviewed_by: "exec-2", reviewed_at: "2026-10-03T15:00:00Z", paid_at: null, voided_by: null, voided_at: null, void_reason: null, ...over,
 });
-const payment = (over: Record<string, unknown> = {}) => ({
+export const payment = (over: Record<string, unknown> = {}) => ({
   id: 7, direction: "outflow", purpose: "member_reimbursement", amount: 80, description: "Reimbursement: Tabla repair", category: "Instruments", account_name: "Club bank account",
   counterparty: "Meera Nair", payment_date: "2026-10-03", status: "posted", reimbursement_id: 5, funding_claim_id: null, expense_id: 1, created_at: "2026-10-03T16:00:00Z",
   created_by: "exec-2", cleared_date: null, voided_by: null, voided_at: null, void_reason: null, ...over,
