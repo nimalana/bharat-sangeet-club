@@ -111,9 +111,10 @@ describe("a member's own contact details", () => {
 
   it("a refused save shows the database's own sentence as a failure, keeps the form open and does not read the directory again", async () => {
     await openMembers();
-    fake.from("profiles", "update").reply(fail("Phone numbers must be 10 digits"));
+    // A database sentence with no failure words in it: only the tag the page gives it makes it a failure.
+    fake.from("profiles", "update").reply(fail("Contact details are locked for this member"));
     fireEvent.submit(openForm());
-    const toast = await screen.findByText(/Phone numbers must be 10 digits/, { selector: ".toast" });
+    const toast = await screen.findByText(/Contact details are locked for this member/, { selector: ".toast" });
     expect(toast).toHaveClass("error");
     expect(screen.getByRole("heading", { name: "Contact information" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save profile" })).toBeEnabled();
