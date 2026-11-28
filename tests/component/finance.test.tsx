@@ -27,7 +27,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FinancePage } from "../../app/finance";
+import { FinancePage } from "../../features/finance/components/finance-page";
 import { REFRESH_WAIT_MS } from "../../lib/bounded-wait";
 import { setCacheOwner } from "../../lib/cache";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";

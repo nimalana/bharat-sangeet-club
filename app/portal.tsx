@@ -36,7 +36,7 @@ import { ArchiveModal } from "../features/recordings/components/archive-modal";
 // A screen whose file cannot be fetched is caught by SectionBoundary in the shell.
 const SectionLoading = () => <LoadingBlock role="status">Loading…</LoadingBlock>;
 const AttendancePage = dynamic(() => import("../features/attendance/components/attendance-page").then((module) => module.AttendancePage), { ssr: false, loading: SectionLoading });
-const FinancePage = dynamic(() => import("./finance").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
+const FinancePage = dynamic(() => import("../features/finance/components/finance-page").then((module) => module.FinancePage), { ssr: false, loading: SectionLoading });
 const ResourceLibrary = dynamic(() => import("../features/resources/components/resource-library").then((module) => module.ResourceLibrary), { ssr: false, loading: SectionLoading });
 const RecordingWorkspace = dynamic(() => import("../features/recordings/components/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
 const ClubArchiveManager = dynamic(() => import("../features/recordings/components/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
