@@ -5,7 +5,6 @@ import { FormEvent, useState } from "react";
 import { updateOwnContact } from "../../../lib/api/members";
 import { settle } from "../../../lib/api/settle";
 import type { ScopeFilter } from "../../../lib/portal-types";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
@@ -16,8 +15,7 @@ import { useMemberDirectory } from "../hooks/use-member-directory";
 import { ContactDialog } from "./contact-dialog";
 import { MemberCard } from "./member-card";
 
-// `notify` is kept until the cleanup step removes it from every caller; the page reads the toast from useToast().
-export function MembersPage({ user }: { user: User; notify?: Notify }) {
+export function MembersPage({ user }: { user: User }) {
   const { notify } = useToast();
   const { members, groups, memberships, loading, failed: loadFailed, reload: loadMembers } = useMemberDirectory(user);
   const [query, setQuery] = useState("");

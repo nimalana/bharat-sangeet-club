@@ -6,22 +6,23 @@ import type { Tables } from "../../../lib/db";
 import { announcementsAvailable, createAnnouncement, deleteAnnouncement, setAnnouncementPinned, updateAnnouncement } from "../../../lib/api/announcements";
 import { friendlyError, toApiError, type ApiError } from "../../../lib/errors";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
+import { useToast } from "../../../components/ui/toast";
 
 export type EditableAnnouncement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "subgroup_id">;
 type GroupOption = Pick<Tables<"subgroups">, "id" | "name">;
 
 // Create or edit an announcement. Row-level security allows executives and
 // admins to write announcements; nobody else is shown this dialog.
-export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupId, onClose, onSaved, notify }: {
+export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupId, onClose, onSaved }: {
   user: User; groups: GroupOption[]; announcement?: EditableAnnouncement; lockedSubgroupId?: number;
-  onClose: () => void; onSaved: () => void | Promise<void>; notify: Notify;
+  onClose: () => void; onSaved: () => void | Promise<void>;
 }) {
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const lockedGroup = lockedSubgroupId ? groups.find((group) => group.id === lockedSubgroupId) : undefined;
@@ -65,10 +66,11 @@ export function AnnouncementEditor({ user, groups, announcement, lockedSubgroupI
 }
 
 // Edit, pin and delete controls for one announcement.
-export function AnnouncementActions({ user, groups, announcement, onChanged, notify }: {
+export function AnnouncementActions({ user, groups, announcement, onChanged }: {
   user: User; groups: GroupOption[]; announcement: EditableAnnouncement;
-  onChanged: () => void | Promise<void>; notify: Notify;
+  onChanged: () => void | Promise<void>;
 }) {
+  const { notify } = useToast();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const { pending: busy, run } = useAsyncAction(notify);
@@ -90,7 +92,7 @@ export function AnnouncementActions({ user, groups, announcement, onChanged, not
     <Button size="sm" variant="ghost" onClick={() => setEditing(true)} aria-label={`Edit ${announcement.title}`}>Edit</Button>
     <Button size="sm" variant="ghost" onClick={togglePin} disabled={busy} aria-label={`${announcement.is_pinned ? "Unpin" : "Pin"} ${announcement.title}`}>{announcement.is_pinned ? "Unpin" : "Pin"}</Button>
     <Button size="sm" variant="ghost" className="!text-[#8b2832]" onClick={() => setConfirming(true)} aria-label={`Delete ${announcement.title}`}>Delete</Button>
-    {editing && <AnnouncementEditor user={user} groups={groups} announcement={announcement} onClose={() => setEditing(false)} onSaved={onChanged} notify={notify} />}
+    {editing && <AnnouncementEditor user={user} groups={groups} announcement={announcement} onClose={() => setEditing(false)} onSaved={onChanged} />}
     <ConfirmDialog open={confirming} title="Delete this announcement?" confirmLabel="Delete announcement" danger busy={busy} onConfirm={remove} onCancel={() => setConfirming(false)}>
       <p className="m-0">“{announcement.title}” will be removed for everyone. This cannot be undone.</p>
     </ConfirmDialog>

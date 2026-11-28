@@ -4,12 +4,12 @@ import { useState, type FormEvent } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { clearAttendanceStatus, deleteAttendanceSession, setAttendanceThresholds, updateAttendanceSession, voidAttendanceSession, withdrawAttendanceExcuse } from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
+import { useToast } from "../../../components/ui/toast";
 
 type CorrectableSession = { id: number; title: string; starts_at: string; status: "draft" | "open" | "closed" | "canceled"; cancel_reason?: string | null };
 type Done = () => void | Promise<void>;
@@ -21,7 +21,8 @@ function toLocalInput(value: string) {
 
 // Edit or delete a meeting that has not opened, or void a closed one that
 // should never have counted.
-export function SessionCorrections({ session, notify, onChanged }: { session: CorrectableSession; notify: Notify; onChanged: Done }) {
+export function SessionCorrections({ session, onChanged }: { session: CorrectableSession; onChanged: Done }) {
+  const { notify } = useToast();
   const [dialog, setDialog] = useState<"edit" | "delete" | "void" | null>(null);
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
@@ -91,7 +92,8 @@ export function SessionCorrections({ session, notify, onChanged }: { session: Co
 }
 
 // Returns a member to "pending" when they were marked by mistake.
-export function ClearMarkButton({ sessionId, memberId, memberName, notify, onChanged }: { sessionId: number; memberId: string; memberName: string; notify: Notify; onChanged: Done }) {
+export function ClearMarkButton({ sessionId, memberId, memberName, onChanged }: { sessionId: number; memberId: string; memberName: string; onChanged: Done }) {
+  const { notify } = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function clear() {
@@ -109,7 +111,8 @@ export function ClearMarkButton({ sessionId, memberId, memberName, notify, onCha
   </>;
 }
 
-export function ThresholdSettings({ warning, critical, notify, onChanged }: { warning: number; critical: number; notify: Notify; onChanged: Done }) {
+export function ThresholdSettings({ warning, critical, onChanged }: { warning: number; critical: number; onChanged: Done }) {
+  const { notify } = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -141,7 +144,8 @@ export function ThresholdSettings({ warning, critical, notify, onChanged }: { wa
   </>;
 }
 
-export function WithdrawExcuseButton({ excuseId, notify, onChanged }: { excuseId: number; notify: Notify; onChanged: Done }) {
+export function WithdrawExcuseButton({ excuseId, onChanged }: { excuseId: number; onChanged: Done }) {
+  const { notify } = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function withdraw() {

@@ -3,21 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { countFolderChildren, resourcesAvailable, signResourceFile } from "../../../lib/api/resources";
 import { chainFromKnown, resolveFolderChain } from "../../../lib/resources-query";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { ResourceItem } from "../types";
 
 export type ResourceSelectionOptions = {
   itemById: ReadonlyMap<number, ResourceItem>;
   /** Bumped after any change: the child count is asked again. */
   version: number;
-  notify: Notify;
   changeFolder: (next: number | null) => void;
   fetchOneFolder: (id: number) => Promise<ResourceItem | null>;
   refreshAll: () => void;
   replaceRow: (id: number, change: (item: ResourceItem) => ResourceItem) => void;
 };
 
-export function useResourceSelection({ itemById, version, notify, changeFolder, fetchOneFolder, refreshAll, replaceRow }: ResourceSelectionOptions) {
+export function useResourceSelection({ itemById, version, changeFolder, fetchOneFolder, refreshAll, replaceRow }: ResourceSelectionOptions) {
+  const { notify } = useToast();
   const [selected, setSelected] = useState<ResourceItem | null>(null);
   const [childCountState, setChildCountState] = useState<{ id: number; count: number } | null>(null);
   const [selectedChain, setSelectedChain] = useState<{ id: number; chain: ResourceItem[] } | null>(null);

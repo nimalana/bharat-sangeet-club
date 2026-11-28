@@ -4,7 +4,6 @@ import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClubRole, Tables } from "../../../lib/db";
 import { canManageGroupResources, isExecutive } from "../../../lib/permissions";
-import type { Notify } from "../../../lib/toast";
 import { useResourceForms } from "../hooks/use-resource-forms";
 import { useResourceList } from "../hooks/use-resource-list";
 import { useResourceSelection } from "../hooks/use-resource-selection";
@@ -24,14 +23,12 @@ export type ResourceLibraryProps = {
   groups: Array<{ id: number; name: string }>;
   memberships: Array<Pick<Tables<"subgroup_memberships">, "subgroup_id" | "status" | "membership_role">>;
   events: Array<{ id: number; title: string; starts_at: string; subgroup_id: number | null }>;
-  // Kept until the cleanup step removes it from every caller.
-  notify: Notify;
   onResourceCountChange?: (count: number) => void;
   initialScope?: "all" | "club" | number;
 };
 
-export function ResourceLibrary({ user, role, groups, memberships, events, notify, onResourceCountChange, initialScope = "all" }: ResourceLibraryProps) {
-  const list = useResourceList({ userId: user.id, notify, onResourceCountChange, initialScope });
+export function ResourceLibrary({ user, role, groups, memberships, events, onResourceCountChange, initialScope = "all" }: ResourceLibraryProps) {
+  const list = useResourceList({ userId: user.id, onResourceCountChange, initialScope });
   const { scope, setScope, folderId, changeFolder, crumbs, currentFolder, showArchived, refreshAll, addRow, replaceRow } = list;
   const [display, setDisplay] = useState<"list" | "grid">("list");
   const [composer, setComposer] = useState<ComposerMode>(null);
@@ -46,12 +43,12 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   const canWriteScope = useCallback((subgroupId: number | null) => subgroupId === null ? canManageClub : canManageSubgroup(subgroupId), [canManageClub, canManageSubgroup]);
   const canManageItem = (item: ResourceItem) => canManageClub || (item.visibility === "members" && canManageSubgroup(item.subgroup_id));
 
-  const selection = useResourceSelection({ itemById: list.itemById, version: list.version, notify, changeFolder, fetchOneFolder: list.fetchOneFolder, refreshAll, replaceRow });
+  const selection = useResourceSelection({ itemById: list.itemById, version: list.version, changeFolder, fetchOneFolder: list.fetchOneFolder, refreshAll, replaceRow });
   const { selected, setSelected, selectedCurrent } = selection;
 
   const destinationScope = currentFolder ? currentFolder.subgroup_id : scope === "club" || scope === "all" ? null : scope;
   const canAdd = canWriteScope(destinationScope) && (folderId === null || currentFolder !== null);
-  const destination = { userId: user.id, notify, folderId, destinationScope, currentFolderVisibility: currentFolder?.visibility, canManageClub, canWriteScope, addRow, refreshAll, setComposer, setComposerError };
+  const destination = { userId: user.id, folderId, destinationScope, currentFolderVisibility: currentFolder?.visibility, canManageClub, canWriteScope, addRow, refreshAll, setComposer, setComposerError };
   const forms = useResourceForms(destination);
   const uploads = useResourceUploads({ ...destination, folderDepth: crumbs.length, replaceRow });
 
@@ -97,7 +94,7 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
     {composer ? <ResourceComposer mode={composer} panelRef={composerRef} currentFolder={currentFolder} destinationScope={destinationScope} groupById={groupById} canManageClub={canManageClub}
       error={composerError} forms={forms} uploads={uploads} onOpen={openComposer} onClose={closeComposer} /> : null}
     {selectedCurrent ? <ResourceDetailPanel item={selectedCurrent} location={selection.selectedLocation} groupById={groupById} events={events} canManage={canManageItem(selectedCurrent)} canManageClub={canManageClub}
-      childCountState={selection.childCountState} notify={notify} onClose={() => setSelected(null)} onOpenFile={selection.openFile} onChanged={selection.afterChange}
+      childCountState={selection.childCountState} onClose={() => setSelected(null)} onOpenFile={selection.openFile} onChanged={selection.afterChange}
       onRemoved={() => { const removedId = selectedCurrent.id; setSelected(null); if (folderId === removedId) changeFolder(selectedCurrent.parent_id); refreshAll(); }} /> : null}
   </section>;
 }

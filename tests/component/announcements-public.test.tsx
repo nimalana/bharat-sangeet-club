@@ -27,7 +27,7 @@ function renderEditor(over: { announcement?: typeof existing; lockedSubgroupId?:
   const notify = notifySpy();
   const onClose = vi.fn();
   const onSaved = vi.fn();
-  render(<AnnouncementEditor user={userOf("u-me")} groups={GROUPS} announcement={over.announcement} lockedSubgroupId={over.lockedSubgroupId} onClose={onClose} onSaved={onSaved} notify={notify} />);
+  render(<AnnouncementEditor user={userOf("u-me")} groups={GROUPS} announcement={over.announcement} lockedSubgroupId={over.lockedSubgroupId} onClose={onClose} onSaved={onSaved} />);
   return { notify, onClose, onSaved };
 }
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -169,7 +169,8 @@ describe("the announcement feed", () => {
   it("a manager can post one, and edit, pin or delete each; a posted one is followed by a reload", async () => {
     fake.from("announcements", "insert").reply(ok([{ id: 9 }]));
     const onChanged = vi.fn();
-    render(<AnnouncementFeed announcements={items} manage={{ user: userOf("u-me"), groups: [{ id: 7, name: "Hindustani Vocal", description: "", enrollment_mode: "open", archived_at: null }], onChanged, notify: notifySpy() }} />);
+    notifySpy();
+    render(<AnnouncementFeed announcements={items} manage={{ user: userOf("u-me"), groups: [{ id: 7, name: "Hindustani Vocal", description: "", enrollment_mode: "open", archived_at: null }], onChanged }} />);
     expect(screen.getByRole("button", { name: "Edit Pinned news" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unpin Pinned news" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete Later news" })).toBeInTheDocument();

@@ -182,7 +182,7 @@ describe("member access: a database sentence is a failure, and the dialog stays 
     fake.rpc(rpc).reply(fail(CHEERFUL));
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<MemberAccessActions member={person} isSelf={false} onChanged={onChanged} notify={notify} />);
+    render(<MemberAccessActions member={person} isSelf={false} onChanged={onChanged} />);
     confirm(open, confirmLabel);
     await waitFor(() => expect(toneOf(notify, CHEERFUL)).toBe("error"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -195,7 +195,7 @@ describe("announcements: pinning and deleting", () => {
   function renderActions() {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<AnnouncementActions user={userOf("u-me")} groups={[]} announcement={announcement} onChanged={onChanged} notify={notify} />);
+    render(<AnnouncementActions user={userOf("u-me")} groups={[]} announcement={announcement} onChanged={onChanged} />);
     return { notify, onChanged };
   }
 
@@ -227,7 +227,7 @@ describe("club recordings: a database sentence while deleting is a failure", () 
     fake.from("archive_items", "delete").reply(fail(CHEERFUL));
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<ClubArchiveManager items={[ITEM]} groups={[]} onAdd={vi.fn()} onChanged={onChanged} notify={notify} />);
+    render(<ClubArchiveManager items={[ITEM]} groups={[]} onAdd={vi.fn()} onChanged={onChanged} />);
     confirm("Delete", "Delete recording");
     await waitFor(() => expect(toneOf(notify, CHEERFUL)).toBe("error"));
     expect(onChanged).not.toHaveBeenCalled();
@@ -237,7 +237,7 @@ describe("club recordings: a database sentence while deleting is a failure", () 
     fake.from("archive_items", "update").reply(fail(CHEERFUL));
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<ClubArchiveManager items={[ITEM]} groups={[]} onAdd={vi.fn()} onChanged={onChanged} notify={notify} />);
+    render(<ClubArchiveManager items={[ITEM]} groups={[]} onAdd={vi.fn()} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.submit(within(screen.getByRole("dialog")).getByRole("button", { name: "Save changes" }).closest("form")!);
     await waitFor(() => expect(toneOf(notify, CHEERFUL)).toBe("error"));
@@ -248,7 +248,7 @@ describe("club recordings: a database sentence while deleting is a failure", () 
   it("an edit that changes no row (no permission) says so, as a failure", async () => {
     fake.from("archive_items", "update").reply(ok([]));
     const notify = notifySpy();
-    render(<ClubArchiveManager items={[ITEM]} groups={[]} onAdd={vi.fn()} onChanged={vi.fn()} notify={notify} />);
+    render(<ClubArchiveManager items={[ITEM]} groups={[]} onAdd={vi.fn()} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.submit(within(screen.getByRole("dialog")).getByRole("button", { name: "Save changes" }).closest("form")!);
     await waitFor(() => expect(toneOf(notify, "You do not have permission to edit this recording.")).toBe("error"));
@@ -264,7 +264,7 @@ describe("a group's recording: editing and deleting", () => {
     const notify = notifySpy();
     const onChanged = vi.fn();
     const onRemoved = vi.fn();
-    render(<RecordingManageBar recording={RECORDING} user={userOf("u-me")} canManage={false} notes={[]} notify={notify} onChanged={onChanged} onRemoved={onRemoved} />);
+    render(<RecordingManageBar recording={RECORDING} user={userOf("u-me")} canManage={false} notes={[]} onChanged={onChanged} onRemoved={onRemoved} />);
     return { notify, onChanged, onRemoved };
   }
 
@@ -290,7 +290,7 @@ describe("a group's recording: editing and deleting", () => {
     fake.from("recordings", "update").reply(fail(CHEERFUL));
     const notify = notifySpy();
     const onRemoved = vi.fn();
-    render(<RecordingManageBar recording={{ ...RECORDING, status: open === "Restore" ? "archived" : "published" }} user={userOf("u-me")} canManage={false} notes={[]} notify={notify} onChanged={vi.fn()} onRemoved={onRemoved} />);
+    render(<RecordingManageBar recording={{ ...RECORDING, status: open === "Restore" ? "archived" : "published" }} user={userOf("u-me")} canManage={false} notes={[]} onChanged={vi.fn()} onRemoved={onRemoved} />);
     confirm(open, open);
     await waitFor(() => expect(toneOf(notify, CHEERFUL)).toBe("error"));
     expect(onRemoved).not.toHaveBeenCalled();
@@ -317,7 +317,7 @@ describe("a notation item: renaming and deleting", () => {
   function renderNote() {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<NoteActions note={NOTE} user={userOf("u-me")} canManage={false} notify={notify} onChanged={onChanged} />);
+    render(<NoteActions note={NOTE} user={userOf("u-me")} canManage={false} onChanged={onChanged} />);
     return { notify, onChanged };
   }
 
@@ -348,7 +348,7 @@ describe("a library item: edit, pin, visibility, archive and delete", () => {
     const notify = notifySpy();
     const onChanged = vi.fn();
     const onRemoved = vi.fn();
-    render(<ResourceActions item={ITEM} canManage isExecutive childCount={0} notify={notify} onChanged={onChanged} onRemoved={onRemoved} />);
+    render(<ResourceActions item={ITEM} canManage isExecutive childCount={0} onChanged={onChanged} onRemoved={onRemoved} />);
     return { notify, onChanged, onRemoved };
   }
 
@@ -407,7 +407,7 @@ describe("adding a member: the list of club members cannot be loaded", () => {
     fake.rpc("list_subgroup_roster").reply(ok([]));
     fake.from("profiles", "select").reply(fail(CHEERFUL));
     const notify = notifySpy();
-    render(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={{ id: 7, name: "Hindustani Vocal", description: "", enrollment_mode: "approval", archived_at: null }} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} notify={notify} />);
+    render(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={{ id: 7, name: "Hindustani Vocal", description: "", enrollment_mode: "approval", archived_at: null }} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add member" }));
     await waitFor(() => expect(toneOf(notify, CHEERFUL)).toBe("error"));
   });
@@ -418,7 +418,7 @@ describe("group settings: a database sentence is a failure", () => {
   function renderPeople() {
     const notify = notifySpy();
     const onGroupChanged = vi.fn();
-    render(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP_ROW} myRole={null} isMember={false} onGroupChanged={onGroupChanged} onLeft={vi.fn()} notify={notify} />);
+    render(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP_ROW} myRole={null} isMember={false} onGroupChanged={onGroupChanged} onLeft={vi.fn()} />);
     return { notify, onGroupChanged };
   }
   async function saveSettings(change?: string) {

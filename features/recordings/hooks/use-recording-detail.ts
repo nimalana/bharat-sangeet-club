@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { createNotationUrl, createRecordingUrl, listRecordingNotes, recordingBucket } from "../../../lib/api/recordings";
 import { createRequestGate } from "../../../lib/request-gate";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { Recording, RecordingNote } from "../model";
 
-export function useRecordingDetail(recording: Recording, notify: Notify) {
+export function useRecordingDetail(recording: Recording) {
+  const { notify } = useToast();
   const [url, setUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState<RecordingNote[]>([]);
   // Every note change reloads the list; only the newest answer may replace it.

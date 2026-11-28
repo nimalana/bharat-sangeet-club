@@ -16,7 +16,7 @@ describe("announcements: pinning and deleting wait, say what happened, and tell 
   function renderActions(over: Partial<typeof announcement> = {}) {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<AnnouncementActions user={userOf("u-me")} groups={[]} announcement={{ ...announcement, ...over }} onChanged={onChanged} notify={notify} />);
+    render(<AnnouncementActions user={userOf("u-me")} groups={[]} announcement={{ ...announcement, ...over }} onChanged={onChanged} />);
     return { notify, onChanged };
   }
   const updates = () => fake.from("announcements", "update");
@@ -112,7 +112,7 @@ describe("member access: the wait, the toast, the dialog and the parent", () => 
   function renderAccess(member: typeof active | typeof gone) {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<MemberAccessActions member={member} isSelf={false} onChanged={onChanged} notify={notify} />);
+    render(<MemberAccessActions member={member} isSelf={false} onChanged={onChanged} />);
     return { notify, onChanged };
   }
 

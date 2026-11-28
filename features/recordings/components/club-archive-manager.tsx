@@ -6,13 +6,13 @@ import { createClubArchiveUrl, deleteClubArchiveItem, isInRecordingRoom, removeC
 import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../../lib/archive-sharing";
 import type { Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
+import { useToast } from "../../../components/ui/toast";
 
 export type ClubArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
   & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">>;
@@ -21,10 +21,11 @@ const accessLabel: Record<ArchiveAccess, string> = { public: "Public concert pag
 
 // Club recordings (the older archive) still feed the public concert page.
 // Executives manage them here: add, edit, change who can see them, delete.
-export function ClubArchiveManager({ items, groups, onAdd, onChanged, notify }: {
+export function ClubArchiveManager({ items, groups, onAdd, onChanged }: {
   items: ClubArchiveItem[]; groups: Array<{ id: number; name: string }>;
-  onAdd: () => void; onChanged: () => void | Promise<void>; notify: Notify;
+  onAdd: () => void; onChanged: () => void | Promise<void>;
 }) {
+  const { notify } = useToast();
   const [editing, setEditing] = useState<ClubArchiveItem | null>(null);
   const [deleting, setDeleting] = useState<ClubArchiveItem | null>(null);
   const [sharedDelete, setSharedDelete] = useState(false);

@@ -95,7 +95,7 @@ function renderLibrary(options: Options = {}) {
   const userId = options.userId ?? "u-me";
   // The shell makes the signed-in account the cache owner before a screen mounts.
   setCacheOwner(userId);
-  const view = render(<ResourceLibrary user={userOf(userId)} role={options.role ?? "executive"} groups={options.groups ?? []} memberships={options.memberships ?? []} events={[]} notify={notify} onResourceCountChange={onResourceCountChange} initialScope={options.scope ?? "all"} />);
+  const view = render(<ResourceLibrary user={userOf(userId)} role={options.role ?? "executive"} groups={options.groups ?? []} memberships={options.memberships ?? []} events={[]} onResourceCountChange={onResourceCountChange} initialScope={options.scope ?? "all"} />);
   return { notify, onResourceCountChange, ...view };
 }
 const listReads = () => fake.from("resources", "select").calls.filter((call) => call.used("range"));
@@ -968,9 +968,9 @@ describe("the open folder: address bar, audience and breadcrumb", () => {
   it("a new initial audience (a group's Open resources) switches the audience and leaves the open folder", async () => {
     openFolderUrl(42);
     scriptLibrary({ rows: [], byId: { 42: folderRow(42, "Fall concert") } });
-    const { notify, rerender } = renderLibrary({ groups: GROUPS });
+    const { rerender } = renderLibrary({ groups: GROUPS });
     await screen.findByRole("button", { name: "Fall concert" });
-    rerender(<ResourceLibrary user={userOf("u-me")} {...EXECUTIVE} groups={GROUPS} memberships={[]} events={[]} notify={notify} initialScope={7} />);
+    rerender(<ResourceLibrary user={userOf("u-me")} {...EXECUTIVE} groups={GROUPS} memberships={[]} events={[]} initialScope={7} />);
     await waitFor(() => expect(window.location.search).not.toContain("folder="));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Scope" })).toHaveValue("7"));
   });

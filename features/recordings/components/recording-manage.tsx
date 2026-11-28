@@ -6,12 +6,12 @@ import { attempt } from "../../../lib/api/attempt";
 import { deleteRecordingNote, deleteRecordingRow, recordingBucket, removeNotationFile, removeRecordingTake, setRecordingStatus, updateRecordingDetails, updateRecordingNote } from "../../../lib/api/recordings";
 import type { Tables } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
+import { useToast } from "../../../components/ui/toast";
 
 export type ManagedRecording = Pick<Tables<"recordings">, "id" | "title" | "description" | "uploaded_by" | "storage_path" | "status" | "recording_kind" | "raga" | "tala" | "sruthi" | "tempo">
   & Partial<Pick<Tables<"recordings">, "storage_bucket">>;
@@ -25,10 +25,11 @@ export type ManagedNote = Pick<Tables<"recording_notes">, "id" | "recording_id" 
 // longer be signed (it is gone: a retry after a partly finished delete).
 // (lib/api/recordings.ts: removeRecordingTake and removeNotationFile.)
 
-export function RecordingManageBar({ recording, user, canManage, notes, notify, onChanged, onRemoved }: {
+export function RecordingManageBar({ recording, user, canManage, notes, onChanged, onRemoved }: {
   recording: ManagedRecording; user: User; canManage: boolean; notes: ManagedNote[];
-  notify: Notify; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
+  onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
 }) {
+  const { notify } = useToast();
   const [dialog, setDialog] = useState<"edit" | "archive" | "restore" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
   const mine = recording.uploaded_by === user.id;
@@ -112,9 +113,10 @@ export function RecordingManageBar({ recording, user, canManage, notes, notify, 
   </div>;
 }
 
-export function NoteActions({ note, user, canManage, notify, onChanged }: {
-  note: ManagedNote; user: User; canManage: boolean; notify: Notify; onChanged: () => void | Promise<void>;
+export function NoteActions({ note, user, canManage, onChanged }: {
+  note: ManagedNote; user: User; canManage: boolean; onChanged: () => void | Promise<void>;
 }) {
+  const { notify } = useToast();
   const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
   if (note.uploaded_by !== user.id && !canManage) return null;

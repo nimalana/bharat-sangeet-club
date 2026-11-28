@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { getAttendanceOverview, getAttendanceRoster } from "../../../lib/api/attendance";
 import { readCache, writeCache } from "../../../lib/cache";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import {
   DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, createFailureGate, createSequencer, nextListLimit, normalizeOverview,
   type AttendanceOverview, type AttendanceTab, type Roster, type ScopeFilter,
@@ -22,14 +22,14 @@ import { useAttendancePoll, type PollState } from "./use-attendance-poll";
 
 const viewKey = (scope: ScopeFilter, term: string) => `attendance2:${scope}:${term}`;
 
-export function useAttendanceData({ user, canManage, initialScope, tab, notify }: {
+export function useAttendanceData({ user, canManage, initialScope, tab }: {
   user: User;
   canManage: boolean;
   initialScope: ScopeFilter;
   /** The tab on screen: the poll reads the roster again only while the Meetings tab shows it. */
   tab: AttendanceTab;
-  notify: Notify;
 }) {
+  const { notify } = useToast();
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(initialScope);
   const [termFilter, setTermFilter] = useState("all");
   // How many items each review queue lists for an executive (see queueNote in

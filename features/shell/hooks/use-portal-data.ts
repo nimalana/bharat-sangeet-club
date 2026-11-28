@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useToast } from "../../../components/ui/toast";
 import { isSupabaseConfigured } from "../../../lib/api/auth";
 import { loadPortalLists, loadWorkspaceLists } from "../../../lib/api/portal";
 import type { Announcement, ArchiveItem, ClubEvent, Subgroup, SubgroupMembership } from "../../../lib/portal-types";
 import { countOrKeep, listOrKeep } from "../../../lib/refresh";
 import { createRequestGate } from "../../../lib/request-gate";
-import type { Notify } from "../../../lib/toast";
 
 /** What get_portal_bootstrap hands the shell besides the profile: the lists every page may read. */
 export type PortalLists = { groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
@@ -21,7 +21,8 @@ export type PortalData = ReturnType<typeof usePortalData>;
  * (`switchAccount` makes everything still in flight stale; a load also compares the account it started for). A list that
  * failed to load keeps what is shown; it is not replaced by an empty one (lib/refresh.ts).
  */
-export function usePortalData(notify: Notify) {
+export function usePortalData() {
+  const { notify } = useToast();
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);

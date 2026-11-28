@@ -6,10 +6,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ToastProvider, ToastViewport, useToast } from "../../components/ui/toast";
+import { ToastProvider, ToastViewport } from "../../components/ui/toast";
 import { usePortalData } from "../../features/shell/hooks/use-portal-data";
 import { usePortalSession } from "../../features/shell/hooks/use-portal-session";
 import { deferred, fail, fake, ok, rejects, withCount } from "../support/fake-supabase";
+import { notifySpy } from "../support/helpers";
 import { bootstrapAnswer } from "../support/portal";
 
 const wrapper = ({ children }: { children: ReactNode }) => <ToastProvider>{children}<ToastViewport /></ToastProvider>;
@@ -19,19 +20,18 @@ const event = (id: number, title: string) => ({ id, title, description: "", star
 
 /** Everything the shell holds, the way the Portal composes it. */
 function useShell() {
-  const { notify } = useToast();
-  const data = usePortalData(notify);
-  const session = usePortalSession(data, notify);
+  const data = usePortalData();
+  const session = usePortalSession(data);
   return { data, session };
 }
 
-/** What the data hook told the person, in order. `notify` is one stable function, as the toast context's is. */
-const told: string[] = [];
-const notify = (message: string) => { told.push(message); };
-beforeEach(() => { told.length = 0; });
+/** The usePortalData tests read what the hook told the person, in order, through the toast spy (useToast() answers it). The usePortalSession tests read the real toast. */
+let told: ReturnType<typeof notifySpy>;
+const readToasts = () => beforeEach(() => { told = notifySpy(); });
 
 describe("usePortalData: loadData", () => {
-  const useData = () => ({ data: usePortalData(notify) });
+  readToasts();
+  const useData = () => ({ data: usePortalData() });
 
   it("fills the four lists, and the resource count comes from the head count", async () => {
     fake.from("archive_items", "select").reply(ok([{ id: 1, title: "Founders' Day", type: "recording" }]));
@@ -45,7 +45,7 @@ describe("usePortalData: loadData", () => {
     expect(result.current.data.announcements).toHaveLength(1);
     expect(result.current.data.resourceCount).toBe(12);
     expect(result.current.data.dataLoading).toBe(false);
-    expect(told).toEqual([]);
+    expect(told.messages()).toEqual([]);
   });
 
   it("says which list failed, in this order, and keeps what each failed list showed", async () => {
@@ -58,13 +58,13 @@ describe("usePortalData: loadData", () => {
     await act(async () => { await result.current.data.loadData(); });
     expect(result.current.data.resourceCount).toBe(5);
 
-    told.length = 0;
+    told.mockClear();
     fake.from("archive_items", "select").reply(fail("a"));
     fake.from("events", "select").reply(fail("b"));
     fake.from("announcements", "select").reply(fail("c"));
     fake.from("resources", "select").reply(fail("d"));
     await act(async () => { await result.current.data.loadData(); });
-    expect(told).toEqual([
+    expect(told.messages()).toEqual([
       "The club archive could not be loaded", "The calendar could not be loaded", "Announcements could not be loaded", "The resource count could not be loaded",
     ]);
     expect(result.current.data.archive).toHaveLength(1);
@@ -78,7 +78,7 @@ describe("usePortalData: loadData", () => {
     fake.from("events", "select").reply(rejects());
     const { result } = renderHook(useData, { wrapper });
     await act(async () => { await result.current.data.loadData(); });
-    expect(told).toEqual(["The club data could not be loaded. Check your connection and try again."]);
+    expect(told.messages()).toEqual(["The club data could not be loaded. Check your connection and try again."]);
     expect(result.current.data.dataLoading).toBe(false);
   });
 
@@ -103,7 +103,7 @@ describe("usePortalData: loadData", () => {
     act(() => { second = result.current.data.loadData(); });
     // The older load fails first: nobody is told, and the page is still waiting for the newer one.
     await act(async () => { older.reject(new TypeError("Failed to fetch")); await first; });
-    expect(told).toEqual([]);
+    expect(told.messages()).toEqual([]);
     expect(result.current.data.dataLoading).toBe(true);
     await act(async () => { newer.resolve(ok([event(2, "Newer")])); await second; });
     expect(result.current.data.dataLoading).toBe(false);
@@ -120,14 +120,15 @@ describe("usePortalData: loadData", () => {
     act(() => { result.current.data.switchAccount("u-b"); });
     await act(async () => { slow.resolve(ok([event(1, "Asha's rehearsal")])); await done; });
     expect(result.current.data.events).toEqual([]);
-    expect(told).toEqual([]);
+    expect(told.messages()).toEqual([]);
   });
 });
 
 describe("usePortalData: reloadWorkspaces", () => {
+  readToasts();
   it("replaces the groups and memberships, and keeps them when either read fails, saying so", async () => {
     const membership = { subgroup_id: 7, member_id: "u-me", status: "active", membership_role: "member" };
-    const useData = () => ({ data: usePortalData(notify) });
+    const useData = () => ({ data: usePortalData() });
     const { result } = renderHook(useData, { wrapper });
     act(() => { result.current.data.switchAccount("u-me"); });
     fake.from("subgroups", "select").reply(ok([group]));
@@ -139,13 +140,13 @@ describe("usePortalData: reloadWorkspaces", () => {
     fake.from("subgroups", "select").reply(ok([]));
     fake.from("subgroup_memberships", "select").reply(fail("boom"));
     await act(async () => { await result.current.data.reloadWorkspaces("u-me"); });
-    expect(told).toEqual(["Your groups could not be loaded"]);
+    expect(told.messages()).toEqual(["Your groups could not be loaded"]);
     expect(result.current.data.groups).toEqual([group]);
     expect(result.current.data.memberships).toEqual([membership]);
   });
 
   it("drops an answer for an account that is no longer the signed-in one", async () => {
-    const useData = () => usePortalData(notify);
+    const useData = () => usePortalData();
     const { result } = renderHook(useData, { wrapper });
     act(() => { result.current.switchAccount("u-a"); });
     const slow = deferred();
@@ -160,7 +161,7 @@ describe("usePortalData: reloadWorkspaces", () => {
 
 describe("usePortalData: adoptBootstrap and clear", () => {
   it("takes every list out of the bootstrap answer, a resource count that is not a number becoming 0, and clear forgets them all", () => {
-    const { result } = renderHook(() => usePortalData(() => {}), { wrapper });
+    const { result } = renderHook(() => usePortalData(), { wrapper });
     act(() => {
       result.current.adoptBootstrap({ groups: [group], memberships: [{ subgroup_id: 7, member_id: "u", status: "active", membership_role: "member" }], announcements: [{ id: 1, title: "t", body: "b", is_pinned: false, published_at: "2026-01-01T00:00:00Z", subgroup_id: null }], events: [event(1, "Picnic")], archive: [], resource_count: "12" as unknown as number });
     });

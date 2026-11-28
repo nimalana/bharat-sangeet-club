@@ -71,7 +71,7 @@ const note = (id: number, title: string, over: Record<string, unknown> = {}) =>
 function renderRecordings(options: { canManage?: boolean } = {}) {
   const notify = notifySpy();
   setCacheOwner("u-me");
-  render(<RecordingWorkspace user={userOf("u-me")} groups={GROUPS} memberships={MEMBERSHIPS} canManage={options.canManage ?? false} notify={notify} onDataChanged={vi.fn()} />);
+  render(<RecordingWorkspace user={userOf("u-me")} groups={GROUPS} memberships={MEMBERSHIPS} canManage={options.canManage ?? false} onDataChanged={vi.fn()} />);
   return { notify };
 }
 const listReads = () => fake.from("recordings", "select");

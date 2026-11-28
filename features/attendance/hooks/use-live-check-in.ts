@@ -5,18 +5,18 @@ import { useState, type FormEvent } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { checkInAttendance, createAttendanceSession, openAttendanceSession, rotateAttendanceCode } from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { AttendanceTab, GroupOption } from "../model";
 import type { Exclusive } from "./use-exclusive";
 
-export function useLiveCheckIn({ groups, notify, load, rereadRoster, setTab, exclusive }: {
+export function useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive }: {
   groups: GroupOption[];
-  notify: Notify;
   load: (silent?: boolean) => Promise<void>;
   rereadRoster: () => void;
   setTab: (tab: AttendanceTab) => void;
   exclusive: Exclusive;
 }) {
+  const { notify } = useToast();
   const [showNewSession, setShowNewSession] = useState(false);
   const [checkInCode, setCheckInCode] = useState("");
   const [liveCode, setLiveCode] = useState("");

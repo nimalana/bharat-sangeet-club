@@ -13,7 +13,7 @@ import { keepRowsOnFailure } from "../../../lib/refresh";
 import {
   RESOURCE_PAGE_SIZE, buildListPlan, isFlatListing, listCacheKey, mergePage, orderForDisplay, resolveSubtreeFolderIds, subtreeCacheKey, type LibraryTab, type ScopeFilter, type SortKey,
 } from "../../../lib/resources-query";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { attachThumbnails } from "../thumbnails";
 import type { ListSnapshot, ResourceItem } from "../types";
 import { useResourceBreadcrumb } from "./use-resource-breadcrumb";
@@ -22,12 +22,12 @@ import { useResourceFolder } from "./use-resource-folder";
 
 export type ResourceListOptions = {
   userId: string;
-  notify: Notify;
   onResourceCountChange?: (count: number) => void;
   initialScope: ScopeFilter;
 };
 
-export function useResourceList({ userId, notify, onResourceCountChange, initialScope }: ResourceListOptions) {
+export function useResourceList({ userId, onResourceCountChange, initialScope }: ResourceListOptions) {
+  const { notify } = useToast();
   const [tab, setTab] = useState<LibraryTab>("all");
   const [query, setQuery] = useState("");
   // What is sent to the database: the search box after a 250 ms pause.
@@ -133,7 +133,7 @@ export function useResourceList({ userId, notify, onResourceCountChange, initial
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey, version]);
 
-  const { itemById, crumbs, currentFolder } = useResourceBreadcrumb({ userId, notify, folderId, version, showArchived, items, changeFolder, fetchOneFolder });
+  const { itemById, crumbs, currentFolder } = useResourceBreadcrumb({ userId, folderId, version, showArchived, items, changeFolder, fetchOneFolder });
   const hasArchivedItems = useResourceCounts(version, onResourceCountChange);
 
   // Folders first, pinned items ahead of both; the database already ordered the rest.

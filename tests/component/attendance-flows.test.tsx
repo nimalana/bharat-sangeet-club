@@ -35,7 +35,7 @@ function scriptOverview(over: Record<string, unknown> = {}) {
 function renderAttendance(options: { role?: "member" | "executive"; tab?: "overview" | "meetings" | "excuses" } = {}) {
   const notify = notifySpy();
   setCacheOwner("u-me");
-  const view = render(<AttendancePage user={userOf("u-me")} role={options.role ?? "executive"} groups={[{ id: 7, name: "Hindustani Vocal" }]} initialScope="all" initialTab={options.tab ?? "overview"} notify={notify} />);
+  const view = render(<AttendancePage user={userOf("u-me")} role={options.role ?? "executive"} groups={[{ id: 7, name: "Hindustani Vocal" }]} initialScope="all" initialTab={options.tab ?? "overview"} />);
   return { notify, ...view };
 }
 const overviewCalls = () => fake.rpc("get_attendance_overview").calls;

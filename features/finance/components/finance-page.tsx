@@ -12,7 +12,6 @@ import { useMemo, useState } from "react";
 import { canManageClub } from "../../../lib/permissions";
 import { createSingleFlight } from "../../../lib/single-flight";
 import type { ClubRole } from "../../../lib/db";
-import type { Notify } from "../../../lib/toast";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { useFinanceCorrections } from "../hooks/use-finance-corrections";
@@ -40,7 +39,6 @@ export function FinancePage({ user, role, groups, events }: {
   role: ClubRole;
   groups: Subgroup[];
   events: ClubEvent[];
-  notify?: Notify; // kept until the cleanup step removes it from every caller; the screen reads useToast()
 }) {
   const canManage = canManageClub(role);
   const [view, setView] = useState<FinanceView>(canManage ? "overview" : "reimbursements");

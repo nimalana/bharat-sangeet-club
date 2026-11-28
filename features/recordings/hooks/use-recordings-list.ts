@@ -9,10 +9,11 @@ import { listRecordings } from "../../../lib/api/recordings";
 import { readCache, writeCache } from "../../../lib/cache";
 import { useDebounced } from "../../../lib/hooks/use-debounced";
 import { createRequestGate } from "../../../lib/request-gate";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { visibleRecordings, type Recording, type RecordingView, type Scope } from "../model";
 
-export function useRecordingsList({ userId, canManage, initialScope, notify }: { userId: string; canManage: boolean; initialScope: Scope; notify: Notify }) {
+export function useRecordingsList({ userId, canManage, initialScope }: { userId: string; canManage: boolean; initialScope: Scope }) {
+  const { notify } = useToast();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [query, setQuery] = useState("");

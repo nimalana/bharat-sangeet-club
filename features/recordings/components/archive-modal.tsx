@@ -6,9 +6,10 @@ import { attempt } from "../../../lib/api/attempt";
 import { insertClubArchiveItem, removeClubArchiveFile, uploadClubArchiveFile } from "../../../lib/api/recordings";
 import type { ArchiveVisibility } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 
-export function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose: () => void; onSaved: () => void; notify: Notify }) {
+export function ArchiveModal({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: () => void }) {
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true);

@@ -5,14 +5,13 @@ import { useState, type ChangeEvent, type Dispatch, type SetStateAction } from "
 import { createResourceImport, failResourceImport, finishResourceImport, resourcesAvailable } from "../../../lib/api/resources";
 import type { ArchiveVisibility } from "../../../lib/db";
 import { ApiError, toApiError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { deepestFolderLevel, splitRelativePath, tooDeepMessage, uploadBatchName, uploadBatchStatus, uploadFailedSentence, uploadToastMessage } from "../model";
 import { ensureFolderPath, shownMessage, uploadOne, type UploadBatch } from "../upload-batch";
 import type { ComposerMode, ResourceItem, UploadEntry, Visibility } from "../types";
 
 export type ResourceUploadsOptions = {
   userId: string;
-  notify: Notify;
   folderId: number | null;
   /** How many folder levels the open folder is already inside. */
   folderDepth: number;
@@ -27,7 +26,8 @@ export type ResourceUploadsOptions = {
   setComposerError: Dispatch<SetStateAction<string>>;
 };
 
-export function useResourceUploads({ userId, notify, folderId, folderDepth, destinationScope, currentFolderVisibility, canManageClub, canWriteScope, addRow, replaceRow, refreshAll, setComposer, setComposerError }: ResourceUploadsOptions) {
+export function useResourceUploads({ userId, folderId, folderDepth, destinationScope, currentFolderVisibility, canManageClub, canWriteScope, addRow, replaceRow, refreshAll, setComposer, setComposerError }: ResourceUploadsOptions) {
+  const { notify } = useToast();
   const [uploadEntries, setUploadEntries] = useState<UploadEntry[]>([]);
   const [uploadMode, setUploadMode] = useState<"files" | "folder-upload">("files");
   const [uploadVisibility, setUploadVisibility] = useState<Visibility>("members");

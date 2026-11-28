@@ -32,7 +32,7 @@ function renderBar(recording: Partial<ManagedRecording> = {}, options: { notes?:
   const notify = notifySpy();
   const onChanged = vi.fn();
   const onRemoved = vi.fn();
-  render(<RecordingManageBar recording={{ ...MANAGED, ...recording }} user={userOf("u-me")} canManage={options.canManage ?? false} notes={options.notes ?? [FILE_NOTE]} notify={notify} onChanged={onChanged} onRemoved={onRemoved} />);
+  render(<RecordingManageBar recording={{ ...MANAGED, ...recording }} user={userOf("u-me")} canManage={options.canManage ?? false} notes={options.notes ?? [FILE_NOTE]} onChanged={onChanged} onRemoved={onRemoved} />);
   return { notify, onChanged, onRemoved };
 }
 const updates = () => fake.from("recordings", "update").calls;
@@ -303,7 +303,7 @@ describe("a notation item: rename, edit and delete", () => {
   function renderNote(item: Partial<ManagedNote> = {}, options: { canManage?: boolean } = {}) {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<NoteActions note={{ ...FILE_NOTE, ...item }} user={userOf("u-me")} canManage={options.canManage ?? false} notify={notify} onChanged={onChanged} />);
+    render(<NoteActions note={{ ...FILE_NOTE, ...item }} user={userOf("u-me")} canManage={options.canManage ?? false} onChanged={onChanged} />);
     return { notify, onChanged };
   }
   const noteUpdates = () => fake.from("recording_notes", "update").calls;
@@ -385,7 +385,8 @@ describe("a notation item: rename, edit and delete", () => {
   });
 
   it("only the person who added a note, or someone who manages recordings, sees its buttons", () => {
-    const { unmount } = render(<NoteActions note={{ ...FILE_NOTE, uploaded_by: "someone-else" }} user={userOf("u-me")} canManage={false} notify={notifySpy()} onChanged={vi.fn()} />);
+    notifySpy();
+    const { unmount } = render(<NoteActions note={{ ...FILE_NOTE, uploaded_by: "someone-else" }} user={userOf("u-me")} canManage={false} onChanged={vi.fn()} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     unmount();
     renderNote({ uploaded_by: "someone-else" }, { canManage: true });
@@ -407,7 +408,7 @@ function renderArchive(items: ClubArchiveItem[] = [ITEM], groups: Array<{ id: nu
   const notify = notifySpy();
   const onChanged = vi.fn();
   const onAdd = vi.fn();
-  render(<ClubArchiveManager items={items} groups={groups} onAdd={onAdd} onChanged={onChanged} notify={notify} />);
+  render(<ClubArchiveManager items={items} groups={groups} onAdd={onAdd} onChanged={onChanged} />);
   return { notify, onChanged, onAdd };
 }
 const archiveUpdates = () => fake.from("archive_items", "update").calls;
@@ -655,7 +656,7 @@ describe("the form that adds a club recording", () => {
     const notify = notifySpy();
     const onClose = vi.fn();
     const onSaved = vi.fn();
-    const view = render(<ArchiveModal user={userOf("u-me")} onClose={onClose} onSaved={onSaved} notify={notify} />);
+    const view = render(<ArchiveModal user={userOf("u-me")} onClose={onClose} onSaved={onSaved} />);
     const form = view.container.querySelector("form")!;
     const backdrop = view.container.querySelector(".modal-backdrop")!;
     return { notify, onClose, onSaved, form, backdrop };

@@ -8,7 +8,7 @@ import {
   type RecordingPayload,
 } from "../../../lib/api/recordings";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { Recording } from "../model";
 import type { RecordingFields } from "./use-recording-fields";
 
@@ -23,10 +23,11 @@ async function removeAbandonedFiles(progress: SaveProgress) {
   return leftovers.length ? ` ${leftovers.join(" ")} An administrator may need to clean up.` : "";
 }
 
-export function useRecordingSave({ user, draft, fields, file, mediaKind, recordingSeconds, notify, onSaved }: {
+export function useRecordingSave({ user, draft, fields, file, mediaKind, recordingSeconds, onSaved }: {
   user: User; draft: Recording | null; fields: RecordingFields; file: File | null; mediaKind: "audio" | "video"; recordingSeconds: number;
-  notify: Notify; onSaved: () => Promise<void>;
+  onSaved: () => Promise<void>;
 }) {
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   const { title, description, groupId, recordingKind, raga, tala, sruthi, tempo, notationText, notationFile } = fields;
 

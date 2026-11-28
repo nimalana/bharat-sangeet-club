@@ -31,11 +31,10 @@ import { SetupScreen } from "./setup-screen";
 
 export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | null }) {
   // A failure is shown as one: no tick, and screen readers get an alert (components/ui/toast.tsx).
-  // Screens that have not moved to useToast() yet are still given `notify` as a prop.
   const { notify } = useToast();
-  const data = usePortalData(notify);
+  const data = usePortalData();
   const { archive, events, announcements, groups, memberships, resourceCount, dataLoading, setResourceCount, loadData } = data;
-  const { savedSession, authLoading, user, shellState, role, name, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data, notify);
+  const { savedSession, authLoading, user, shellState, role, name, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
   const nav = usePortalNavigation({ user, loadData });
   const { section, navigate } = nav;
   const calendar = useCalendarPage({ onChanged: loadData });
@@ -62,29 +61,29 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
       <PortalHeader section={section} role={role} name={name} onNavigate={navigate} onSignOut={signOutQuietly} />
 
       <SectionBoundary key={section}>
-        {shown === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData, notify } : undefined} />}
+        {shown === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData } : undefined} />}
 
-        {shown === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={nav.openAttendanceFor} onOpenRecordings={nav.openRecordingsFor} onOpenResources={nav.openResourcesFor} notify={notify} />}
+        {shown === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={nav.openAttendanceFor} onOpenRecordings={nav.openRecordingsFor} onOpenResources={nav.openResourcesFor} />}
 
-        {shown === "admin" && <AdminPage user={user} groups={groups} notify={notify} />}
+        {shown === "admin" && <AdminPage user={user} groups={groups} />}
 
-        {shown === "recordings" && <><RecordingWorkspace user={user} groups={availableGroups} memberships={memberships} canManage={canManage} initialScope={nav.recordingScope === "club" ? "all" : nav.recordingScope} notify={notify} onDataChanged={loadData} />{canManage && <ClubArchiveManager items={archive} groups={groups} onAdd={() => setShowUpload(true)} onChanged={loadData} notify={notify} />}</>}
+        {shown === "recordings" && <><RecordingWorkspace user={user} groups={availableGroups} memberships={memberships} canManage={canManage} initialScope={nav.recordingScope === "club" ? "all" : nav.recordingScope} onDataChanged={loadData} />{canManage && <ClubArchiveManager items={archive} groups={groups} onAdd={() => setShowUpload(true)} onChanged={loadData} />}</>}
 
         {shown === "calendar" && <CalendarPage events={events} groups={groups} availableGroups={availableGroups} canManage={canManage} loading={dataLoading} scope={calendar.scope} onScopeChange={calendar.setScope} onAdd={() => calendar.setAdding(true)} onEdit={calendar.setEditing} onDelete={calendar.remove} />}
 
-        {shown === "attendance" && <AttendancePage key={`${nav.attendanceInitialScope}-${attendanceTabFromUrl()}`} user={user} role={role} groups={availableGroups} initialScope={nav.attendanceInitialScope} initialTab={attendanceTabFromUrl()} notify={notify} />}
+        {shown === "attendance" && <AttendancePage key={`${nav.attendanceInitialScope}-${attendanceTabFromUrl()}`} user={user} role={role} groups={availableGroups} initialScope={nav.attendanceInitialScope} initialTab={attendanceTabFromUrl()} />}
 
-        {shown === "members" && <MembersPage user={user} notify={notify} />}
+        {shown === "members" && <MembersPage user={user} />}
 
-        {shown === "documents" && <ResourceLibrary user={user} role={role} groups={availableGroups} memberships={memberships} events={events} notify={notify} onResourceCountChange={setResourceCount} initialScope={nav.resourceInitialScope} />}
+        {shown === "documents" && <ResourceLibrary user={user} role={role} groups={availableGroups} memberships={memberships} events={events} onResourceCountChange={setResourceCount} initialScope={nav.resourceInitialScope} />}
 
-        {shown === "finances" && <FinancePage user={user} role={role} groups={availableGroups} events={events} notify={notify} />}
+        {shown === "finances" && <FinancePage user={user} role={role} groups={availableGroups} events={events} />}
 
         {outcome.kind === "refused" && <SectionRefused label={SECTION_LABELS[outcome.section]} onHome={() => navigate("home")} />}
       </SectionBoundary>
 
       <PortalFooter />
-      {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
+      {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} />}
       <CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} />
       <ToastViewport />
     </main>

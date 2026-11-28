@@ -9,7 +9,6 @@ import type { ClubRole, EnrollmentMode, GroupRole } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { canRemoveGroupMember, groupCapabilities } from "../../../lib/permissions";
 import { createSingleFlight } from "../../../lib/single-flight";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { useToast } from "../../../components/ui/toast";
 import { useGroupRoster } from "../hooks/use-group-roster";
@@ -22,10 +21,9 @@ import { RosterList } from "./roster-list";
 
 export type { ManagedGroup };
 
-// `notify` is kept until the cleanup step removes it from every caller; the screen reads the toast from useToast().
 export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft }: {
   user: User; role: ClubRole; group: ManagedGroup; myRole: GroupRole | null; isMember: boolean;
-  onGroupChanged: () => void | Promise<void>; onLeft: () => void; notify?: Notify;
+  onGroupChanged: () => void | Promise<void>; onLeft: () => void;
 }) {
   const { notify } = useToast();
   const can = groupCapabilities(role, myRole);

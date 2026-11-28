@@ -6,14 +6,11 @@ import { isSupabaseConfigured } from "../../../lib/api/auth";
 import { createEvent, updateEvent } from "../../../lib/api/events";
 import { friendlyError } from "../../../lib/errors";
 import type { ClubEvent, Subgroup } from "../../../lib/portal-types";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { useToast } from "../../../components/ui/toast";
 
 export function EventModal({ user, groups, editing, onClose, onSaved }: {
   user: User; groups: Subgroup[]; editing?: ClubEvent; onClose: () => void; onSaved: () => void;
-  /** Kept until the cleanup step removes it from every caller: the modal reads useToast() itself. */
-  notify?: Notify;
 }) {
   const { notify } = useToast();
   const [saving, setSaving] = useState(false);

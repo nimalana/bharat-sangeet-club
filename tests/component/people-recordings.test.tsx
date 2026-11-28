@@ -68,7 +68,7 @@ function renderPeople(options: { role?: "member" | "executive" | "admin"; myRole
   const notify = notifySpy();
   const onGroupChanged = vi.fn();
   const onLeft = vi.fn();
-  render(<GroupPeople user={userOf("u-me")} role={options.role ?? "executive"} group={GROUP} myRole={options.myRole ?? null} isMember={options.isMember ?? false} onGroupChanged={onGroupChanged} onLeft={onLeft} notify={notify} />);
+  render(<GroupPeople user={userOf("u-me")} role={options.role ?? "executive"} group={GROUP} myRole={options.myRole ?? null} isMember={options.isMember ?? false} onGroupChanged={onGroupChanged} onLeft={onLeft} />);
   return { notify, onGroupChanged, onLeft };
 }
 const reviews = () => fake.rpc("review_subgroup_request").calls;
@@ -243,7 +243,7 @@ function renderRecordings(options: { canManage?: boolean; groups?: typeof GROUPS
   const onDataChanged = vi.fn();
   // The shell makes the signed-in account the cache owner before a screen mounts.
   setCacheOwner("u-me");
-  render(<RecordingWorkspace user={userOf("u-me")} groups={options.groups ?? GROUPS} memberships={options.memberships ?? MEMBERSHIPS} canManage={options.canManage ?? false} notify={notify} onDataChanged={onDataChanged} />);
+  render(<RecordingWorkspace user={userOf("u-me")} groups={options.groups ?? GROUPS} memberships={options.memberships ?? MEMBERSHIPS} canManage={options.canManage ?? false} onDataChanged={onDataChanged} />);
   return { notify, onDataChanged };
 }
 const listReads = () => fake.from("recordings", "select");
@@ -583,7 +583,7 @@ const ARCHIVE_ITEM: ClubArchiveItem = {
 function renderManager(item: ClubArchiveItem = ARCHIVE_ITEM) {
   const notify = notifySpy();
   const onChanged = vi.fn();
-  render(<ClubArchiveManager items={[item]} groups={[]} onAdd={vi.fn()} onChanged={onChanged} notify={notify} />);
+  render(<ClubArchiveManager items={[item]} groups={[]} onAdd={vi.fn()} onChanged={onChanged} />);
   return { notify, onChanged };
 }
 async function confirmDelete(confirmLabel: string, openWith = "Delete") {
@@ -719,7 +719,7 @@ function renderActions(item: Partial<ManagedResource> = {}, props: { childCount?
   const notify = notifySpy();
   const onChanged = vi.fn();
   const onRemoved = vi.fn();
-  render(<ResourceActions item={{ ...RESOURCE, ...item }} canManage isExecutive childCount={props.childCount ?? 0} notify={notify} onChanged={onChanged} onRemoved={onRemoved} />);
+  render(<ResourceActions item={{ ...RESOURCE, ...item }} canManage isExecutive childCount={props.childCount ?? 0} onChanged={onChanged} onRemoved={onRemoved} />);
   return { notify, onChanged, onRemoved };
 }
 
@@ -772,7 +772,7 @@ function renderManageBar(recording: Partial<ManagedRecording> = {}, notes: Manag
   const notify = notifySpy();
   const onChanged = vi.fn();
   const onRemoved = vi.fn();
-  render(<RecordingManageBar recording={{ ...MANAGED, ...recording }} user={userOf("u-me")} canManage={false} notes={notes} notify={notify} onChanged={onChanged} onRemoved={onRemoved} />);
+  render(<RecordingManageBar recording={{ ...MANAGED, ...recording }} user={userOf("u-me")} canManage={false} notes={notes} onChanged={onChanged} onRemoved={onRemoved} />);
   return { notify, onChanged, onRemoved };
 }
 
@@ -834,7 +834,7 @@ describe("deleting a notation item", () => {
   function renderNote(item: Partial<ManagedNote> = {}) {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<NoteActions note={{ ...MANAGED_NOTE, ...item }} user={userOf("u-me")} canManage={false} notify={notify} onChanged={onChanged} />);
+    render(<NoteActions note={{ ...MANAGED_NOTE, ...item }} user={userOf("u-me")} canManage={false} onChanged={onChanged} />);
     return { notify, onChanged };
   }
 

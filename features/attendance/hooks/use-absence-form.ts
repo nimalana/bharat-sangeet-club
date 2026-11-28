@@ -4,16 +4,16 @@ import type { User } from "@supabase/supabase-js";
 import { useState, type FormEvent } from "react";
 import { attempt } from "../../../lib/api/attempt";
 import { createExcuseProofUrl, removeExcuseProof, submitAttendanceExcuse, uploadExcuseProof } from "../../../lib/api/attendance";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { Excuse } from "../model";
 import type { Exclusive } from "./use-exclusive";
 
-export function useAbsenceForm({ user, notify, load, exclusive }: {
+export function useAbsenceForm({ user, load, exclusive }: {
   user: User;
-  notify: Notify;
   load: (silent?: boolean) => Promise<void>;
   exclusive: Exclusive;
 }) {
+  const { notify } = useToast();
   const [showExcuse, setShowExcuse] = useState(false);
 
   async function submitExcuse(event: FormEvent<HTMLFormElement>) {

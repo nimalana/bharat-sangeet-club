@@ -4,13 +4,12 @@ import { useState, type Dispatch, type FormEvent, type SetStateAction } from "re
 import { createResourceFolder, createResourceLink, resourcesAvailable } from "../../../lib/api/resources";
 import type { ArchiveVisibility } from "../../../lib/db";
 import { ApiError, toApiError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { normalizeUrl } from "../model";
 import type { ComposerMode, ResourceItem, Visibility } from "../types";
 
 export type ResourceFormsOptions = {
   userId: string;
-  notify: Notify;
   /** The open folder, and where a new item goes. */
   folderId: number | null;
   destinationScope: number | null;
@@ -23,7 +22,8 @@ export type ResourceFormsOptions = {
   setComposerError: Dispatch<SetStateAction<string>>;
 };
 
-export function useResourceForms({ userId, notify, folderId, destinationScope, currentFolderVisibility, canManageClub, canWriteScope, addRow, refreshAll, setComposer, setComposerError }: ResourceFormsOptions) {
+export function useResourceForms({ userId, folderId, destinationScope, currentFolderVisibility, canManageClub, canWriteScope, addRow, refreshAll, setComposer, setComposerError }: ResourceFormsOptions) {
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   const [folderTitle, setFolderTitle] = useState("");
   const [folderDescription, setFolderDescription] = useState("");

@@ -8,7 +8,6 @@ import type { ClubRole } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
 import type { MemberProfile, Subgroup } from "../../../lib/portal-types";
-import type { Notify } from "../../../lib/toast";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { PageTitle } from "../../../components/ui/page-title";
 import { useToast } from "../../../components/ui/toast";
@@ -19,8 +18,7 @@ import { AdminMemberEditor } from "./admin-member-editor";
 import { AdminMembersPanel } from "./admin-members-panel";
 import { AdminStats } from "./admin-stats";
 
-// `notify` is kept until the cleanup step removes it from every caller; the page reads the toast from useToast().
-export function AdminPage({ user, groups }: { user: User; groups: Subgroup[]; notify?: Notify }) {
+export function AdminPage({ user, groups }: { user: User; groups: Subgroup[] }) {
   const { notify } = useToast();
   const { members, memberships, announcements, audit, loading, load } = useAdminData();
   const [editingMember, setEditingMember] = useState<MemberProfile | null>(null);

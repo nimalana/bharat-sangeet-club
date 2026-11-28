@@ -36,7 +36,7 @@ function scriptOverview(over: Record<string, unknown> = {}) {
 function renderAttendance(options: { role?: "member" | "executive"; tab?: "overview" | "meetings" | "excuses"; scope?: "all" | "club" | number } = {}) {
   const notify = notifySpy();
   setCacheOwner("u-me");
-  const view = render(<AttendancePage user={userOf("u-me")} role={options.role ?? "executive"} groups={GROUPS} initialScope={options.scope ?? "all"} initialTab={options.tab ?? "overview"} notify={notify} />);
+  const view = render(<AttendancePage user={userOf("u-me")} role={options.role ?? "executive"} groups={GROUPS} initialScope={options.scope ?? "all"} initialTab={options.tab ?? "overview"} />);
   return { notify, ...view };
 }
 const dialog = () => screen.getByRole("dialog");

@@ -3,7 +3,6 @@
 import type { User } from "@supabase/supabase-js";
 import { useMemo, useState } from "react";
 import { canManageClub } from "../../../lib/permissions";
-import type { Notify } from "../../../lib/toast";
 import { ErrorBlock } from "../../../components/ui/error-block";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { useAttendanceActions } from "../hooks/use-attendance-actions";
@@ -22,20 +21,19 @@ import { MemberView } from "./member-view";
 import { NewMeetingDialog } from "./new-meeting-dialog";
 import { OverviewTab } from "./overview-tab";
 
-export function AttendancePage({ user, role, groups, initialScope = "all", initialTab = "overview", notify }: {
+export function AttendancePage({ user, role, groups, initialScope = "all", initialTab = "overview" }: {
   user: User;
   role: ClubRole;
   groups: GroupOption[];
   initialScope?: ScopeFilter;
   initialTab?: AttendanceTab;
-  notify: Notify;
 }) {
   const canManage = canManageClub(role);
   const [tab, setTab] = useState<AttendanceTab>(initialTab || "overview");
   // What is read and kept fresh (overview, roster, poll), and what the person does (check in, open, mark, review).
-  const attendance = useAttendanceData({ user, canManage, initialScope, tab, notify });
+  const attendance = useAttendanceData({ user, canManage, initialScope, tab });
   const { scopeFilter, termFilter, data, view, failedKey, cacheKey, load, loadingMore, showMore, roster, rosterFailed, loadRoster, selectedSessionId, setSelectedSessionId } = attendance;
-  const actions = useAttendanceActions({ user, groups, notify, summaryTerm: view.summary_term, load, rereadRoster: attendance.rereadRoster, setTab });
+  const actions = useAttendanceActions({ user, groups, summaryTerm: view.summary_term, load, rereadRoster: attendance.rereadRoster, setTab });
   const { saving, dialog, setDialog } = actions;
   const sessions = view.sessions;
 
@@ -88,12 +86,12 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
         onClose={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "close" })}
         onCancel={() => setDialog({ kind: "session", sessionId: openSession.id, title: openSession.title, action: "cancel" })} />}
       <AttendanceTabs tab={tab} onTab={setTab} pendingExcuseCount={view.excuses_pending} />
-      {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} notify={notify} profileName={profileName}
+      {tab === "overview" && <OverviewTab view={view} sessions={sessions} flagged={summaries} warningLevel={warningLevel} criticalLevel={criticalLevel} viewLabel={viewLabel} saving={saving} profileName={profileName}
         onDialog={setDialog} onThresholdsChanged={() => load(true)} showMore={showMore} loadingMore={loadingMore} />}
-      {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving} notify={notify}
+      {tab === "meetings" && <MeetingsTab sessions={sessions} groups={groups} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} roster={roster} rosterFailed={rosterFailed} saving={saving}
         onOpenAttendance={actions.openAttendance} onDialog={setDialog} onSessionChanged={() => load()} onRefresh={actions.refresh} onRetryRoster={loadRoster} />}
       {tab === "excuses" && <ExcusesTab view={view} sessions={sessions} viewLabel={viewLabel} saving={saving} profileName={profileName} onDialog={setDialog} onOpenProof={actions.openProof} showMore={showMore} loadingMore={loadingMore} />}
-    </> : <MemberView view={view} sessions={sessions} user={user} scopeLabel={scopeLabel} termFilter={termFilter} notify={notify} onSubmitExcuse={() => actions.setShowExcuse(true)} onWithdrawn={() => load(true)} />}
+    </> : <MemberView view={view} sessions={sessions} user={user} scopeLabel={scopeLabel} termFilter={termFilter} onSubmitExcuse={() => actions.setShowExcuse(true)} onWithdrawn={() => load(true)} />}
 
     {actions.showNewSession && <NewMeetingDialog scopeFilter={scopeFilter} scopeInGroups={scopeInGroups} groups={groups} saving={saving} onSubmit={actions.createSession} onClose={() => actions.setShowNewSession(false)} />}
     {actions.showExcuse && <AbsenceFormDialog sessions={sessions} saving={saving} onSubmit={actions.submitExcuse} onClose={() => actions.setShowExcuse(false)} />}

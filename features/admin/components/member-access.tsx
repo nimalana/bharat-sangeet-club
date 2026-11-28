@@ -8,7 +8,6 @@ import { Textarea } from "../../../components/ui/textarea";
 import { useToast } from "../../../components/ui/toast";
 import { deactivateMember, deleteMember, reactivateMember } from "../../../lib/api/admin";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
-import type { Notify } from "../../../lib/toast";
 
 export type AccessMember = { id: string; full_name: string; email: string; status?: "active" | "deactivated" };
 
@@ -23,9 +22,8 @@ export const adminActionLabels: Record<string, string> = {
 // Deactivate is the normal way to remove someone: it keeps their finance,
 // attendance and recording history. Delete is only offered for a deactivated
 // account and only succeeds when the account has no such history.
-// `notify` is kept until the cleanup step removes it from every caller; the buttons read the toast from useToast().
 export function MemberAccessActions({ member, isSelf, onChanged }: {
-  member: AccessMember; isSelf: boolean; onChanged: () => void | Promise<void>; notify?: Notify;
+  member: AccessMember; isSelf: boolean; onChanged: () => void | Promise<void>;
 }) {
   const { notify } = useToast();
   const [dialog, setDialog] = useState<"deactivate" | "reactivate" | "delete" | null>(null);

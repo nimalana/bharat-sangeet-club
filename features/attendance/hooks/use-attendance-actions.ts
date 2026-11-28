@@ -6,17 +6,15 @@
 //   use-attendance-dialogs.ts  the dialog that is open and the request behind it (a mark, a decision, a follow-up, close or cancel)
 //   use-absence-form.ts        the member's absence form and the proof link
 import type { User } from "@supabase/supabase-js";
-import type { Notify } from "../../../lib/toast";
 import type { AttendanceTab, GroupOption } from "../model";
 import { useAbsenceForm } from "./use-absence-form";
 import { useAttendanceDialogs } from "./use-attendance-dialogs";
 import { useExclusive } from "./use-exclusive";
 import { useLiveCheckIn } from "./use-live-check-in";
 
-export function useAttendanceActions({ user, groups, notify, summaryTerm, load, rereadRoster, setTab }: {
+export function useAttendanceActions({ user, groups, summaryTerm, load, rereadRoster, setTab }: {
   user: User;
   groups: GroupOption[];
-  notify: Notify;
   /** The term the eligibility marks are for (the overview's `summary_term`). */
   summaryTerm: string;
   load: (silent?: boolean) => Promise<void>;
@@ -33,9 +31,9 @@ export function useAttendanceActions({ user, groups, notify, summaryTerm, load, 
     rereadRoster();
   }
 
-  const live = useLiveCheckIn({ groups, notify, load, rereadRoster, setTab, exclusive });
-  const dialogs = useAttendanceDialogs({ notify, summaryTerm, exclusive, refresh, clearLiveCode: () => live.setLiveCode("") });
-  const absence = useAbsenceForm({ user, notify, load, exclusive });
+  const live = useLiveCheckIn({ groups, load, rereadRoster, setTab, exclusive });
+  const dialogs = useAttendanceDialogs({ summaryTerm, exclusive, refresh, clearLiveCode: () => live.setLiveCode("") });
+  const absence = useAbsenceForm({ user, load, exclusive });
 
   return {
     saving, refresh,

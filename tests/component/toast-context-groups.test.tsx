@@ -1,13 +1,11 @@
-// The group, member and admin screens take their toasts from the toast context (useToast), not from the `notify` prop that the shell
-// still passes until the cleanup step removes it. Rendered inside a real ToastProvider, a screen that was given no notify, or a spy
-// it must ignore, still shows its toast in the viewport and never calls the prop. (The other tests of these screens read the same
-// toasts through notifySpy(): tests/support/toast-spy.ts.)
+// The group, member and admin screens take their toasts from the toast context (useToast). Rendered inside a real ToastProvider (and
+// with no spy made), a screen shows its toast in the viewport: the alert role and the words of a refusal as the person sees them.
+// (The other tests of these screens read the same toasts through notifySpy(): tests/support/toast-spy.ts.)
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemberAccessActions } from "../../features/admin/components/member-access";
 import { GroupPeople } from "../../features/groups/components/group-people";
 import { ToastProvider, ToastViewport } from "../../components/ui/toast";
-import type { Notify } from "../../lib/toast";
 import { fail, fake, ok } from "../support/fake-supabase";
 import { userOf } from "../support/helpers";
 
@@ -18,18 +16,16 @@ const toast = () => document.querySelector(".toast") as HTMLElement | null;
 const inProvider = (screenUnderTest: React.ReactElement) => render(<ToastProvider>{screenUnderTest}<ToastViewport /></ToastProvider>);
 
 describe("GroupPeople", () => {
-  it("shows its toast in the viewport and does not call a notify prop it is given", async () => {
+  it("shows its toast in the viewport", async () => {
     fake.rpc("list_subgroup_roster").reply(ok([dev]));
     fake.rpc("review_subgroup_request").reply(ok(null));
-    const propNotify = vi.fn<Notify>();
-    inProvider(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} notify={propNotify} />);
+    inProvider(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Waitlist" }));
     await waitFor(() => expect(toast()).toHaveTextContent("✓ Dev Nair was waitlisted"));
     expect(toast()).toHaveAttribute("role", "status");
-    expect(propNotify).not.toHaveBeenCalled();
   });
 
-  it("a refusal is an alert with the database's own words, with no notify prop at all", async () => {
+  it("a refusal is an alert with the database's own words", async () => {
     fake.rpc("list_subgroup_roster").reply(ok([dev]));
     fake.rpc("review_subgroup_request").reply(fail("This request was already reviewed"));
     inProvider(<GroupPeople user={userOf("u-me")} role={EXECUTIVE} group={GROUP} myRole={null} isMember={false} onGroupChanged={vi.fn()} onLeft={vi.fn()} />);
@@ -49,19 +45,17 @@ describe("GroupPeople", () => {
 });
 
 describe("MemberAccessActions", () => {
-  it("shows its toast in the viewport and does not call a notify prop it is given", async () => {
+  it("shows its toast in the viewport", async () => {
     fake.rpc("admin_deactivate_member").reply(ok(null));
-    const propNotify = vi.fn<Notify>();
     const onChanged = vi.fn();
-    inProvider(<MemberAccessActions member={{ id: "u-2", full_name: "Bala Menon", email: "bala@x.test", status: "active" }} isSelf={false} onChanged={onChanged} notify={propNotify} />);
+    inProvider(<MemberAccessActions member={{ id: "u-2", full_name: "Bala Menon", email: "bala@x.test", status: "active" }} isSelf={false} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Deactivate" }));
     await waitFor(() => expect(toast()).toHaveTextContent("✓ Bala Menon was deactivated"));
     expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(propNotify).not.toHaveBeenCalled();
   });
 
-  it("a refusal is an alert, with no notify prop at all", async () => {
+  it("a refusal is an alert", async () => {
     fake.rpc("admin_delete_member").reply(fail("This account has finance history"));
     inProvider(<MemberAccessActions member={{ id: "u-2", full_name: "Bala Menon", email: "bala@x.test", status: "deactivated" }} isSelf={false} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));

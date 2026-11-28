@@ -3,7 +3,6 @@
 import { ErrorBlock } from "../../../components/ui/error-block";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import type { AttendanceStatus } from "../../../lib/db";
-import type { Notify } from "../../../lib/toast";
 import type { ActionDialog } from "../action-dialog";
 import { formatUnits } from "../display";
 import type { AttendanceSession, Roster } from "../model";
@@ -11,13 +10,12 @@ import { ClearMarkButton } from "./attendance-corrections";
 
 // The members of one meeting with their marks and what each mark costs under the policy. Changing a mark opens a dialog (the
 // caller sends nothing until it is confirmed).
-export function SessionRoster({ session, roster, failed, saving, notify, onDialog, onRefresh, onRetry }: {
+export function SessionRoster({ session, roster, failed, saving, onDialog, onRefresh, onRetry }: {
   session: AttendanceSession;
   /** The last roster read; it counts only when it is this meeting's. */
   roster: Roster | null;
   failed: boolean;
   saving: boolean;
-  notify: Notify;
   onDialog: (dialog: ActionDialog) => void;
   onRefresh: () => void;
   onRetry: () => void;
@@ -35,7 +33,7 @@ export function SessionRoster({ session, roster, failed, saving, notify, onDialo
           <select value={row.status || "pending"} disabled={saving} onChange={(event) => onDialog({ kind: "status", sessionId: session.id, memberId: row.member_id, memberName, status: event.target.value as AttendanceStatus })} aria-label={`Attendance status for ${memberName}`}>
             <option value="pending" disabled>Pending</option><option value="present">Present</option><option value="tardy">Tardy</option><option value="absent">Absent</option><option value="excused">Excused</option>
           </select>
-          {row.status && session.status !== "canceled" && <ClearMarkButton sessionId={session.id} memberId={row.member_id} memberName={memberName} notify={notify} onChanged={onRefresh} />}
+          {row.status && session.status !== "canceled" && <ClearMarkButton sessionId={session.id} memberId={row.member_id} memberName={memberName} onChanged={onRefresh} />}
         </div>
       );
     }) : failed ? <ErrorBlock className="attendance-empty" message="The roster could not be loaded." onRetry={onRetry} /> : <LoadingBlock>Loading roster…</LoadingBlock>}

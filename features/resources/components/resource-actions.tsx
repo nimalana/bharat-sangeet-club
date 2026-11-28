@@ -5,12 +5,12 @@ import { deleteResource, removeResourceFile, resourcesAvailable, setResourceArch
 import type { Tables } from "../../../lib/db";
 import { ApiError } from "../../../lib/errors";
 import { useAsyncAction } from "../../../lib/hooks/use-async-action";
-import type { Notify } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
+import { useToast } from "../../../components/ui/toast";
 
 export type ManagedResource = Pick<Tables<"resources">, "id" | "node_kind" | "title" | "description" | "parent_id" | "visibility"
   | "storage_bucket" | "storage_path" | "external_url" | "status" | "is_pinned">;
@@ -26,10 +26,11 @@ function requireRows(rows: unknown[]) {
 // Everything a manager can do to one library item. `canManage` mirrors the
 // database rule (executives, or a group's leaders and managers for that
 // group's member-visible items); the database enforces it either way.
-export function ResourceActions({ item, canManage, isExecutive, childCount, notify, onChanged, onRemoved }: {
+export function ResourceActions({ item, canManage, isExecutive, childCount, onChanged, onRemoved }: {
   item: ManagedResource; canManage: boolean; isExecutive: boolean; childCount: number;
-  notify: Notify; onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
+  onChanged: () => void | Promise<void>; onRemoved: () => void | Promise<void>;
 }) {
+  const { notify } = useToast();
   const [pending, setPending] = useState<Pending>(null);
   const { pending: busy, run } = useAsyncAction(notify);
   if (!canManage) return null;

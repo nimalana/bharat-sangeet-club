@@ -8,7 +8,6 @@ import type { ClubRole, EnrollmentMode } from "../../../lib/db";
 import { friendlyError } from "../../../lib/errors";
 import { canManageClub } from "../../../lib/permissions";
 import type { Subgroup, SubgroupMembership } from "../../../lib/portal-types";
-import type { Notify } from "../../../lib/toast";
 import { PageTitle } from "../../../components/ui/page-title";
 import { LoadingBlock } from "../../../components/ui/loading-block";
 import { useToast } from "../../../components/ui/toast";
@@ -19,8 +18,7 @@ import { GroupDetail } from "./group-detail";
 import { GroupList } from "./group-list";
 import { GroupUpdateDialog } from "./group-update-dialog";
 
-// `notify` is kept until the cleanup step removes it from every caller; the page reads the toast from useToast().
-export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void; notify?: Notify }) {
+export function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenRecordings, onOpenResources }: { user: User; role: ClubRole; onGroupsChanged: () => void; onOpenAttendance: (groupId: number) => void; onOpenRecordings: (groupId: number) => void; onOpenResources: (groupId: number) => void }) {
   const { notify } = useToast();
   const { groups, memberships, items, announcements, requestCounts, loading, load, setMemberships } = useGroupSpaces(user);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);

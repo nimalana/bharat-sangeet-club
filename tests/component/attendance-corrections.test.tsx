@@ -14,7 +14,7 @@ const meeting = (over: Record<string, unknown> = {}) => ({ id: 5, title: "Openin
 function renderCorrections(over: Record<string, unknown> = {}) {
   const notify = notifySpy();
   const onChanged = vi.fn();
-  const view = render(<SessionCorrections session={meeting(over) as Parameters<typeof SessionCorrections>[0]["session"]} notify={notify} onChanged={onChanged} />);
+  const view = render(<SessionCorrections session={meeting(over) as Parameters<typeof SessionCorrections>[0]["session"]} onChanged={onChanged} />);
   return { notify, onChanged, ...view };
 }
 
@@ -178,7 +178,7 @@ describe("clearing a mark", () => {
   const renderClear = () => {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<ClearMarkButton sessionId={5} memberId="u-dev" memberName="Dev Nair" notify={notify} onChanged={onChanged} />);
+    render(<ClearMarkButton sessionId={5} memberId="u-dev" memberName="Dev Nair" onChanged={onChanged} />);
     return { notify, onChanged };
   };
 
@@ -211,7 +211,7 @@ describe("changing the policy levels", () => {
   const renderThresholds = () => {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<ThresholdSettings warning={2} critical={3} notify={notify} onChanged={onChanged} />);
+    render(<ThresholdSettings warning={2} critical={3} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Change thresholds" }));
     const form = within(dialog()).getByRole("button", { name: "Save thresholds" }).closest("form")!;
     const set = (warning: string, critical: string) => {
@@ -277,7 +277,7 @@ describe("withdrawing an absence form", () => {
   const renderWithdraw = () => {
     const notify = notifySpy();
     const onChanged = vi.fn();
-    render(<WithdrawExcuseButton excuseId={4} notify={notify} onChanged={onChanged} />);
+    render(<WithdrawExcuseButton excuseId={4} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
     return { notify, onChanged };
   };

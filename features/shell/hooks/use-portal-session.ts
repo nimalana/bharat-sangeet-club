@@ -2,13 +2,13 @@
 
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
+import { useToast } from "../../../components/ui/toast";
 import { isSupabaseConfigured, signOut } from "../../../lib/api/auth";
 import { getPortalBootstrap, updateOwnFullName } from "../../../lib/api/portal";
 import { runBootstrap, type ShellState } from "../../../lib/bootstrap";
 import { setCacheOwner } from "../../../lib/cache";
 import type { ClubRole } from "../../../lib/db";
 import type { AccountStatus } from "../../../lib/portal-types";
-import type { Notify } from "../../../lib/toast";
 import { pendingSignupNameKey } from "../../public/components/login-screen";
 import { useAuthSession } from "./use-auth-session";
 import type { PortalData, PortalLists } from "./use-portal-data";
@@ -24,7 +24,8 @@ type PortalBootstrap = PortalLists & { profile: { full_name: string; role: ClubR
  * arrives after the signed-in account has changed is thrown away (P1-07). It runs once per signed-in account, not on
  * every token refresh (useAuthSession keeps the same user object while the id is the same).
  */
-export function usePortalSession(data: PortalData, notify: Notify) {
+export function usePortalSession(data: PortalData) {
+  const { notify } = useToast();
   const { savedSession, authLoading, user } = useAuthSession();
   const [role, setRole] = useState<ClubRole>("member");
   const [shellState, setShellState] = useState<ShellState>("loading");

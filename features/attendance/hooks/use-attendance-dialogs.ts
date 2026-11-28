@@ -6,13 +6,12 @@ import {
   cancelAttendanceSession, closeAttendanceSession, reviewAttendanceExcuse, setAttendanceEligibility, setAttendanceRemediation, setAttendanceStatus,
 } from "../../../lib/api/attendance";
 import { friendlyError } from "../../../lib/errors";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { ActionDialog } from "../action-dialog";
 import { parseMinutesLate } from "../model";
 import type { Exclusive } from "./use-exclusive";
 
-export function useAttendanceDialogs({ notify, summaryTerm, exclusive, refresh, clearLiveCode }: {
-  notify: Notify;
+export function useAttendanceDialogs({ summaryTerm, exclusive, refresh, clearLiveCode }: {
   /** The term the eligibility marks are for (the overview's `summary_term`). */
   summaryTerm: string;
   exclusive: Exclusive;
@@ -21,6 +20,7 @@ export function useAttendanceDialogs({ notify, summaryTerm, exclusive, refresh, 
   /** Closing or canceling check-in forgets the live code. */
   clearLiveCode: () => void;
 }) {
+  const { notify } = useToast();
   const [dialog, setDialog] = useState<ActionDialog | null>(null);
 
   // Runs the request behind an open dialog. A failure keeps the dialog open;

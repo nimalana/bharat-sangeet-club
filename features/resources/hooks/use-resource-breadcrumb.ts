@@ -3,12 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { readCache, writeCache } from "../../../lib/cache";
 import { crumbCacheKey, resolveFolderChain } from "../../../lib/resources-query";
-import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import type { ResourceItem } from "../types";
 
 export type ResourceBreadcrumbOptions = {
   userId: string;
-  notify: Notify;
   folderId: number | null;
   /** Bumped after any change: the chain is read again. */
   version: number;
@@ -19,7 +18,8 @@ export type ResourceBreadcrumbOptions = {
   fetchOneFolder: (id: number) => Promise<ResourceItem | null>;
 };
 
-export function useResourceBreadcrumb({ userId, notify, folderId, version, showArchived, items, changeFolder, fetchOneFolder }: ResourceBreadcrumbOptions) {
+export function useResourceBreadcrumb({ userId, folderId, version, showArchived, items, changeFolder, fetchOneFolder }: ResourceBreadcrumbOptions) {
+  const { notify } = useToast();
   const [crumbState, setCrumbState] = useState<ResourceItem[]>([]);
   // Everything on screen that is known by id: the rows and the open folder's ancestors.
   const itemById = useMemo(() => new Map([...crumbState, ...items].map((item) => [item.id, item])), [crumbState, items]);

@@ -64,7 +64,7 @@ function renderAttendance(options: { role?: "member" | "executive" | "admin"; ta
   const userId = options.userId ?? "u-me";
   // The shell makes the signed-in account the cache owner before a screen mounts.
   setCacheOwner(userId);
-  const view = render(<AttendancePage user={userOf(userId)} role={options.role ?? "executive"} groups={options.groups ?? GROUPS} initialScope={options.scope ?? "all"} initialTab={options.tab ?? "overview"} notify={notify} />);
+  const view = render(<AttendancePage user={userOf(userId)} role={options.role ?? "executive"} groups={options.groups ?? GROUPS} initialScope={options.scope ?? "all"} initialTab={options.tab ?? "overview"} />);
   return { notify, ...view };
 }
 const rpcCount = (name: string) => fake.rpc(name).count;

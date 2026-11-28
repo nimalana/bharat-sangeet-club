@@ -7,8 +7,6 @@
 //     ...screens call  const { notify } = useToast();  notify("Saved");  notify(friendlyError(error), "error");
 //     <ToastViewport />          where the toast is drawn (the shell puts it inside its <main>, as a direct child)
 //   </ToastProvider>
-//
-// Screens that still receive `notify` as a prop keep working: the shell passes it down from useToast().
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toastDuration, toastMark, toastTone, type Notify, type ToastTone } from "../../lib/toast";
 
