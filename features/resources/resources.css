@@ -1,0 +1,8 @@
+/* resources: Rules of the resources area.
+   Imported by app/globals.css; the import order decides ties between rules of equal specificity (docs/ARCHITECTURE.md, "CSS"). */
+.file-top { display:flex; justify-content:space-between; }
+.file-icon { font-size:27px; color:var(--maroon); }
+.resource-edit-description{grid-column:1 / -1}
+@media (max-width:600px){
+.resource-edit-description{grid-column:1}
+}
