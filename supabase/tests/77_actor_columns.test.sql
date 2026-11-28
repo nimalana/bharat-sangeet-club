@@ -51,7 +51,7 @@ declare
     'finance_payments.stamp.created_by', 'finance_payments.stamp.voided_by',
     'funding_claims.stamp.created_by', 'funding_claims.stamp.updated_by', 'funding_claims.stamp.voided_by',
     'personal_reimbursements.stamp.reviewed_by', 'personal_reimbursements.stamp.voided_by',
-    'finance_audit_log.stamp.actor_id', 'admin_audit_log.stamp.actor_id', 'transactions.stamp.created_by'];
+    'finance_audit_log.stamp.actor_id', 'admin_audit_log.stamp.actor_id', 'content_audit_log.stamp.actor_id', 'transactions.stamp.created_by'];
   actual text[];
   who_columns text[];
   problems text;
@@ -217,7 +217,7 @@ begin
     perform test.m77a_check(format('forged insert %s.%s (%s)', g.tbl, g.colname, g.kind), m, format('%s.%s must be the signed-in member', g.tbl, g.colname));
     n := n + 1;
   end loop;
-  assert n = 38, format('the loop covered %s columns', n);
+  assert n = 39, format('the loop covered %s columns', n);
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------
