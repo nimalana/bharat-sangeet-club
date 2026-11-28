@@ -8,6 +8,7 @@ import * as Tone from "tone";
 import { readCache, writeCache } from "../../lib/cache";
 import type { Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
+import { formatDate } from "../../lib/format";
 import { createRequestGate } from "../../lib/request-gate";
 import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
@@ -41,10 +42,6 @@ function formatDuration(seconds: number | null | undefined) {
   if (!seconds || !Number.isFinite(seconds)) return "—";
   const whole = Math.round(seconds);
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 export function RecordingWorkspace({ user, groups, memberships, canManage, initialScope = "all", notify, onDataChanged }: WorkspaceProps) {

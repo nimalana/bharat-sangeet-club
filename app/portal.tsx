@@ -7,6 +7,7 @@ import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../co
 import { readCache, setCacheOwner, writeCache } from "../lib/cache";
 import { runBootstrap, type ShellState } from "../lib/bootstrap";
 import { friendlyError } from "../lib/errors";
+import { formatDate, initials } from "../lib/format";
 import type { ArchiveVisibility, ClubRole, EnrollmentMode, Tables, TablesInsert } from "../lib/db";
 import { removeStoredFile } from "../lib/storage";
 import { toastDuration, toastMark, toastTone, type Notify, type ToastTone } from "../lib/toast";
@@ -831,5 +832,3 @@ function LoadingScreen() { return <main className="loading-screen"><img classNam
 function InlineLoading() { return <div className="inline-loading">Loading the archive…</div>; }
 function SetupScreen() { return <main className="loading-screen"><img className="brand-mark" src="/unc-bharat-sangeet-logo.jpg" alt="Bharat Sangeet" /><h2>Supabase connection needed</h2><p>Add the project URL and publishable key to the hosting environment.</p></main>; }
 function toLocalInputValue(value: string) { const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
-function formatDate(value: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)); }
-function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "BS"; }
