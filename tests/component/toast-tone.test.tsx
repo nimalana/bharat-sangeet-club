@@ -28,7 +28,7 @@
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MemberAccessActions } from "../../components/admin/member-access";
+import { MemberAccessActions } from "../../features/admin/components/member-access";
 import { AnnouncementActions } from "../../features/announcements/components/announcement-actions";
 import { ClubArchiveManager, type ClubArchiveItem } from "../../components/recordings/club-archive-manager";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../components/recordings/recording-manage";

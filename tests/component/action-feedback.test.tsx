@@ -4,7 +4,7 @@
 // moving them onto the hook changes none of it. The failure TONE of the same controls is in toast-tone.test.tsx.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MemberAccessActions } from "../../components/admin/member-access";
+import { MemberAccessActions } from "../../features/admin/components/member-access";
 import { AnnouncementActions } from "../../features/announcements/components/announcement-actions";
 import { notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";

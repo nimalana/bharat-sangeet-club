@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Textarea } from "../ui/textarea";
-import { must } from "../../lib/api/_core";
-import { useAsyncAction } from "../../lib/hooks/use-async-action";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Textarea } from "../../../components/ui/textarea";
+import { must } from "../../../lib/api/_core";
+import { useAsyncAction } from "../../../lib/hooks/use-async-action";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
 
 export type AccessMember = { id: string; full_name: string; email: string; status?: "active" | "deactivated" };
 
