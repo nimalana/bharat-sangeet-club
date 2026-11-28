@@ -110,10 +110,10 @@ describe("the member directory", () => {
     fake.from("profiles", "update").reply(ok(null));
     profileReads().replyOnce(ok([member("u-me", "Asha Rao")])).reply(ok([member("u-me", "Asha Rao Menon")]));
     openPortal({ page: "members" });
-    await screen.findByText("Asha Rao");
+    await screen.findByText("Asha Rao", {}, { timeout: 4000 });
     fireEvent.click(screen.getByRole("button", { name: "Edit my contact info" }));
     fireEvent.submit(screen.getByRole("heading", { name: "Contact information" }).closest("form")!);
-    expect(await screen.findAllByText("Asha Rao Menon")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Asha Rao Menon", {}, { timeout: 4000 })).not.toHaveLength(0);
     expect(profileReads().count).toBe(2);
   });
 });

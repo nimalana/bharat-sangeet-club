@@ -11,7 +11,7 @@ import { formatDate, initials } from "../lib/format";
 import { canManageClub, canPostToGroup } from "../lib/permissions";
 import type { ArchiveVisibility, ClubRole, EnrollmentMode, Tables, TablesInsert } from "../lib/db";
 import { removeStoredFile } from "../lib/storage";
-import { toastDuration, toastMark, toastTone, type Notify, type ToastTone } from "../lib/toast";
+import type { Notify } from "../lib/toast";
 import type { PublicConcert } from "../lib/public-concerts";
 import { anyFailed, countOrKeep, listOrKeep } from "../lib/refresh";
 import { createRequestGate } from "../lib/request-gate";
@@ -25,6 +25,7 @@ import { LoadErrorBanner } from "../components/ui/load-error";
 import { LoadingBlock } from "../components/ui/loading-block";
 import { PageTitle } from "../components/ui/page-title";
 import { SectionBoundary } from "../components/ui/section-boundary";
+import { ToastProvider, ToastViewport, useToast } from "../components/ui/toast";
 import { Input } from "../components/ui/input";
 import { AnnouncementActions, AnnouncementEditor } from "../components/announcements/announcement-actions";
 import dynamic from "next/dynamic";
@@ -86,7 +87,11 @@ function hasSavedSession() {
   try { return Object.keys(window.localStorage).some((key) => /^sb-.+-auth-token$/.test(key)); } catch { return false; }
 }
 
-export default function Home({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | null }) {
+export default function Home(props: { publicConcerts?: PublicConcert[] | null }) {
+  return <ToastProvider><Portal {...props} /></ToastProvider>;
+}
+
+function Portal({ publicConcerts = null }: { publicConcerts?: PublicConcert[] | null }) {
   const savedSession = useSyncExternalStore(subscribeNothing, hasSavedSession, () => false);
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
@@ -100,7 +105,6 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [query, setQuery] = useState("");
-  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showEvent, setShowEvent] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ClubEvent | null>(null);
@@ -117,16 +121,9 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
   const [dataGate] = useState(createRequestGate);
   const [workspaceGate] = useState(createRequestGate);
 
-  // A failure is shown as one: no tick, and screen readers get an alert. A newer
-  // toast replaces the older one and takes over its timer.
-  const toastTimer = useRef<number | null>(null);
-  const notify = useCallback<Notify>((message, tone) => {
-    const resolved = toastTone(message, tone);
-    setToast({ message, tone: resolved });
-    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => { setToast(null); toastTimer.current = null; }, toastDuration(resolved));
-  }, []);
-  useEffect(() => () => { if (toastTimer.current !== null) window.clearTimeout(toastTimer.current); }, []);
+  // A failure is shown as one: no tick, and screen readers get an alert (components/ui/toast.tsx).
+  // Screens that have not moved to useToast() yet are still given `notify` as a prop.
+  const { notify } = useToast();
 
   // Supabase hands back a new user object on every token refresh. Keeping the
   // old one while the id is unchanged stops every screen from reloading.
@@ -350,7 +347,7 @@ export default function Home({ publicConcerts = null }: { publicConcerts?: Publi
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} notify={notify} />}
       {showEvent && <EventModal user={user} groups={groups} onClose={() => setShowEvent(false)} onSaved={() => { setShowEvent(false); loadData(); notify("Important date added"); }} notify={notify} />}
       {editingEvent && <EventModal key={editingEvent.id} editing={editingEvent} user={user} groups={groups} onClose={() => setEditingEvent(null)} onSaved={() => { setEditingEvent(null); loadData(); notify("Calendar date updated"); }} notify={notify} />}
-      {toast && <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toastMark[toast.tone]} {toast.message}</div>}
+      <ToastViewport />
     </main>
   );
 }
