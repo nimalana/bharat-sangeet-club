@@ -12,6 +12,10 @@ import { WaveformPlayer } from "../../features/recordings/components/waveform-pl
 import { setCacheOwner } from "../../lib/cache";
 import { flush, notifySpy, userOf } from "../support/helpers";
 import { fail, fake, ok } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 type Handler = (value?: number) => void;
 type Wave = { options: Record<string, unknown>; handlers: Record<string, Handler>; calls: unknown[][]; destroyed: boolean; duration: number; time: number };

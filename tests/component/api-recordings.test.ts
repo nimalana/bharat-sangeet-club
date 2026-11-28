@@ -2,7 +2,7 @@
 // (table, chain, payload, bucket, path, options), answers with the data, and throws an ApiError that keeps the database's
 // message and code. The screen tests (people-recordings.test.tsx) check what the person sees and the order of a save or delete;
 // these check each request on its own.
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RECORDINGS_PAGE_SIZE, createClubArchiveUrl, createNotationUrl, createRecordingUrl, deleteClubArchiveItem, deleteRecordingNote, deleteRecordingRow, insertClubArchiveItem, insertRecording,
   insertRecordingNote, isInRecordingRoom, listRecordingNotes, listRecordings, recordingBucket, removeAbandonedNotationFile, removeAbandonedTake, removeClubArchiveFile, removeNotationFile,
@@ -12,6 +12,10 @@ import {
 import { ApiError } from "../../lib/errors";
 import { FILE_NOT_DELETED } from "../../lib/storage-remove";
 import { fail, fake, ok, rejects, withCount } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 const caught = async (promise: Promise<unknown>) => promise.then(() => null, (error: unknown) => error);
 const only = <T,>(calls: T[]): T => { expect(calls).toHaveLength(1); return calls[0]; };
@@ -147,7 +151,9 @@ describe("saving from the studio", () => {
     expect(path).toMatch(/^u-me\/subgroups\/7\/[0-9a-f-]{36}-my-take--2-\.webm$/);
     const upload = only(fake.storage("recordings", "upload").calls);
     expect(upload.args[0]).toBe(path);
-    expect(upload.args[2]).toEqual({ contentType: "audio/webm", upsert: false });
+    // Through XMLHttpRequest (Phase 3.1): the type travels as the type of the file part, as it did with supabase-js.
+    expect(upload.args[2]).toEqual({ upsert: false });
+    expect((upload.args[1] as File).type).toBe("audio/webm");
   });
 
   it("a notation file goes under the person's folder in recording-notations, with its type", async () => {
@@ -155,7 +161,8 @@ describe("saving from the studio", () => {
     expect(path).toMatch(/^u-me\/[0-9a-f-]{36}-sargam\.pdf$/);
     const upload = only(fake.storage("recording-notations", "upload").calls);
     expect(upload.args[0]).toBe(path);
-    expect(upload.args[2]).toEqual({ contentType: "application/pdf", upsert: false });
+    expect(upload.args[2]).toEqual({ upsert: false });
+    expect((upload.args[1] as File).type).toBe("application/pdf");
   });
 
   it("a refused upload throws an ApiError (nothing is returned for the caller to use)", async () => {

@@ -28,13 +28,17 @@
 // checked here: see the report for which supabase/tests/*.test.sql assertions cover each of them.
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ResourceLibrary } from "../../features/resources/components/resource-library";
 import { setCacheOwner } from "../../lib/cache";
 import type { GroupRole, MembershipStatus } from "../../lib/db";
 import { RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS } from "../../lib/resources-query";
 import { advance, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, rejects, withCount, type Call } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 // ---------------------------------------------------------------------------------------------------------------
 // Data and scripting

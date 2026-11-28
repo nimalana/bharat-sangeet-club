@@ -6,13 +6,17 @@
 // Everything runs for real against the fake client: what a write sent is read from the call, what the person sees from the DOM
 // and from the toasts the screen asked for.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArchiveModal } from "../../features/recordings/components/archive-modal";
 import { ClubArchiveManager } from "../../features/recordings/components/club-archive-manager";
 import type { ClubArchiveItem } from "../../lib/db";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
 import { notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok } from "../support/fake-supabase";
+import { routeUploadsToFakeClient } from "./content-uploads";
+
+// Uploads go through XMLHttpRequest (Phase 3.1): the scripted answers of `fake.storage(bucket, "upload")` still decide them.
+beforeEach(() => { routeUploadsToFakeClient(); });
 
 const typeInto = (scope: HTMLElement, label: string, value: string) => fireEvent.change(within(scope).getByLabelText(label), { target: { value } });
 const submitIn = (scope: HTMLElement) => fireEvent.submit(scope.querySelector("form")!);

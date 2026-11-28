@@ -11,7 +11,7 @@ import type { ArchiveVisibility, Tables, TablesUpdate } from "../db";
 import { removeStoredFile } from "../storage";
 import type { RemoveOptions } from "../storage-remove";
 import { supabase } from "../supabase";
-import { must, safeFileName } from "./_core";
+import { must, safeFileName, uploadWithProgress, type UploadProgress as BytesSent } from "./_core";
 
 function db() {
   if (!supabase) throw new ApiError("The portal is not connected.");
@@ -79,12 +79,16 @@ export async function createNotationUrl(path: string): Promise<string | null> {
 
 // ---------------------------------------------------------------- saving from the studio
 
-/** Uploads a take under the person's folder and the group's; resolves to the stored path. */
-export async function uploadRecordingTake(userId: string, groupId: number, file: File): Promise<string> {
+/**
+ * Uploads a take under the person's folder and the group's; resolves to the stored path. `onProgress` is told how many bytes have
+ * left (lib/api/_core.ts uploadWithProgress: the same request supabase-js sends, through XMLHttpRequest, which can say so). The
+ * file's own type travels with it; supabase-js never sent the `contentType` option for a File either.
+ */
+export async function uploadRecordingTake(userId: string, groupId: number, file: File, onProgress?: (progress: BytesSent) => void): Promise<string> {
   const client = db();
   const path = `${userId}/subgroups/${groupId}/${crypto.randomUUID()}-${safeFileName(file)}`;
-  const upload = await client.storage.from("recordings").upload(path, file, { contentType: file.type, upsert: false });
-  if (upload.error) throw toApiError(upload.error);
+  const upload = await uploadWithProgress(client, "recordings", path, file, { upsert: false }, onProgress);
+  if (upload.error) throw upload.error;
   return path;
 }
 
@@ -113,12 +117,12 @@ export async function insertRecording(payload: RecordingPayload, uploadedBy: str
   return must(await client.from("recordings").insert({ ...recordingColumns(payload), uploaded_by: uploadedBy }).select("id").single()).id;
 }
 
-/** Uploads a notation file under the person's folder; resolves to the stored path. */
-export async function uploadNotationFile(userId: string, file: File): Promise<string> {
+/** Uploads a notation file under the person's folder; resolves to the stored path. `onProgress` as for uploadRecordingTake. */
+export async function uploadNotationFile(userId: string, file: File, onProgress?: (progress: BytesSent) => void): Promise<string> {
   const client = db();
   const path = `${userId}/${crypto.randomUUID()}-${safeFileName(file)}`;
-  const upload = await client.storage.from("recording-notations").upload(path, file, { contentType: file.type, upsert: false });
-  if (upload.error) throw toApiError(upload.error);
+  const upload = await uploadWithProgress(client, "recording-notations", path, file, { upsert: false }, onProgress);
+  if (upload.error) throw upload.error;
   return path;
 }
 
@@ -238,12 +242,12 @@ export function removeClubArchiveFile(path: string, options: Pick<RemoveOptions,
   return removeStoredFile("club-archive", path, options);
 }
 
-/** Uploads a club recording under the person's folder; resolves to the stored path. */
-export async function uploadClubArchiveFile(userId: string, file: File): Promise<string> {
+/** Uploads a club recording under the person's folder; resolves to the stored path. `onProgress` as for uploadRecordingTake. */
+export async function uploadClubArchiveFile(userId: string, file: File, onProgress?: (progress: BytesSent) => void): Promise<string> {
   const client = db();
   const path = `${userId}/${crypto.randomUUID()}-${safeFileName(file)}`;
-  const upload = await client.storage.from("club-archive").upload(path, file, { upsert: false });
-  if (upload.error) throw toApiError(upload.error);
+  const upload = await uploadWithProgress(client, "club-archive", path, file, { upsert: false }, onProgress);
+  if (upload.error) throw upload.error;
   return path;
 }
 

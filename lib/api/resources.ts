@@ -12,7 +12,7 @@ import { ApiError, toApiError } from "../errors";
 import { THUMBNAIL_TTL_SECONDS, applyListPlan, type ListPlan } from "../resources-query";
 import { removeStoredFile } from "../storage";
 import { supabase } from "../supabase";
-import { must } from "./_core";
+import { must, uploadWithProgress, type UploadProgress as BytesSent } from "./_core";
 
 // Every column of a library row but `metadata`.
 export const RESOURCE_FIELDS = "id,node_kind,media_kind,title,description,parent_id,subgroup_id,visibility,storage_bucket,storage_path,external_url,original_filename,mime_type,byte_size,checksum_sha256,event_id,occurred_on,season_label,status,is_pinned,import_id,created_by,created_at,updated_at";
@@ -95,10 +95,26 @@ export async function signResourceFile(bucket: string, path: string): Promise<st
   return signed.data?.signedUrl ?? null;
 }
 
-/** Puts a file in the library's bucket under `path`. It never replaces a file that is already there. */
-export async function uploadResourceFile(path: string, file: File, contentType: string): Promise<void> {
-  const uploaded = await client().storage.from(RESOURCE_BUCKET).upload(path, file, { contentType, upsert: false });
-  if (uploaded.error) throw toApiError(uploaded.error);
+/**
+ * Puts a file in the library's bucket under `path`. It never replaces a file that is already there. `onProgress` is told how many
+ * bytes have left (uploadWithProgress: the request supabase-js sends, through XMLHttpRequest, which can say so).
+ *
+ * `contentType` is the type the storage object is stored with, and now it is the one that is sent. supabase-js ignored this option
+ * for a File (the file part carries the file's own type), so the old call stored what the browser said. The same request goes now,
+ * and when the file has no type of its own (a score such as .mxl or .musicxml) it is sent as `contentType` says
+ * (application/octet-stream, what a browser writes for such a part anyway, and what the bucket accepts for scores).
+ */
+export async function uploadResourceFile(path: string, file: File, contentType: string, onProgress?: (progress: BytesSent) => void): Promise<void> {
+  const sent = file.type === contentType ? file : new File([file], file.name, { type: contentType });
+  const uploaded = await uploadWithProgress(client(), "club-resources", path, sent, { upsert: false }, onProgress);
+  if (uploaded.error) throw storageRefusal(uploaded.error);
+}
+
+// A refusal of storage is shown to the person word for word (features/resources/upload-batch.ts `shownMessage` shows the message of an
+// Error that an ApiError carries as its cause, and a database answer, which is a plain object, is never shown). storage-js made its
+// error an Error; the upload request answers with the parsed body, so the sentence rides on an Error here as it did.
+function storageRefusal(error: ApiError): ApiError {
+  return new ApiError(error.message, { code: error.code, status: error.status, cause: Object.assign(new Error(error.message), { status: error.status }) });
 }
 
 /**
