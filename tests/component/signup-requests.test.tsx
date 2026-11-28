@@ -21,7 +21,7 @@ async function openQueue(rows: unknown[] = WAITING, role: "executive" | "admin" 
   fake.rpc("list_pending_members").reply(ok(rows));
   openPortal({ role, page: "signups", boot: { pending_signups: rows.filter((row) => (row as { status: string }).status === "pending").length } });
   await screen.findByRole("heading", { level: 1, name: "Sign-up requests" });
-  await waitFor(() => expect(screen.queryByText("Loading sign-up requests…")).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText("Loading sign-up requests")).not.toBeInTheDocument());
 }
 
 describe("what the queue lists", () => {
@@ -186,15 +186,18 @@ describe("Decline", () => {
     expect(fake.rpc("review_pending_member").calls).toHaveLength(0);
   });
 
-  it("a refusal is an error toast in the database's words; the dialog is closed and the queue is read again", async () => {
+  it("a refusal is an error toast in the database's words; the dialog stays open with the reason as typed (nothing is lost) and the queue is read again", async () => {
     await openQueue();
     fireEvent.click(screen.getByRole("button", { name: "Decline Bala Menon" }));
+    fireEvent.change(within(dialog()).getByLabelText(/Reason/), { target: { value: "Not a student" } });
     fake.rpc("review_pending_member").reply(fail("This person is already an active member, so the sign-up cannot be declined. An administrator can deactivate the account.", "P0001"));
     fake.rpc("list_pending_members").reply(ok([WAITING[1]]));
     fireEvent.click(within(dialog()).getByRole("button", { name: "Decline sign-up" }));
     expect(await screen.findByText(/so the sign-up cannot be declined/, { selector: ".toast" })).toHaveClass("error");
     expect(screen.queryByText(/sign-up was declined/)).not.toBeInTheDocument();
     await waitFor(() => expect(fake.rpc("list_pending_members").count).toBe(2));
+    expect(within(dialog()).getByLabelText(/Reason/)).toHaveValue("Not a student");
+    expect(within(dialog()).getByRole("button", { name: "Decline sign-up" })).toBeEnabled();
   });
 });
 

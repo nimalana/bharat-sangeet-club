@@ -70,6 +70,7 @@ describe("the Admin page announces a database sentence as a failure", () => {
     fake.rpc("admin_change_member_role").reply(fail(CHEERFUL));
     await openAdmin();
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make executive" }));   // the question asked first
     await expectFailureToast(CHEERFUL);
   });
 
@@ -95,6 +96,7 @@ describe("the Admin page announces a database sentence as a failure", () => {
     fake.rpc("admin_change_member_role").reply(ok(null));
     await openAdmin();
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make executive" }));   // the question asked first
     const shown = await screen.findByText(/Bala Menon is now executive/);
     expect(shown).toHaveAttribute("role", "status");
     expect(shown).toHaveClass("toast", "success");

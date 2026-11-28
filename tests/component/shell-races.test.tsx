@@ -23,6 +23,8 @@ const member = (id: string, name: string, role = "member") => ({ id, full_name: 
 const home = () => screen.getByRole("button", { name: "Bharat Sangeet at UNC Chapel Hill home" });
 const nav = (name: string) => fireEvent.click(within(screen.getByRole("navigation", { name: "Portal navigation" })).getByRole("button", { name }));
 const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
+/** A permission change asks first: answers the question that is open with the button that says Yes. */
+const answerYes = async (button: string) => fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: button }));
 const concert = (id: number, title: string) => ({ id, title, description: "", starts_at: future(3), location: "Hill Hall", created_at: "2026-01-01T00:00:00Z", subgroup_id: null });
 
 describe("only the newest answer changes a list that is reloaded after each change", () => {
@@ -37,8 +39,10 @@ describe("only the newest answer changes a list that is reloaded after each chan
     await screen.findByText("Bala Menon");
     // Two changes in a row: the first reload is slow, the second is quick.
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    await answerYes("Make executive");
     await waitFor(() => expect(fake.from("profiles", "select").count).toBe(2));
     fireEvent.change(screen.getByLabelText("Permission for Chitra Iyer"), { target: { value: "executive" } });
+    await answerYes("Make executive");
     expect(await screen.findByText("Fresh Arrival")).toBeInTheDocument();
     await act(async () => { olderReload.resolve(ok([member("u-me", "Asha Rao", "admin"), member("u-9", "Stale Entry")])); });
     expect(screen.queryByText("Stale Entry")).not.toBeInTheDocument();
@@ -181,6 +185,7 @@ describe("a list that failed to reload keeps what it shows (and says so)", () =>
     openPortal({ role: "admin", page: "admin" });
     await screen.findByText("Bala Menon");
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    await answerYes("Make executive");
     const toast = await screen.findByText("Some admin data could not be loaded", { exact: false });
     expect(toast.closest("[role]")).toHaveAttribute("role", "alert");
     expect(screen.getByText("Bala Menon")).toBeInTheDocument();

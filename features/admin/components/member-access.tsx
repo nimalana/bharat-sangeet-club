@@ -30,7 +30,8 @@ export function MemberAccessActions({ member, isSelf, onChanged }: {
   const { notify } = useToast();
   const [dialog, setDialog] = useState<"deactivate" | "reactivate" | "delete" | null>(null);
   const [reason, setReason] = useState("");
-  const { pending: busy, run: track } = useAsyncAction(notify);
+  // One change at a time: a second press before the buttons have re-rendered sends nothing.
+  const { pending: busy, run: track } = useAsyncAction(notify, { exclusive: true });
   const label = member.full_name || member.email;
   const deactivated = member.status === "deactivated";
 
@@ -40,6 +41,7 @@ export function MemberAccessActions({ member, isSelf, onChanged }: {
       : action === "reactivate"
         ? reactivateMember(member.id)
         : deleteMember(member.id), { fallback: "That change could not be saved." });
+    // A failure leaves the question open, with the reason as typed; the toast says why. A press that was skipped (one is running) does nothing.
     if (!done.ok) return;
     setDialog(null); setReason("");
     notify(action === "deactivate" ? `${label} was deactivated` : action === "reactivate" ? `${label} was reactivated` : `${label} was deleted`);
@@ -51,14 +53,14 @@ export function MemberAccessActions({ member, isSelf, onChanged }: {
       ? <><Button variant="secondary" size="sm" onClick={() => setDialog("reactivate")}>Reactivate</Button><Button variant="danger" size="sm" onClick={() => setDialog("delete")}>Delete</Button></>
       : <Button variant="danger" size="sm" disabled={isSelf} title={isSelf ? "You cannot deactivate your own account" : undefined} onClick={() => setDialog("deactivate")}>Deactivate</Button>}
 
-    <Dialog open={dialog === "deactivate"} onClose={busy ? () => {} : () => setDialog(null)} className="max-w-[480px]">
+    <Dialog open={dialog === "deactivate"} onClose={() => setDialog(null)} dismissible={!busy} closeOnBackdrop={false} className="max-w-[480px]">
       <h2 className="m-0 text-2xl">Deactivate {label}?</h2>
       <p className="mt-3 text-sm leading-relaxed text-[#4c5f6b]">They lose access to the portal right away and are removed from their groups. Their reimbursements, attendance and recordings are kept, and you can reactivate the account later.</p>
       <label htmlFor="deactivate-reason" className="mt-4 block text-sm font-semibold">Reason (optional, visible to administrators)</label>
       <Textarea id="deactivate-reason" className="mt-1" rows={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Graduated, left the club…" />
       <div className="mt-6 flex flex-wrap justify-end gap-2">
         <Button variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button>
-        <Button variant="danger" onClick={() => run("deactivate")} disabled={busy}>{busy ? "Working…" : "Deactivate"}</Button>
+        <Button variant="danger" onClick={() => run("deactivate")} pending={busy}>{busy ? "Working…" : "Deactivate"}</Button>
       </div>
     </Dialog>
 

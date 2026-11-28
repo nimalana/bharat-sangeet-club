@@ -1,7 +1,7 @@
 // The parts of the Admin page and the Members page, rendered one by one with their props: the four numbers, the member list with its
 // search, the announcement column, the audit log; a roster card and the contact form. The whole pages are in admin-page.test.tsx,
 // members-directory.test.tsx and members-contact.test.tsx; these check that each part does what its props say.
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AdminAnnouncementsPanel } from "../../features/admin/components/admin-announcements-panel";
 import { AdminAuditPanel } from "../../features/admin/components/admin-audit-panel";
@@ -32,20 +32,24 @@ describe("AdminMembersPanel", () => {
   const members = [member("u-me", "Asha Rao", { role: "admin" }), member("u-2", "Bala Menon"), member("u-3", "Chitra Iyer", { role: "executive" }), member("u-4", "Dev Nair", { status: "deactivated" })];
   const props = (over: Partial<Parameters<typeof AdminMembersPanel>[0]> = {}) => ({ user: userOf("u-me"), members, groups: [group(7, "Vocal")], memberships: [active(7, "u-2"), active(7, "u-3", "pending")], onChangeRole: vi.fn(), onEdit: vi.fn(), onChanged: vi.fn(), ...over });
 
-  it("lists the active members; deactivated ones only after the box for them is ticked (and the box says how many)", () => {
+  // The box is in the address (?deactivated=1), which is written a moment after the click: the list follows the address.
+  const showDeactivated = async () => { fireEvent.click(screen.getByLabelText("Show 1 deactivated")); await screen.findByText("Dev Nair"); };
+
+  it("lists the active members; deactivated ones only after the box for them is ticked (and the box says how many)", async () => {
     notifySpy();
     render(<AdminMembersPanel {...props()} />);
     expect(screen.queryByText("Dev Nair")).not.toBeInTheDocument();
+    await showDeactivated();
+    expect(window.location.search).toBe("?deactivated=1");
     fireEvent.click(screen.getByLabelText("Show 1 deactivated"));
-    expect(screen.getByText("Dev Nair")).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Show 1 deactivated"));
-    expect(screen.queryByText("Dev Nair")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Dev Nair")).not.toBeInTheDocument());
+    expect(window.location.search).toBe("");
   });
 
-  it("the search narrows the list by name, email or role, and keeps the deactivated box as it was", () => {
+  it("the search narrows the list by name, email or role, and keeps the deactivated box as it was", async () => {
     notifySpy();
     render(<AdminMembersPanel {...props()} />);
-    fireEvent.click(screen.getByLabelText("Show 1 deactivated"));
+    await showDeactivated();
     fireEvent.change(screen.getByPlaceholderText("Search members"), { target: { value: "nair" } });
     expect(screen.getByText("Dev Nair")).toBeInTheDocument();
     expect(screen.queryByText("Bala Menon")).not.toBeInTheDocument();
@@ -62,22 +66,22 @@ describe("AdminMembersPanel", () => {
     expect(within(row("Chitra Iyer")).getByText("No subgroup")).toBeInTheDocument();
   });
 
-  it("the permission select calls back with the member and the new role; it is disabled for oneself and for a deactivated member", () => {
+  it("the permission select calls back with the member and the new role; it is disabled for oneself and for a deactivated member", async () => {
     notifySpy();
     const onChangeRole = vi.fn();
     render(<AdminMembersPanel {...props({ onChangeRole })} />);
-    fireEvent.click(screen.getByLabelText("Show 1 deactivated"));
+    await showDeactivated();
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
     expect(onChangeRole).toHaveBeenCalledWith(members[1], "executive");
     expect(screen.getByLabelText("Permission for Asha Rao")).toBeDisabled();
     expect(screen.getByLabelText("Permission for Dev Nair")).toBeDisabled();
   });
 
-  it("Edit calls back with the member, and is not offered for a deactivated one", () => {
+  it("Edit calls back with the member, and is not offered for a deactivated one", async () => {
     notifySpy();
     const onEdit = vi.fn();
     render(<AdminMembersPanel {...props({ onEdit })} />);
-    fireEvent.click(screen.getByLabelText("Show 1 deactivated"));
+    await showDeactivated();
     fireEvent.click(within(screen.getByLabelText("Permission for Bala Menon").closest(".admin-member-row") as HTMLElement).getByRole("button", { name: "Edit" }));
     expect(onEdit).toHaveBeenCalledWith(members[1]);
     expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(3);

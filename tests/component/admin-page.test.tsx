@@ -37,15 +37,16 @@ describe("what the page reads", () => {
     expect(chainOf(fake.from("subgroup_memberships", "select").calls.find((call) => call.used("limit", 5000))!)).toEqual([["select", "subgroup_id,member_id,status,membership_role"], ["limit", 5000]]);
   });
 
-  it("shows the loading line until the answers arrive", async () => {
+  it("shows a skeleton (a polite status, no heading yet) until the answers arrive", async () => {
     const slow = deferred();
     fake.from("profiles", "select").reply(slow.reply);
     openPortal({ role: "admin", page: "admin" });
-    const line = await screen.findByText("Loading the archive…");
-    expect(line.className).toBe("inline-loading");
+    expect(await screen.findByText("Loading the control center")).toHaveAttribute("role", "status");
+    expect(document.querySelector(".skeleton")).not.toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: "Club control center" })).not.toBeInTheDocument();
     await act(async () => { slow.resolve(ok(MEMBERS)); });
     expect(await screen.findByText("Bala Menon")).toBeInTheDocument();
-    expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading the control center")).not.toBeInTheDocument();
   });
 });
 
@@ -70,7 +71,7 @@ describe("the numbers and the list", () => {
     await openAdmin({ members: [...MEMBERS, member("u-4", "Dev Nair", { status: "deactivated" })] });
     expect(screen.queryByText("Dev Nair")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Show 1 deactivated"));
-    expect(screen.getByText("Dev Nair")).toBeInTheDocument();
+    expect(await screen.findByText("Dev Nair")).toBeInTheDocument();
     const gone = row("Dev Nair");
     expect(within(gone).getByText("Deactivated")).toBeInTheDocument();
     expect(within(gone).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
@@ -102,11 +103,55 @@ describe("the numbers and the list", () => {
   });
 });
 
+/** A permission is changed only after the question has been answered Yes: the button of the question that is open. */
+const answerQuestion = async (button: string) => fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: button }));
+
 describe("changing a permission", () => {
+  it("asks first, naming the member, the new permission and what it allows; Cancel changes nothing and the select still shows the old permission", async () => {
+    await openAdmin();
+    fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "admin" } });
+    const question = await screen.findByRole("dialog", { name: "Make Bala Menon an administrator?" });
+    expect(question).toHaveAccessibleDescription("Administrators can change anyone's permission, deactivate members and delete accounts. You can change it again from this list.");
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(fake.rpc("admin_change_member_role").calls).toHaveLength(0);
+    expect(screen.getByLabelText("Permission for Bala Menon")).toHaveValue("member");
+  });
+
+  it("each permission has its own question and button", async () => {
+    await openAdmin();
+    fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    const executive = await screen.findByRole("dialog", { name: "Make Bala Menon an executive?" });
+    expect(executive).toHaveAccessibleDescription("Executives can manage groups, post announcements and approve sign-ups. You can change it again from this list.");
+    expect(within(executive).getByRole("button", { name: "Make executive" })).toBeInTheDocument();
+    fireEvent.click(within(executive).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Permission for Chitra Iyer"), { target: { value: "member" } });
+    const member = await screen.findByRole("dialog", { name: "Make Chitra Iyer a member?" });
+    expect(member).toHaveAccessibleDescription("They lose any executive or administrator access right away. You can change it again from this list.");
+    expect(within(member).getByRole("button", { name: "Make member" })).toBeInTheDocument();
+  });
+
+  it("while it is sent every permission select waits (the one being changed is busy) and a second answer to the question sends nothing more", async () => {
+    await openAdmin();
+    const slow = deferred();
+    fake.rpc("admin_change_member_role").reply(slow.reply);
+    fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    await answerQuestion("Make executive");
+    await waitFor(() => expect(fake.rpc("admin_change_member_role").calls).toHaveLength(1));
+    expect(screen.getByLabelText("Permission for Bala Menon")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByLabelText("Permission for Bala Menon")).toBeDisabled();
+    expect(screen.getByLabelText("Permission for Chitra Iyer")).toBeDisabled();
+    await act(async () => { slow.resolve(ok(null)); });
+    await waitFor(() => expect(screen.getByLabelText("Permission for Chitra Iyer")).toBeEnabled());
+    expect(fake.rpc("admin_change_member_role").calls).toHaveLength(1);
+  });
+
   it("sends the change, says so, and reads the members again", async () => {
     await openAdmin();
     fake.rpc("admin_change_member_role").reply(ok(null));
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    await answerQuestion("Make executive");
     expect(await screen.findByText(/Bala Menon is now executive/, { selector: ".toast" })).toHaveClass("success");
     expect(fake.rpc("admin_change_member_role").calls[0].payload).toEqual({ p_target_id: "u-2", p_new_role: "executive" });
     await waitFor(() => expect(fake.from("profiles", "select").count).toBe(2));
@@ -123,6 +168,7 @@ describe("changing a permission", () => {
     await openAdmin();
     fake.rpc("admin_change_member_role").reply(fail("Only administrators can change member roles"));
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "admin" } });
+    await answerQuestion("Make administrator");
     expect(await screen.findByText(/Only administrators can change member roles/, { selector: ".toast" })).toHaveClass("error");
     expect(fake.from("profiles", "select").count).toBe(1);
   });
@@ -265,7 +311,9 @@ describe("a list that fails to read", () => {
     openPortal({ role: "admin", page: "admin" });
     expect(await screen.findByText(/Some admin data could not be loaded/, { selector: ".toast" })).toHaveClass("error");
     expect(screen.getByText("Bala Menon")).toBeInTheDocument();
-    expect(screen.getByText("No administrative changes recorded yet.")).toBeInTheDocument();
+    // The audit log never answered: that is an error with Try again, not "nothing was recorded".
+    expect(screen.getByText("The admin activity could not be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText("No administrative changes recorded yet.")).not.toBeInTheDocument();
   });
 
   it("a reload that fails keeps the members shown", async () => {
@@ -273,9 +321,12 @@ describe("a list that fails to read", () => {
     fake.rpc("admin_change_member_role").reply(ok(null));
     fake.from("profiles", "select").reply(fail("boom"));
     fireEvent.change(screen.getByLabelText("Permission for Bala Menon"), { target: { value: "executive" } });
+    await answerQuestion("Make executive");
     await waitFor(() => expect(fake.from("profiles", "select").count).toBe(2));
     expect(await screen.findByText(/Some admin data could not be loaded/, { selector: ".toast" })).toBeInTheDocument();
     expect(screen.getByText("Bala Menon")).toBeInTheDocument();
     expect(screen.getByText("Chitra Iyer")).toBeInTheDocument();
+    // What is shown is from the read before: the panel says so, with Try again.
+    expect(await screen.findByText("The members could not be refreshed, so they may be out of date.")).toBeInTheDocument();
   });
 });
