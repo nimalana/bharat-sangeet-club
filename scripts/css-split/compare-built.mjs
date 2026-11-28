@@ -71,7 +71,29 @@ export function flatten(css) {
     }
   };
   walk(postcss.parse(css).nodes, "", null);
-  return items;
+  return dropShadowed(items);
+}
+
+/**
+ * A declaration that a later declaration of the same property in a rule with the same selector and context always overrides does
+ * nothing, and the minifier removes it when the two rules end up next to each other. Both builds are normalised the same way, so that
+ * a rule that stopped being adjacent to its twin does not look like an addition.
+ */
+function dropShadowed(items) {
+  const later = new Map(); // context|selector|prop -> { any, important }
+  const keep = [];
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    if (item.whole) {
+      keep.push(item);
+      continue;
+    }
+    const k = `${item.context}|${item.selector}|${item.prop}`;
+    const seen = later.get(k);
+    if (!(seen && (item.important ? seen.important : true))) keep.push(item);
+    later.set(k, { important: Boolean(seen?.important) || item.important });
+  }
+  return keep.reverse();
 }
 
 const key = (item) => `${item.context}|${item.selector}|${item.prop}:${item.value}${item.important ? "!" : ""}`;
