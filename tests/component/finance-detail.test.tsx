@@ -227,6 +227,7 @@ describe("finance: a link opens a detail", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();           // nothing to show before the lists are read
     expect(await screen.findByRole("dialog", { name: "Tabla repair" })).toBeInTheDocument();
     expect(search()).toBe("?page=finance&tab=reimbursements&request=5");     // reading never writes
+    await waitFor(() => expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement));   // the dialog listens for Escape once it has taken the focus
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     await closed();
     expect(search()).toBe("?page=finance&tab=reimbursements");

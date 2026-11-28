@@ -227,7 +227,7 @@ describe("My profile", () => {
     expect(call.used("eq", "id", "u-me")).toBe(true);
     expect(toasts()).toContain("✓ Your contact information was updated");
     expect(accountButton()).toHaveAccessibleName("Account menu for Asha R.");
-    expect(accountButton()).toHaveFocus();
+    await waitFor(() => expect(accountButton()).toHaveFocus());   // the dialog hands the focus back when it has unmounted, a beat after it left the page
   });
 
   it("a double press on Save sends ONE request, and the button says Saving… and is off while it runs", async () => {

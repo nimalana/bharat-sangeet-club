@@ -1,7 +1,7 @@
 // F5: once the portal is drawn and the browser is idle, the files of the lazy screens a person can open are fetched, one per idle moment, so the first visit to
 // Members or the Calendar is as quick as the second. features/shell/screen-loaders.ts names the files; here it is replaced by a table that records which were asked for.
 // What no test here can say: that the fetched file is really in the browser's cache and that the first open is instant (tests/browser, the timings suite).
-import { act, renderHook, screen } from "@testing-library/react";
+import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +40,8 @@ async function idleMoment() {
   if (!slot) throw new Error("nothing was waiting for an idle moment");
   await act(async () => { slot.run(); await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
+/** The portal asks the browser for its first idle moment from an effect, a beat after it is drawn: wait until it has asked. */
+const untilIdleIsAsked = () => waitFor(() => expect(slots.length).toBeGreaterThan(0));
 async function untilQuiet() { while (slots.length) await idleMoment(); }
 const connection = (value: { saveData?: boolean; effectiveType?: string }) => Object.defineProperty(navigator, "connection", { value, configurable: true });
 
@@ -220,6 +222,7 @@ describe("in the portal", () => {
     openPortal({ role: "member" });
     await screen.findByText(/Welcome back/);
     expect(probe.calls).toEqual([]);
+    await untilIdleIsAsked();
     await untilQuiet();
     expect(probe.calls).toEqual(MEMBER_PLAN);
   });
@@ -227,6 +230,7 @@ describe("in the portal", () => {
   it("an executive's plan includes the calendar's forms and the archive manager", async () => {
     openPortal({ role: "executive" });
     await screen.findByText(/Welcome back/);
+    await untilIdleIsAsked();
     await untilQuiet();
     expect(probe.calls).toEqual(MANAGER_PLAN);
   });

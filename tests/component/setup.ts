@@ -9,6 +9,7 @@
 // 3. Browser APIs jsdom does not provide are stubbed.
 // 4. Every test starts clean: fake client, in-memory cache, URL, storage, timers, toast spy.
 import "@testing-library/jest-dom/vitest";
+import { configure as configureDom, getConfig } from "@testing-library/dom";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { clearCache, setCacheOwner } from "../../lib/cache";
@@ -39,6 +40,27 @@ class FormDataWithFiles extends JsdomFormData {
     }
   }
 }
+
+// A find*/waitFor that has just succeeded must hand back a screen on which React's effects have run.
+//
+// React commits a render to the DOM and runs its passive effects (the `useEffect`s: a dialog registers its Escape handler and moves the focus
+// in, a hook asks the browser for an idle callback, a list starts its fetch) in a separate task that it queues with the real setImmediate
+// (scheduler). Testing Library's asyncWrapper gives control back after a `setTimeout(0)`. Both are queued by the same commit, but a timer
+// runs first as soon as one millisecond has passed since it was set, and a setImmediate callback only runs after the timers that are due: on an idle
+// machine the effects win, on a loaded one (the whole suite on four busy cores, or CI) the test resumed with the DOM drawn and the effects
+// not run yet. Escape pressed on a dialog that had not registered its handler was lost, focus had not moved in, a hook had not yet asked for its
+// idle callback. Waiting one more real setImmediate (the same queue the scheduler uses, taken before any test can fake the timers) puts the test
+// behind everything React had already queued, whatever the load. It waits for no time and for no state: it is an order, not a delay.
+const nextTask = globalThis.setImmediate.bind(globalThis);
+const rtlAsyncWrapper = getConfig().asyncWrapper;
+configureDom({
+  asyncUtilTimeout: 5000,
+  asyncWrapper: async (callback) => {
+    const result = await rtlAsyncWrapper(callback);
+    await new Promise<void>((resolve) => nextTask(() => resolve()));
+    return result;
+  },
+});
 
 beforeEach(() => {
   vi.stubGlobal("FormData", FormDataWithFiles);
