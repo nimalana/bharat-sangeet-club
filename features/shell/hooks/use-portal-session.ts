@@ -9,7 +9,7 @@ import { runBootstrap, type ShellState } from "../../../lib/bootstrap";
 import { setCacheOwner } from "../../../lib/cache";
 import type { ClubRole } from "../../../lib/db";
 import type { AccountStatus } from "../../../lib/portal-types";
-import { pendingSignupNameKey } from "../../public/components/login-screen";
+import { pendingSignupNameKey } from "../../public/constants";
 import { useAuthSession } from "./use-auth-session";
 import type { PortalData, PortalLists } from "./use-portal-data";
 

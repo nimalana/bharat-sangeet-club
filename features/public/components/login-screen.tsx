@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { publicSiteAvailable, signInWithGoogle as startGoogleSignIn } from "../../../lib/api/public";
 import { ApiError } from "../../../lib/errors";
+import { pendingSignupNameKey } from "../constants";
 import { heroPhotos } from "../hero-photos";
-
-export const pendingSignupNameKey = "bharat-sangeet-pending-signup-name";
 
 export function LoginScreen({ onBack }: { onBack: () => void }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");

@@ -38,6 +38,10 @@ jobs:
       # The existing errors are cleared in Phase 2.5 R5 and Phase 3; until then none may be added.
       - name: Lint (ratchet)
         run: npm run lint:ratchet
+      # Which folder may import which, and no import cycles (docs/ARCHITECTURE.md, "Dependency rules"). The ratchet runs the same
+      # check; this step also runs its selftest, which proves each rule still catches its violation.
+      - name: Import boundaries (with selftest)
+        run: npm run lint:boundaries:selftest
 
   # Every table, column, RPC, enum value and bucket the frontend uses exists in the migrated database, and the frontend
   # only writes what role `authenticated` may write (scripts/contract-check, docs/CONTRACT_CHECK.md). The selftest

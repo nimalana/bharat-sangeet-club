@@ -9,6 +9,8 @@
 //   npm run lint:ratchet -- --from report.json   judge an existing `eslint --format json` file instead of running eslint
 //
 // Counts, not file names: moving or splitting a file does not change a baseline, only fixing or adding a problem does.
+// The import boundaries (scripts/check-boundaries.mjs: which folder may import which, no import cycles) are part of this check:
+// they have no baseline, so one broken rule fails it.
 // Ignored: dist, .next and .claude (other worktrees live there); everything else is the eslint.config.mjs as it is.
 // Exit codes: 0 same or lower, 1 higher, 2 eslint could not run.
 import { execFileSync } from "node:child_process";
@@ -16,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { checkBoundaries } from "./check-boundaries.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASELINE = path.join(ROOT, "lint-baseline.json");
@@ -42,6 +45,12 @@ for (const f of results) for (const m of f.messages) { const k = `${m.severity =
 
 console.log(`ESLint: ${errors} errors, ${warnings} warnings in ${results.length} files (baseline: ${baseline.errors} errors, ${baseline.warnings} warnings)`);
 for (const [rule, n] of Object.entries(byRule).sort((a, b) => b[1] - a[1]).slice(0, 12)) console.log(`  ${String(n).padStart(3)}  ${rule}`);
+
+const boundaries = checkBoundaries(ROOT);
+if (boundaries.problems.length) {
+  console.error(`\nFAIL: import boundaries (scripts/check-boundaries.mjs, rules in docs/ARCHITECTURE.md): ${boundaries.problems.length} problem(s)\n  ${boundaries.problems.join("\n  ")}`);
+  process.exitCode = 1;
+} else console.log(`Import boundaries ok: ${boundaries.imports} imports in ${boundaries.files} files.`);
 
 const worse = [];
 if (errors > baseline.errors) worse.push(`errors ${baseline.errors} -> ${errors}`);
