@@ -1,29 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SectionBoundary } from "../../../components/ui/section-boundary";
 import { ToastViewport, useToast } from "../../../components/ui/toast";
 import { isSupabaseConfigured } from "../../../lib/api/auth";
+import { SAVED_SESSION_ATTRIBUTE } from "../saved-session";
 import { canManageClub } from "../../../lib/permissions";
 import type { PublicConcert } from "../../../lib/public-concerts";
 import { SECTION_LABELS, resolveSection } from "../../../lib/sections";
 import { AdminPage } from "../../admin/components/admin-page";
 import { DeactivatedScreen } from "../../admin/components/member-access";
-import { CalendarDialogs } from "../../calendar/components/calendar-dialogs";
-import { CalendarPage } from "../../calendar/components/calendar-page";
 import { useCalendarPage } from "../../calendar/hooks/use-calendar-page";
 import { ClubDashboard } from "../../dashboard/components/club-dashboard";
 import { SubgroupSpaces } from "../../groups/components/subgroup-spaces";
-import { MembersPage } from "../../members/components/members-page";
 import { LoginScreen } from "../../public/components/login-screen";
 import { PublicSite } from "../../public/components/public-site";
 import { ArchiveModal } from "../../recordings/components/archive-modal";
 import { usePortalData } from "../hooks/use-portal-data";
 import { attendanceTabFromUrl, usePortalNavigation } from "../hooks/use-portal-navigation";
 import { usePortalSession } from "../hooks/use-portal-session";
+import { useIdlePrefetch } from "../hooks/use-idle-prefetch";
+import { useProfilePrompt } from "../hooks/use-profile-prompt";
 import { SignupRequestsPage } from "../../admin/components/signup-requests-page";
 import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
-import { AttendancePage, ClubArchiveManager, FinancePage, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
+import { AttendancePage, CalendarDialogs, CalendarPage, ClubArchiveManager, CompleteProfileDialog, FinancePage, MembersPage, OwnProfileDialog, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
 import { LoadingScreen } from "./loading-screen";
 import { PendingScreen, RejectedScreen } from "./membership-screens";
 import { PortalFooter } from "./portal-footer";
@@ -36,11 +36,19 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const { notify } = useToast();
   const data = usePortalData();
   const { archive, events, announcements, groups, memberships, resourceCount, dataLoading, setResourceCount, loadData } = data;
-  const { savedSession, authLoading, user, shellState, role, name, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
+  const { savedSession, authLoading, user, shellState, role, name, setName, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
+  // The page was hidden from the first paint if this browser holds a saved sign-in (saved-session.ts); once the session check has answered the
+  // shell draws what it is, and a person whose sign-in did not hold sees the landing.
+  useEffect(() => { if (!authLoading) document.documentElement.removeAttribute(SAVED_SESSION_ATTRIBUTE); }, [authLoading]);
   const nav = usePortalNavigation({ user, loadData });
   const { section, navigate } = nav;
   const calendar = useCalendarPage({ onChanged: loadData });
   const [showUpload, setShowUpload] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  // "Complete your profile", once, on the home page, for an approved member who has not filled in any contact detail (the pending and rejected screens come first).
+  const profileStep = useProfilePrompt(user, shellState === "ready", section === "home");
+  // Once the portal is drawn and the browser is idle, the files of the lazy screens this role can open are fetched, so a first visit is as quick as a second.
+  useIdlePrefetch(shellState === "ready", role);
 
   const canManage = canManageClub(role);
   const activeGroupIds = new Set(memberships.filter((item) => item.status === "active").map((item) => item.subgroup_id));
@@ -62,7 +70,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
   return (
     <main className="portal-shell">
-      <PortalHeader section={section} role={role} name={name} pendingSignups={pendingSignups} onNavigate={navigate} onSignOut={signOutQuietly} />
+      <PortalHeader section={section} role={role} name={name} pendingSignups={pendingSignups} onNavigate={navigate} onSignOut={signOutQuietly} onOpenProfile={() => setShowProfile(true)} />
 
       <SectionBoundary key={section}>
         {shown === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData } : undefined} />}
@@ -90,7 +98,9 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
 
       <PortalFooter />
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} />}
-      <CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} />
+      {profileStep.profile && <SectionBoundary key="profile-step"><CompleteProfileDialog user={user} profile={profileStep.profile} onSkip={profileStep.skip} onSaved={(fullName) => { if (fullName) setName(fullName); profileStep.saved(); }} /></SectionBoundary>}
+      {showProfile && <SectionBoundary key="own-profile"><OwnProfileDialog user={user} onClose={() => setShowProfile(false)} onSaved={(fullName) => { if (fullName) setName(fullName); }} /></SectionBoundary>}
+      {(calendar.adding || calendar.editing) && <SectionBoundary key="calendar-dialogs"><CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} /></SectionBoundary>}
       <ToastViewport />
     </main>
   );

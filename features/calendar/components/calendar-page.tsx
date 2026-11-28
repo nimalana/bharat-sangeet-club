@@ -1,7 +1,7 @@
 "use client";
 
-import { LoadingBlock } from "../../../components/ui/loading-block";
 import { PageTitle } from "../../../components/ui/page-title";
+import { SkeletonRows } from "../../../components/ui/skeleton";
 import type { ClubEvent, ScopeFilter, Subgroup } from "../../../lib/db";
 import { ScopeFilterBar } from "./scope-filter-bar";
 import { eventsInScope } from "../model";
@@ -20,7 +20,8 @@ type CalendarPageProps = {
   onScopeChange: (scope: ScopeFilter) => void;
   onAdd: () => void;
   onEdit: (event: ClubEvent) => void;
-  onDelete: (eventId: number) => void;
+  /** Removes a date after asking (the title is for the question). May answer true when it was removed: the date's detail then closes. */
+  onDelete: (eventId: number, title?: string) => void | boolean | Promise<void | boolean>;
 };
 
 /** The Calendar page: its title, the audience filter, "Add important date" for managers, and the month with its agenda. */
@@ -33,7 +34,7 @@ export function CalendarPage({ events, groups, availableGroups, canManage, loadi
         <ScopeFilterBar value={scope} onChange={onScopeChange} groups={availableGroups} />
         {canManage && <button className="primary" onClick={onAdd}>＋ Add important date</button>}
       </div>
-      {loading ? <LoadingBlock>Loading the archive…</LoadingBlock> : <CalendarView events={eventsInScope(events, scope)} groups={groups} canManage={canManage} onEdit={onEdit} onDelete={onDelete} />}
+      {loading ? <SkeletonRows rows={5} label="Loading the calendar" className="calendar-skeleton" /> : <CalendarView events={eventsInScope(events, scope)} groups={groups} canManage={canManage} onEdit={onEdit} onDelete={onDelete} />}
     </section>
   );
 }

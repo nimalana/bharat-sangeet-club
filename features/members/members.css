@@ -1,17 +1,17 @@
 /* members: Rules of the members area.
    Imported by app/globals.css; the import order decides ties between rules of equal specificity (docs/ARCHITECTURE.md, "CSS"). */
-.directory-note{margin:-8px 0 25px;color:#657686;font-size:11px}
+.directory-note{margin:-8px 0 25px;color:#5a6b7a;font-size:12px}
 .member-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .member-card{min-height:270px;border:1px solid var(--line);border-top:3px solid var(--carolina);background:var(--paper);padding:25px}
 .member-initials{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:var(--carolina-pale);color:var(--maroon);font:400 17px Georgia,serif;margin-bottom:24px}
 .member-card-heading{display:flex;align-items:start;justify-content:space-between;gap:12px}
 .member-card h3{font:400 22px Georgia,serif;margin:0}
-.member-role{border:1px solid var(--line);padding:4px 7px;text-transform:uppercase;letter-spacing:.08em;font-size:7px}
+.member-role{border:1px solid var(--line);padding:4px 7px;text-transform:uppercase;letter-spacing:.08em;font-size:12px}
 .member-role.executive{background:var(--maroon);border-color:var(--maroon);color:white}
-.member-card>p{min-height:34px;margin:10px 0 20px;color:#647381;font-size:11px}
+.member-card>p{min-height:34px;margin:10px 0 20px;color:#647381;font-size:12px}
 .member-card dl{margin:0;border-top:1px solid var(--line);padding-top:12px}
-.member-card dl div{display:grid;grid-template-columns:70px 1fr;gap:8px;margin:8px 0;font-size:10px}
-.member-card dt{color:#82909a;text-transform:uppercase;letter-spacing:.06em}
+.member-card dl div{display:grid;grid-template-columns:92px 1fr;gap:8px;margin:8px 0;font-size:12px}
+.member-card dt{color:#66747e;text-transform:uppercase;letter-spacing:.06em}
 .member-card dd{margin:0;overflow-wrap:anywhere}
 .member-card a{color:var(--maroon)}
 @media (max-width:900px){
@@ -24,3 +24,15 @@
 @media (max-width:620px){
 .roster-filter{margin-left:0}
 }
+/* Touch layout: an email address or a phone number on a card is a tap target of at least 44px (Phase 3.4). */
+@media (max-width:700px){
+.member-card dd a{display:inline-flex;align-items:center;min-height:44px}
+}
+/* The "Group" label of the roster filter: the shared rule for .scope-picker (styles/late.css) sets it at 8px; this is the roster's own, a step more specific, at 12px. */
+.scope-picker.roster-filter>span{font-size:12px}
+/* The sentence under the heading of the "Complete your profile" step. */
+.profile-intro{margin:-12px 0 8px;color:#4f5f6b;font-size:13px;line-height:1.55}
+/* The placeholder of the roster while the directory is read: the title, the toolbar and the cards, at their heights. */
+.roster-skeleton-title{height:150px;margin-bottom:34px}
+.roster-skeleton-toolbar{height:50px;margin-bottom:34px}
+.member-skeleton{min-height:270px}

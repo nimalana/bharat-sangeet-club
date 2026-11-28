@@ -43,8 +43,3 @@ export async function loadWorkspaceLists(userId: string) {
   ]);
   return { groups: groups as ListAnswer<Subgroup>, memberships: memberships as ListAnswer<SubgroupMembership> };
 }
-
-/** Saves the name a new member typed on the sign-in screen as their profile name. */
-export async function updateOwnFullName(userId: string, fullName: string) {
-  return await client().from("profiles").update({ full_name: fullName }).eq("id", userId);
-}

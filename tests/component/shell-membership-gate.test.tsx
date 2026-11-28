@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import { fake, ok } from "../support/fake-supabase";
 import { bootstrapAnswer, openPortal, renderPortal } from "../support/portal";
 
-const NAME_KEY = "bharat-sangeet-pending-signup-name";
 const SENTENCE = "Your sign-up is waiting for approval by a club executive.";
 // What a pending account's bootstrap really looks like (get_portal_bootstrap is security invoker: its own profile, nothing else)...
 const pendingAnswer = { profile: { full_name: "New Person", role: "member", status: "pending" }, groups: [], memberships: [], announcements: [], events: [], archive: [], resource_count: 0 };
@@ -81,29 +80,6 @@ describe("a sign-up waiting for approval", () => {
     await waitFor(() => expect(fake.rpc("get_portal_bootstrap").count).toBe(2));
     expect(await screen.findByText(SENTENCE)).toBeInTheDocument();
     expect(requestsMade()).toEqual(["rpc:get_portal_bootstrap", "rpc:get_portal_bootstrap"]);
-  });
-
-  it("the name typed at sign-up is not sent while waiting (the database would refuse it) and is kept for the first time the portal opens", async () => {
-    window.sessionStorage.setItem(NAME_KEY, "Asha R.");
-    fake.signIn({ id: "u-new" });
-    fake.from("profiles", "update").reply(ok(null));
-    fake.rpc("get_portal_bootstrap").replyOnce(ok(pendingAnswer)).reply(ok(bootstrapAnswer("member", "")));
-    renderPortal();
-    fireEvent.click(await screen.findByRole("button", { name: "Check again" }));
-    await screen.findByRole("navigation", { name: "Portal navigation" });
-    // Nothing was written while pending: the one update is the one after approval.
-    await waitFor(() => expect(fake.from("profiles", "update").calls).toHaveLength(1));
-    expect(fake.from("profiles", "update").calls[0].payload).toEqual({ full_name: "Asha R." });
-  });
-
-  it("while waiting the name stays in the tab's storage", async () => {
-    window.sessionStorage.setItem(NAME_KEY, "Asha R.");
-    fake.signIn({ id: "u-new" });
-    fake.rpc("get_portal_bootstrap").reply(ok(pendingAnswer));
-    renderPortal();
-    await screen.findByText(SENTENCE);
-    expect(window.sessionStorage.getItem(NAME_KEY)).toBe("Asha R.");
-    expect(fake.from("profiles").calls).toHaveLength(0);
   });
 });
 

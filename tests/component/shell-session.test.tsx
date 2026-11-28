@@ -7,9 +7,9 @@
 //  - a session that cannot be read does not keep the person on the loading screen (7 seconds, then the public page);
 //  - a page restored from the back-forward cache reads the session again, and stops listening when the shell is gone;
 //  - the first paint: the public page at once when the server sent the concerts and nothing says the person is signed in;
-//  - the name shown when the profile has none; a sign-up name that cannot be saved; the account button and sign-out.
+//  - the name shown when the profile has none; the account button and sign-out.
 
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { advance, flush } from "../support/helpers";
 import { deferred, fail, fake, never, ok, rejects } from "../support/fake-supabase";
@@ -123,7 +123,7 @@ describe("signing out and in again", () => {
 
     await act(async () => { slow.resolve(ok(bootstrapAnswer("member", "Bala Menon"))); });
     expect(await screen.findByText("Welcome back, Bala Menon.")).toBeInTheDocument();
-    expect(screen.getByText("Member · Sign out")).toBeInTheDocument();
+    expect(screen.getByText("Member · Account")).toBeInTheDocument();
   });
 });
 
@@ -145,7 +145,7 @@ describe("the name the shell shows", () => {
   it("is the name on the profile", async () => {
     openPortal({ name: "Asha Rao" });
     expect(await screen.findByText("Welcome back, Asha Rao.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Asha Rao/ })).toHaveAttribute("title", "Sign out");
+    expect(screen.getByRole("button", { name: /Asha Rao/ })).toHaveAttribute("aria-haspopup", "menu");
   });
 
   it("is the part of the email before the @ when the profile has no name", async () => {
@@ -158,33 +158,6 @@ describe("the name the shell shows", () => {
     fake.rpc("get_portal_bootstrap").reply(ok(bootstrapAnswer("member", "")));
     renderPortal();
     expect(await screen.findByText("Welcome back, Club member.")).toBeInTheDocument();
-  });
-
-  it("a name chosen at sign-up that is saved after the account has changed is not given to the new account", async () => {
-    window.sessionStorage.setItem("bharat-sangeet-pending-signup-name", "Asha R.");
-    const slow = deferred();
-    // The first account's save is slow; the second account's own attempt (the name is still pending) is refused.
-    fake.from("profiles", "update").replyOnce(slow.reply).reply(fail("denied"));
-    openPortal({ name: "Asha Rao" });
-    await waitFor(() => expect(fake.from("profiles", "update").count).toBe(1));
-    fake.rpc("get_portal_bootstrap").reply(ok(bootstrapAnswer("member", "Bala Menon")));
-    await act(async () => { fake.emitAuth("SIGNED_IN", { access_token: "t", user: { id: "u-b", email: "u-b@x.test", app_metadata: {}, user_metadata: {}, aud: "authenticated", created_at: "2026-01-01T00:00:00Z" } }); });
-    expect(await screen.findByText("Welcome back, Bala Menon.")).toBeInTheDocument();
-    await act(async () => { slow.resolve(ok(null)); });
-    expect(screen.getByText("Welcome back, Bala Menon.")).toBeInTheDocument();
-    expect(screen.queryByText(/Asha R\./)).not.toBeInTheDocument();
-  });
-
-  it("a name chosen at sign-up that could not be saved is said so, and kept for the next try", async () => {
-    window.sessionStorage.setItem("bharat-sangeet-pending-signup-name", "  Asha R. ");
-    fake.from("profiles", "update").reply(fail("permission denied for table profiles"));
-    openPortal({ name: "" });
-    await waitFor(() => expect(toast()).toHaveTextContent("Your account was created, but your preferred name could not be saved"));
-    expect(toast()).toHaveClass("error");
-    // The name was trimmed before it was sent, and is still there to try again.
-    expect(fake.from("profiles", "update").calls[0].payload).toEqual({ full_name: "Asha R." });
-    expect(window.sessionStorage.getItem("bharat-sangeet-pending-signup-name")).toBe("  Asha R. ");
-    expect(screen.queryByText(/Asha R\./)).not.toBeInTheDocument();
   });
 });
 
@@ -203,22 +176,34 @@ describe("the page around the screens", () => {
   });
 });
 
+// Phase 3.2: the account button is a menu button. It used to sign out at once (title "Sign out", caption "Member · Sign out"); now it opens a menu with
+// "My profile" and "Sign out" (tests/component/shell-account-menu.test.tsx has the menu itself), and signing out is the menu's second item.
+const accountButton = () => screen.getByRole("button", { name: /^Account menu for / });
+const signOutFromMenu = () => { fireEvent.click(accountButton()); fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" })); };
+
 describe("the account button", () => {
   it.each([
-    ["admin", "AD", "Admin · Sign out"],
-    ["executive", "EX", "Executive · Sign out"],
-    ["member", "MB", "Member · Sign out"],
+    ["admin", "AD", "Admin · Account"],
+    ["executive", "EX", "Executive · Account"],
+    ["member", "MB", "Member · Account"],
   ] as const)("%s: badge %s, caption %s", async (role, badge, caption) => {
     openPortal({ role, name: "Asha Rao" });
     await screen.findByText("Welcome back, Asha Rao.");
-    const button = screen.getByTitle("Sign out");
-    expect(button).toHaveTextContent(`${badge}Asha Rao${caption}`);
+    expect(accountButton()).toHaveTextContent(`${badge}Asha Rao${caption}`);
   });
 
-  it("signs out when pressed, and the public page follows the sign-out", async () => {
+  it("pressing it signs nobody out: it opens the menu", async () => {
     openPortal({ name: "Asha Rao" });
     await screen.findByText("Welcome back, Asha Rao.");
-    fireEvent.click(screen.getByTitle("Sign out"));
+    fireEvent.click(accountButton());
+    expect(fake.auth("signOut").count).toBe(0);
+    expect(screen.getByRole("menu", { name: "Account" })).toBeInTheDocument();
+  });
+
+  it("signs out from the menu, and the public page follows the sign-out", async () => {
+    openPortal({ name: "Asha Rao" });
+    await screen.findByText("Welcome back, Asha Rao.");
+    signOutFromMenu();
     expect(fake.auth("signOut").count).toBe(1);
     await act(async () => { fake.emitAuth("SIGNED_OUT", null); });
     expect(await screen.findByText("Member sign in →")).toBeInTheDocument();
@@ -231,7 +216,7 @@ describe("the account button", () => {
     fake.auth("signOut").reply(reply);
     openPortal({ name: "Asha Rao" });
     await screen.findByText("Welcome back, Asha Rao.");
-    fireEvent.click(screen.getByTitle("Sign out"));
+    signOutFromMenu();
     await flush();
     expect(fake.auth("signOut").count).toBe(1);
     expect(toast()).toBeNull();

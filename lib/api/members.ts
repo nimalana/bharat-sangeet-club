@@ -28,6 +28,11 @@ export async function getMemberDirectory(): Promise<MemberDirectory> {
   return { members: (must(memberResult) || []) as MemberProfile[], groups: (must(groupResult) || []) as Subgroup[], memberships: (must(membershipResult) || []) as SubgroupMembership[] };
 }
 
+/** The signed-in member's own profile row (the contact form and the "Complete your profile" step start from it); null when no row answers. */
+export async function getOwnProfile(memberId: string): Promise<MemberProfile | null> {
+  return (must(await client().from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("id", memberId).maybeSingle()) as MemberProfile | null) ?? null;
+}
+
 /** Saves the signed-in member's own contact details (the database lets a member change only these columns of their own row). */
 export async function updateOwnContact(memberId: string, fields: { fullName: string; phone: string; classYear: string; specialty: string }): Promise<void> {
   must(await client().from("profiles").update({ full_name: fields.fullName, phone: fields.phone, class_year: fields.classYear, specialty: fields.specialty }).eq("id", memberId));

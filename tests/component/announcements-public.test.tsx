@@ -7,7 +7,7 @@
 //  - the editor: what it sends for a new and for an edited announcement, the wait, the toast, what the parent is told, and the
 //    failure shown in the dialog (a database sentence, and the sentence for an update that changed nothing)
 //  - the feed: the empty state, the pinned mark, the controls only for a person who manages
-//  - the login screen: the Google sign-in request and its redirect, the name a new member must give, the error shown
+//  - the login screen: the Google sign-in request and its redirect (no name is asked for or kept: the shell asks after sign-in), the error shown
 //  - the public site: the browser's own read of the concerts when the server could not make it, and the Watch link
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -15,7 +15,6 @@ import { AnnouncementEditor } from "../../features/announcements/components/anno
 import { AnnouncementFeed } from "../../features/announcements/components/announcement-feed";
 import { ClubDashboard } from "../../features/dashboard/components/club-dashboard";
 import { LoginScreen } from "../../features/public/components/login-screen";
-import { pendingSignupNameKey } from "../../features/public/constants";
 import { PublicSite } from "../../features/public/components/public-site";
 import type { PublicConcert } from "../../lib/public-concerts";
 import { notifySpy, userOf } from "../support/helpers";
@@ -229,38 +228,29 @@ describe("the login screen", () => {
     await waitFor(() => expect(fake.auth("signInWithOAuth").count).toBe(1));
     expect(fake.auth("signInWithOAuth").calls[0].payload).toEqual({ provider: "google", options: { redirectTo: window.location.origin } });
     expect(screen.getByRole("button", { name: /Opening Google…/ })).toBeDisabled();
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBeNull();
     await act(async () => { slow.resolve(ok(null)); });
   });
 
-  it("joining needs a name first, and keeps it for after the redirect", async () => {
+  // Phase 3.2 (P3-06): the form no longer asks for a name or keeps one across the redirect; the shell asks after sign-in ("Complete your profile").
+  it("joining asks for no name: there is no field, one press goes to Google, and nothing is kept in the tab's storage", async () => {
     fake.auth("signInWithOAuth").reply(ok(null));
     render(<LoginScreen onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Join the club" }));
-    start();
-    expect(screen.getByRole("alert")).toHaveTextContent("Please enter the name you would like the club to call you.");
-    expect(fake.auth("signInWithOAuth").count).toBe(0);
-    fireEvent.change(screen.getByLabelText(/Preferred name/), { target: { value: "  Asha  " } });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Preferred name/)).not.toBeInTheDocument();
     start();
     await waitFor(() => expect(fake.auth("signInWithOAuth").count).toBe(1));
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBe("Asha");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
+    expect(window.localStorage.length).toBe(0);
   });
 
-  it("going back to signing in forgets a name kept for joining", () => {
-    window.sessionStorage.setItem(pendingSignupNameKey, "Asha");
-    render(<LoginScreen onBack={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Member sign in" }));
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBeNull();
-  });
-
-  it("an error from Google's sign-in is shown, the kept name is dropped and the button works again", async () => {
+  it("an error from Google's sign-in is shown and the button works again", async () => {
     fake.auth("signInWithOAuth").reply(fail("Unsupported provider: provider is not enabled"));
     render(<LoginScreen onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Join the club" }));
-    fireEvent.change(screen.getByLabelText(/Preferred name/), { target: { value: "Asha" } });
     start();
     expect(await screen.findByRole("alert")).toHaveTextContent("Unsupported provider: provider is not enabled");
-    expect(window.sessionStorage.getItem(pendingSignupNameKey)).toBeNull();
     expect(screen.getByRole("button", { name: /Sign up with Google/ })).toBeEnabled();
   });
 
@@ -305,16 +295,23 @@ describe("the public site", () => {
     expect(call.uses("order")).toEqual([["event_date", { ascending: false }]]);
   });
 
-  it("a read that fails is an empty archive, not an error on the page", async () => {
-    fake.from("archive_items", "select").reply(fail("canceling statement due to statement timeout"));
+  // Phase 3.1: a read that failed used to be shown as "Concert archive coming soon" (an empty archive); it says what happened, with Try again.
+  it("a read that fails is said, with Try again, and is not an empty archive; Try again reads once more", async () => {
+    fake.from("archive_items", "select").replyOnce(fail("canceling statement due to statement timeout")).reply(ok([row(1, "Spring Concert")]));
     render(<PublicSite onSignIn={vi.fn()} initialRecordings={null} />);
-    expect(await screen.findByText("Concert archive coming soon")).toBeInTheDocument();
+    const alert = await screen.findByText("The concert recordings could not be loaded.", { selector: "[role=alert]" });
+    expect(screen.queryByText("Concert archive coming soon")).not.toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Spring Concert")).toBeInTheDocument();
+    expect(screen.queryByText("The concert recordings could not be loaded.")).not.toBeInTheDocument();
+    expect(fake.from("archive_items", "select").count).toBe(2);
   });
 
-  it("a read that cannot even be sent is an empty archive too", async () => {
+  it("a read that cannot even be sent is the same", async () => {
     fake.from("archive_items", "select").reply(rejects());
     render(<PublicSite onSignIn={vi.fn()} initialRecordings={null} />);
-    expect(await screen.findByText("Concert archive coming soon")).toBeInTheDocument();
+    expect(await screen.findByText("The concert recordings could not be loaded.", { selector: "[role=alert]" })).toBeInTheDocument();
+    expect(screen.queryByText("Concert archive coming soon")).not.toBeInTheDocument();
   });
 
   it("the list the server handed over is not read again", async () => {
@@ -324,15 +321,49 @@ describe("the public site", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("Watch signs the file for ten minutes from club-archive and opens it in a new tab; a file that cannot be signed does nothing", async () => {
+  it("Watch signs the file for ten minutes from club-archive and opens it in a new tab", async () => {
     render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert")]} />);
     fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
     await waitFor(() => expect(window.open).toHaveBeenCalledWith("https://files.test/club-archive/public/4.mp4?signed", "_blank", "noopener,noreferrer"));
     expect(fake.storage("club-archive", "createSignedUrl").calls[0].args).toEqual(["public/4.mp4", 600]);
-    vi.mocked(window.open).mockClear();
-    fake.storage("club-archive", "createSignedUrl").reply(fail("Object not found"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // Phase 3.1: a file that could not be signed did nothing at all; it now says so next to its button.
+  it("a file that cannot be signed says so next to its button (an alert), opens nothing, and the button works again", async () => {
+    fake.storage("club-archive", "createSignedUrl").replyOnce(fail("Object not found"));
+    render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert")]} />);
     fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
-    await waitFor(() => expect(fake.storage("club-archive", "createSignedUrl").count).toBe(2));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This recording could not be opened. Try again.");
     expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
+    await waitFor(() => expect(window.open).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("a signing that throws says so too, and does not leave an unhandled error", async () => {
+    fake.storage("club-archive", "createSignedUrl").replyOnce(rejects(new Error("network down")));
+    render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert")]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This recording could not be opened. Try again.");
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("pressing Watch again while the file is being signed does nothing: one request, one tab, and the buttons say Opening…", async () => {
+    const slow = deferred();
+    fake.storage("club-archive", "createSignedUrl").reply(slow.reply);
+    render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert"), concert(5, "Autumn Concert")]} />);
+    const [first, second] = screen.getAllByRole("button", { name: /Watch or listen/ });
+    fireEvent.click(first);
+    fireEvent.click(first);
+    fireEvent.click(second);
+    await waitFor(() => expect(fake.storage("club-archive", "createSignedUrl").count).toBe(1));
+    expect(first).toHaveTextContent("Opening…");
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+    await act(async () => { slow.resolve(ok({ signedUrl: "https://files.test/x" })); });
+    await waitFor(() => expect(window.open).toHaveBeenCalledTimes(1));
+    expect(fake.storage("club-archive", "createSignedUrl").count).toBe(1);
+    await waitFor(() => expect(first).toBeEnabled());
   });
 });

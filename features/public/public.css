@@ -8,7 +8,7 @@
 .hero-image img{ width:100%; height:100%; object-fit:cover; display:block; filter:saturate(.76) contrast(.97); }
 .image-caption { position:absolute; z-index:2; bottom:32px; left:35px; color:white; border-left:2px solid #d5a766; padding-left:14px; }
 .image-caption span,.image-caption b { display:block; }
-.image-caption span { font-size:10px; letter-spacing:.15em; text-transform:uppercase; }
+.image-caption span { font-size:12px; letter-spacing:.15em; text-transform:uppercase; }
 .image-caption b { font-family:Georgia,serif; font-size:20px; margin-top:5px; }
 @media (max-width:900px){
 .hero-image{min-height:420px}
@@ -29,7 +29,7 @@
 .login-box h2{font:400 40px/1.1 Georgia,serif;margin-bottom:18px}
 .login-box>p:not(.eyebrow){font:15px/1.7 Georgia,serif;color:#6f665f}
 .login-box form{margin:32px 0 20px}
-.login-box label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.login-box label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
 .login-box input{width:100%;min-height:50px;margin:8px 0 14px;padding:0 14px;border:1px solid var(--line);background:white;text-transform:none;letter-spacing:0}
 .login-box .primary{width:100%}
 .google-button{width:100%;min-height:52px;margin:32px 0 18px;border:1px solid #cfc8be;border-radius:2px;background:#fff;color:#302b27;display:flex;align-items:center;justify-content:center;gap:13px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 3px 12px rgba(40,30,24,.06)}
@@ -37,9 +37,6 @@
 .google-button:disabled{opacity:.58;cursor:wait}
 .google-button span{width:25px;height:25px;border:1px solid #d9d4cc;border-radius:50%;display:grid;place-items:center;color:#4285f4;font-weight:800;background:white}
 .login-error{margin:0 0 16px!important;padding:11px 13px;border-left:3px solid var(--maroon);background:#f6e9e9;color:#7c2633!important;font:12px/1.5 sans-serif!important}
-.signup-name{display:block;margin-top:25px;color:#405365}
-.signup-name input{margin-bottom:0}
-.signup-name+.google-button{margin-top:20px}
 @media (max-width:900px){
 .login-page{grid-template-columns:1fr}
 .login-art{min-height:42vh}
@@ -101,7 +98,7 @@
 .public-header nav a:hover{border-color:var(--maroon);color:var(--maroon)}
 .public-hero{position:relative;min-height:680px;display:grid;grid-template-columns:minmax(0,1.12fr) minmax(420px,.88fr);border-bottom:1px solid var(--ink);background-image:repeating-linear-gradient(90deg,transparent 0,transparent 95px,rgba(23,37,47,.045) 96px)}
 .public-hero>div:first-child{position:relative;padding:clamp(72px,9vw,132px) clamp(30px,7vw,110px)}
-.public-season,.login-context{display:block;margin-bottom:30px;color:#1f6593;font-size:10px;font-weight:750;letter-spacing:.15em}
+.public-season,.login-context{display:block;margin-bottom:30px;color:#1f6593;font-size:12px;font-weight:750;letter-spacing:.15em}
 .public-hero h1{max-width:850px;margin:0 0 25px;font:600 clamp(58px,7vw,104px)/.86 var(--display);letter-spacing:-.025em;text-transform:uppercase;text-wrap:balance}
 .public-hero h1 em{color:#1f6593;font-style:normal}
 .public-hero .lede{max-width:66ch;color:#46565f;font:400 16px/1.72 var(--ui)}
@@ -114,7 +111,7 @@
 .public-recording-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--ink)}
 .public-recording-grid article:last-child{border-right:0!important}
 .public-recording-grid h3{font:600 28px/1 var(--display);text-transform:uppercase}
-.recording-kind{color:#1f6593;font-size:9px;font-weight:750;letter-spacing:.13em;text-transform:uppercase}
+.recording-kind{color:#1f6593;font-size:12px;font-weight:750;letter-spacing:.13em;text-transform:uppercase}
 .public-join{padding:100px 30px;border-top:1px solid var(--ink);background:var(--ink);color:#fff;text-align:center}
 .public-join h2{margin:0 0 14px;font:600 clamp(46px,6vw,82px)/.9 var(--display);text-transform:uppercase}
 .public-join p{max-width:60ch;margin:0 auto 28px;color:#dcecf7;font-size:15px}
@@ -139,14 +136,26 @@
 @media (max-width:520px){
 .public-header{padding-inline:14px}
 .public-header .brand>span:last-child small{display:none}
-.public-header .primary.small{padding-inline:11px;font-size:10px}
+.public-header .primary.small{padding-inline:11px;font-size:12px}
 .public-hero h1{font-size:54px}
 .public-hero .hero-image{min-height:320px}
 }
 .login-panel{position:relative}
-.login-back{position:absolute;top:30px;left:36px;border:0;border-bottom:1px solid transparent;background:transparent;padding:8px 0;color:#526a7a;font-size:11px;font-weight:700;cursor:pointer}
+.login-back{position:absolute;top:30px;left:36px;border:0;border-bottom:1px solid transparent;background:transparent;padding:8px 0;color:#526a7a;font-size:12px;font-weight:700;cursor:pointer}
 .login-back:hover{border-bottom-color:var(--carolina);color:var(--maroon)}
 @media (max-width:760px){
 .login-back{top:18px;left:20px}
 .login-panel{padding-top:80px}
 }
+/* Touch layout: every button and link of the public pages and the sign-in screen is at least 44px (Phase 3.4). */
+@media (max-width:700px){
+.public-header .brand,.public-header .primary.small{min-height:44px}
+.login-back{min-height:44px;display:inline-flex;align-items:center}
+.auth-tabs button{min-height:44px}
+}
+/* The small print under the Google button: styles/late.css sets it to #817870 (4.3:1 on white); this is a step more specific and reads 5.6:1. */
+.login-panel .login-box small{color:#6f665f}
+/* A recording that could not be opened says so under its button. */
+.public-recording-error{margin:10px 0 0!important;color:#8b2832;font-size:13px}
+/* F3: while the browser holds a saved sign-in and has not yet said whether it is still good (features/shell/saved-session.ts), the prerendered landing page is not shown to somebody who is about to see the portal. */
+html[data-saved-session] .public-site{visibility:hidden}

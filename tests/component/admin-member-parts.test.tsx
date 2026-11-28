@@ -193,16 +193,19 @@ describe("ContactDialog", () => {
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
   });
 
-  it("submit calls back; the × and a press on the backdrop close it, a press in the form does not", () => {
+  // Phase 3.4: the dialog is the portal's Dialog: Close is named, Escape closes it, and a click beside it does not (a stray click would lose what was typed).
+  it("submit calls back; Close and Escape close it, a click in the form or beside it does not", () => {
     const onClose = vi.fn();
     const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
     render(<ContactDialog {...props({ onClose, onSubmit })} />);
     fireEvent.submit(screen.getByRole("heading", { name: "Contact information" }).closest("form")!);
     expect(onSubmit).toHaveBeenCalledTimes(1);
     fireEvent.mouseDown(screen.getByLabelText("Phone number"));
+    fireEvent.click(document.querySelector('[role="presentation"]') as HTMLElement);
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.mouseDown(document.querySelector(".modal-backdrop") as HTMLElement);
-    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

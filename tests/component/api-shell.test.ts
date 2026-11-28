@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSessionUser, hasSavedSession, isSupabaseConfigured, onAuthChange, signOut } from "../../lib/api/auth";
 import { createEvent, deleteEvent, updateEvent, upcomingEventsQuery } from "../../lib/api/events";
-import { getPortalBootstrap, loadPortalLists, loadWorkspaceLists, updateOwnFullName } from "../../lib/api/portal";
+import { getPortalBootstrap, loadPortalLists, loadWorkspaceLists } from "../../lib/api/portal";
 import { ApiError } from "../../lib/errors";
 import { fail, fake, ok, rejects, withCount } from "../support/fake-supabase";
 
@@ -149,15 +149,6 @@ describe("lib/api/portal", () => {
     expect(chainOf(fake.calls[1])).toEqual([["select", "subgroup_id,member_id,status,membership_role"], ["eq", "member_id", "u-me"]]);
     expect(lists.groups.error).toBeNull();
     expect(lists.memberships.error).toBeNull();
-  });
-
-  it("updateOwnFullName writes only the name, on the person's own row, and returns the answer", async () => {
-    fake.from("profiles", "update").reply(fail("denied"));
-    const answer = await updateOwnFullName("u-me", "Asha R.");
-    const [call] = fake.from("profiles", "update").calls;
-    expect(call.payload).toEqual({ full_name: "Asha R." });
-    expect(chainOf(call)).toEqual([["update", { full_name: "Asha R." }], ["eq", "id", "u-me"]]);
-    expect(answer.error).toMatchObject({ message: "denied" });
   });
 });
 

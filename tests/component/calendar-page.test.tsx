@@ -2,6 +2,7 @@
 // matchesScope / eventsInScope (model.ts), CalendarPage, CalendarView, useCalendarPage and CalendarDialogs.
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { ConfirmProvider } from "../../components/ui/confirm";
 import { ToastProvider, ToastViewport } from "../../components/ui/toast";
 import { CalendarDialogs } from "../../features/calendar/components/calendar-dialogs";
 import { CalendarPage } from "../../features/calendar/components/calendar-page";
@@ -9,7 +10,7 @@ import { CalendarView } from "../../features/calendar/components/calendar-view";
 import { useCalendarPage } from "../../features/calendar/hooks/use-calendar-page";
 import { eventsInScope, matchesScope, scopeName } from "../../features/calendar/model";
 import type { ClubEvent, Subgroup } from "../../lib/db";
-import { fail, fake, ok } from "../support/fake-supabase";
+import { deferred, fail, fake, ok } from "../support/fake-supabase";
 import { userOf } from "../support/helpers";
 import type { ReactNode } from "react";
 
@@ -95,18 +96,19 @@ describe("CalendarPage", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Edit Vocal class" })[0]);
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 2, title: "Vocal class" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Delete Vocal class" })[0]);
-    expect(onDelete).toHaveBeenCalledWith(2);
+    expect(onDelete).toHaveBeenCalledWith(2, "Vocal class");
   });
 
-  it("shows a loading line instead of the month while it is loading, and keeps the title and the filter", () => {
+  it("shows a placeholder instead of the month while it is loading (announced as Loading the calendar), and keeps the title and the filter", () => {
     const { rerender } = render(<CalendarPage {...props({ loading: true, canManage: true })} />);
-    expect(screen.getByText("Loading the archive…")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the calendar");
+    expect(document.querySelector(".calendar-skeleton .skeleton")).not.toBeNull();
     expect(document.querySelector(".month-calendar")).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: "Important dates" })).toBeInTheDocument();
     expect(screen.getByLabelText("Filter by audience")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "＋ Add important date" })).toBeInTheDocument();
     rerender(<CalendarPage {...props()} />);
-    expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading the calendar")).not.toBeInTheDocument();
     expect(document.querySelector(".month-calendar")).not.toBeNull();
   });
 });
@@ -116,16 +118,18 @@ describe("CalendarView", () => {
   const view = (events: ClubEvent[] = [], extra: Partial<Parameters<typeof CalendarView>[0]> = {}) =>
     render(<CalendarView events={events} groups={[vocal]} canManage={false} onEdit={vi.fn()} onDelete={vi.fn()} {...extra} />);
 
-  it("opens on this month, and the arrows and Today move between months", () => {
+  // The month is the address now (?month=, calendar-detail.test.tsx), which the page writes a moment after the press: the heading follows it.
+  it("opens on this month, and the arrows and Today move between months", async () => {
     view();
     expect(screen.getByRole("heading", { level: 2, name: monthName(now) })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
-    expect(screen.getByRole("heading", { level: 2, name: monthName(new Date(now.getFullYear(), now.getMonth() + 1, 1)) })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: monthName(new Date(now.getFullYear(), now.getMonth() + 1, 1)) })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(await screen.findByRole("heading", { level: 2, name: monthName(now) })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
-    expect(screen.getByRole("heading", { level: 2, name: monthName(new Date(now.getFullYear(), now.getMonth() - 1, 1)) })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: monthName(new Date(now.getFullYear(), now.getMonth() - 1, 1)) })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Today" }));
-    expect(screen.getByRole("heading", { level: 2, name: monthName(now) })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: monthName(now) })).toBeInTheDocument();
   });
 
   it("draws six weeks of days, and puts a date in its day and in the agenda of the month", () => {
@@ -152,11 +156,11 @@ describe("CalendarView", () => {
     expect(screen.getAllByText("No dates in this view.")).toHaveLength(2);
   });
 
-  it("says so in the agenda only, when other months have dates but the one shown has none", () => {
+  it("says so in the agenda only, when other months have dates but the one shown has none", async () => {
     view([event(1, "Rehearsal")]);
     expect(screen.queryByText("No dates in this view.")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
-    expect(screen.getAllByText("No dates in this view.")).toHaveLength(1);
+    expect(await screen.findAllByText("No dates in this view.")).toHaveLength(1);
     expect(document.querySelector(".calendar-agenda")).toHaveTextContent("No dates in this view.");
     // The grid still has its six weeks.
     expect(document.querySelectorAll(".calendar-grid .calendar-cell")).toHaveLength(42);
@@ -170,7 +174,7 @@ describe("CalendarView", () => {
 });
 
 describe("useCalendarPage", () => {
-  const wrapper = ({ children }: { children: ReactNode }) => <ToastProvider>{children}<ToastViewport /></ToastProvider>;
+  const wrapper = ({ children }: { children: ReactNode }) => <ToastProvider><ConfirmProvider>{children}</ConfirmProvider><ToastViewport /></ToastProvider>;
   const toast = () => document.querySelector(".toast") as HTMLElement | null;
 
   it("starts with every audience, the forms closed", () => {
@@ -184,35 +188,81 @@ describe("useCalendarPage", () => {
     expect(result.current).toMatchObject({ scope: 7, adding: true, editing: { id: 5 } });
   });
 
-  it("remove: asks first, and does nothing when the person says no", async () => {
+  // Phase 3.4: the question is the shared confirmation dialog (window.confirm was the only one in the portal), and says which date.
+  it("remove: asks first, naming the date, and does nothing when the person says no (Cancel, or Escape)", async () => {
     const onChanged = vi.fn();
-    vi.mocked(window.confirm).mockReturnValueOnce(false);
     const { result } = renderHook(() => useCalendarPage({ onChanged }), { wrapper });
-    await act(async () => { await result.current.remove(3); });
-    expect(window.confirm).toHaveBeenCalledWith("Remove this date from the calendar?");
+    let answer!: Promise<boolean>;
+    act(() => { answer = result.current.remove(3, "Diwali concert"); });
+    const question = await screen.findByRole("dialog", { name: "Remove this date from the calendar?" });
+    expect(question).toHaveTextContent("\"Diwali concert\" disappears from the calendar for everyone. Nothing else is changed.");
+    // Destructive: Remove date is the danger button, and Enter on the opening focus (Cancel) never removes by accident.
+    expect(within(question).getByRole("button", { name: "Remove date" }).className).toMatch(/8b2832/);
+    expect(within(question).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+    expect(await answer).toBe(false);
+    act(() => { answer = result.current.remove(3); });
+    await screen.findByRole("dialog", { name: "Remove this date from the calendar?" });
+    expect(screen.getByRole("dialog")).toHaveTextContent("It disappears from the calendar for everyone.");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(await answer).toBe(false);
+    expect(window.confirm).not.toHaveBeenCalled();
     expect(fake.calls).toHaveLength(0);
     expect(onChanged).not.toHaveBeenCalled();
     expect(toast()).toBeNull();
   });
 
-  it("remove: deletes that row, says so, and asks the shell to read the lists again", async () => {
+  it("remove: deletes that row, says so, asks the shell to read the lists again, and answers true", async () => {
     fake.from("events", "delete").reply(ok(null));
     const onChanged = vi.fn();
     const { result } = renderHook(() => useCalendarPage({ onChanged }), { wrapper });
-    await act(async () => { await result.current.remove(3); });
+    let answer!: Promise<boolean>;
+    act(() => { answer = result.current.remove(3, "Diwali concert"); });
+    fireEvent.click(await screen.findByRole("button", { name: "Remove date" }));
+    expect(await answer).toBe(true);
     expect(fake.from("events", "delete").calls[0].used("eq", "id", 3)).toBe(true);
-    expect(toast()).toHaveTextContent("Calendar date removed");
+    await waitFor(() => expect(toast()).toHaveTextContent("Calendar date removed"));
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("remove: a failure shows the database's own sentence as an error and reads nothing again", async () => {
+  it("remove: a failure shows the database's own sentence as an error, reads nothing again and answers false", async () => {
     fake.from("events", "delete").reply(fail("Only executives can remove dates"));
     const onChanged = vi.fn();
     const { result } = renderHook(() => useCalendarPage({ onChanged }), { wrapper });
-    await act(async () => { await result.current.remove(3); });
-    expect(toast()).toHaveTextContent("Only executives can remove dates");
+    let answer!: Promise<boolean>;
+    act(() => { answer = result.current.remove(3); });
+    fireEvent.click(await screen.findByRole("button", { name: "Remove date" }));
+    expect(await answer).toBe(false);
+    await waitFor(() => expect(toast()).toHaveTextContent("Only executives can remove dates"));
     expect(toast()).toHaveClass("error");
     expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it("remove: a raw database sentence is not shown, the one the screen wrote is", async () => {
+    fake.from("events", "delete").reply(fail('update or delete on table "events" violates foreign key constraint', "23503"));
+    const { result } = renderHook(() => useCalendarPage({ onChanged: vi.fn() }), { wrapper });
+    act(() => { void result.current.remove(3); });
+    fireEvent.click(await screen.findByRole("button", { name: "Remove date" }));
+    await waitFor(() => expect(toast()).toHaveClass("error"));
+    expect(toast()?.textContent).not.toMatch(/foreign key|violates/);
+  });
+
+  it("remove: pressed again while the first is asking or running, it does nothing: one question, one request", async () => {
+    const slow = deferred();
+    fake.from("events", "delete").reply(slow.reply);
+    const { result } = renderHook(() => useCalendarPage({ onChanged: vi.fn() }), { wrapper });
+    let first!: Promise<boolean>; let second!: Promise<boolean>; let third!: Promise<boolean>;
+    act(() => { first = result.current.remove(3); second = result.current.remove(3); });
+    expect(await second).toBe(false);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove date" }));
+    await waitFor(() => expect(fake.from("events", "delete").calls).toHaveLength(1));
+    act(() => { third = result.current.remove(3); });
+    expect(await third).toBe(false);
+    await act(async () => { slow.resolve(ok(null)); });
+    expect(await first).toBe(true);
+    expect(fake.from("events", "delete").calls).toHaveLength(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 

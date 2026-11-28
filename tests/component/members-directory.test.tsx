@@ -13,16 +13,18 @@ const profileReads = () => fake.from("profiles", "select");
 const toasts = () => Array.from(document.querySelectorAll(".toast")).map((node) => node.textContent);
 
 describe("the member directory", () => {
-  it("shows the loading line until the first read has answered, then the members", async () => {
+  // Phase 3.1: the loading line ("Loading the archive…", a wrong word for the roster) is a placeholder of the page, announced as Loading the members.
+  it("shows a placeholder of the page (announced as Loading the members) until the first read has answered, then the members", async () => {
     const slow = deferred();
     profileReads().reply(slow.reply);
     openPortal({ page: "members" });
-    const line = await screen.findByText("Loading the archive…");
-    expect(line.className).toBe("inline-loading");
+    expect(await screen.findByText("Loading the members")).toHaveAttribute("role", "status");
+    expect(document.querySelectorAll(".member-grid .member-skeleton")).toHaveLength(6);
     expect(screen.queryByRole("heading", { level: 1, name: "Member roster" })).not.toBeInTheDocument();
     await act(async () => { slow.resolve(ok([member("u-me", "Asha Rao"), member("u-2", "Bala Menon")])); });
     expect(await screen.findByText("Bala Menon")).toBeInTheDocument();
-    expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading the members")).not.toBeInTheDocument();
+    expect(document.querySelector(".member-skeleton")).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: "Member roster" })).toBeInTheDocument();
   });
 
@@ -39,7 +41,7 @@ describe("the member directory", () => {
     expect(fake.from("subgroup_memberships", "select").calls[0].used("limit", 5000)).toBe(true);
   });
 
-  it("on a second visit shows the last directory at once, with no loading line, and replaces it when the new read arrives", async () => {
+  it("on a second visit shows the last directory at once, with no placeholder, and replaces it when the new read arrives", async () => {
     const second = deferred();
     profileReads().replyOnce(ok([member("u-me", "Asha Rao"), member("u-2", "Bala Menon")])).replyOnce(second.reply);
     openPortal({ page: "members" });
@@ -48,18 +50,18 @@ describe("the member directory", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Important dates" })).toBeInTheDocument();
     nav("Members");
     expect(screen.getByText("Bala Menon")).toBeInTheDocument();
-    expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading the members")).not.toBeInTheDocument();
     await waitFor(() => expect(profileReads().count).toBe(2));
     await act(async () => { second.resolve(ok([member("u-me", "Asha Rao"), member("u-5", "Newest Member")])); });
     expect(await screen.findByText("Newest Member")).toBeInTheDocument();
     expect(screen.queryByText("Bala Menon")).not.toBeInTheDocument();
   });
 
-  it("a first read that fails shows the banner with Try again and no members, no empty-list message, and an error toast", async () => {
+  it("a first read that fails shows the error with Try again (an alert) and no members, no empty-list message, and an error toast", async () => {
     profileReads().replyOnce(fail("boom")).reply(ok([member("u-me", "Asha Rao"), member("u-2", "Bala Menon")]));
     openPortal({ page: "members" });
     expect(await screen.findByText("The member directory could not be loaded.")).toBeInTheDocument();
-    expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading the members")).not.toBeInTheDocument();
     expect(screen.queryByText("No members found")).not.toBeInTheDocument();
     const toast = await screen.findByText(/The member directory could not be loaded$/, { selector: ".toast" });
     expect(toast).toHaveAttribute("role", "alert");
@@ -103,7 +105,7 @@ describe("the member directory", () => {
     await screen.findByRole("heading", { level: 1, name: "Important dates" });
     nav("Members");
     expect(screen.getByText("Bala Menon")).toBeInTheDocument();
-    expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading the members")).not.toBeInTheDocument();
   });
 
   it("saving the contact form reads the directory again once, and the new read replaces what is shown", async () => {

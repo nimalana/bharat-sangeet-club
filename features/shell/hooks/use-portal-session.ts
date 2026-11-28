@@ -2,13 +2,11 @@
 
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
-import { useToast } from "../../../components/ui/toast";
 import { isSupabaseConfigured, signOut } from "../../../lib/api/auth";
-import { getPortalBootstrap, updateOwnFullName } from "../../../lib/api/portal";
+import { getPortalBootstrap } from "../../../lib/api/portal";
 import { runBootstrap, type ShellState } from "../../../lib/bootstrap";
 import { setCacheOwner } from "../../../lib/cache";
 import type { ClubRole, AccountStatus } from "../../../lib/db";
-import { pendingSignupNameKey } from "../../public/constants";
 import { useAuthSession } from "./use-auth-session";
 import type { PortalData, PortalLists } from "./use-portal-data";
 
@@ -26,7 +24,6 @@ type PortalBootstrap = PortalLists & { profile: { full_name: string; role: ClubR
  * every token refresh (useAuthSession keeps the same user object while the id is the same).
  */
 export function usePortalSession(data: PortalData) {
-  const { notify } = useToast();
   const { savedSession, authLoading, user } = useAuthSession();
   const [role, setRole] = useState<ClubRole>("member");
   const [shellState, setShellState] = useState<ShellState>("loading");
@@ -48,16 +45,7 @@ export function usePortalSession(data: PortalData) {
     setName(boot.profile.full_name || currentUser.email?.split("@")[0] || "Club member");
     setPendingSignups(typeof boot.pending_signups === "number" ? boot.pending_signups : 0);
     setShellState("ready");
-    const pendingSignupName = window.sessionStorage.getItem(pendingSignupNameKey)?.trim();
-    if (pendingSignupName) {
-      const { error: updateError } = await updateOwnFullName(currentUser.id, pendingSignupName);
-      if (updateError) notify("Your account was created, but your preferred name could not be saved");
-      else {
-        window.sessionStorage.removeItem(pendingSignupNameKey);
-        if (isActiveAccount(currentUser.id)) setName(pendingSignupName);
-      }
-    }
-  }, [notify, setDataLoading, isActiveAccount, adoptBootstrap]);
+  }, [setDataLoading, isActiveAccount, adoptBootstrap]);
 
   const resetShell = useCallback(() => {
     setRole("member"); setName(""); setPendingSignups(0); setShellState("loading"); clear();
@@ -84,5 +72,5 @@ export function usePortalSession(data: PortalData) {
   // A failed sign-out is silent, as it always was: the person is still signed in and presses it again.
   const signOutQuietly = useCallback(() => { if (isSupabaseConfigured()) void signOut().catch(() => {}); }, []);
 
-  return { savedSession, authLoading, user, shellState, role, name, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly };
+  return { savedSession, authLoading, user, shellState, role, name, setName, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly };
 }
