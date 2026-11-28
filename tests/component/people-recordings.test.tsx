@@ -36,7 +36,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordings/components/club-archive-manager";
 import { RecordingWorkspace } from "../../features/recordings/components/recording-workspace";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
-import { ResourceActions, type ManagedResource } from "../../components/resources/resource-actions";
+import { ResourceActions, type ManagedResource } from "../../features/resources/components/resource-actions";
 import { GroupPeople } from "../../features/groups/components/group-people";
 import { setCacheOwner } from "../../lib/cache";
 import { FILE_NOT_DELETED } from "../../lib/storage-remove";

@@ -32,7 +32,7 @@ import { MemberAccessActions } from "../../features/admin/components/member-acce
 import { AnnouncementActions } from "../../features/announcements/components/announcement-actions";
 import { ClubArchiveManager, type ClubArchiveItem } from "../../features/recordings/components/club-archive-manager";
 import { NoteActions, RecordingManageBar, type ManagedNote, type ManagedRecording } from "../../features/recordings/components/recording-manage";
-import { ResourceActions, type ManagedResource } from "../../components/resources/resource-actions";
+import { ResourceActions, type ManagedResource } from "../../features/resources/components/resource-actions";
 import { GroupPeople } from "../../features/groups/components/group-people";
 import { notifySpy, userOf } from "../support/helpers";
 import { fail, fake, ok } from "../support/fake-supabase";

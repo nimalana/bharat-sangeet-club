@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { Tables, TablesUpdate } from "../../lib/db";
-import { friendlyError } from "../../lib/errors";
-import { removeStoredFile } from "../../lib/storage";
-import { supabase } from "../../lib/supabase";
-import type { Notify } from "../../lib/toast";
-import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
-import { Dialog } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import type { Tables, TablesUpdate } from "../../../lib/db";
+import { friendlyError } from "../../../lib/errors";
+import { removeStoredFile } from "../../../lib/storage";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
+import { Button } from "../../../components/ui/button";
+import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
+import { Dialog } from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
 
 export type ManagedResource = Pick<Tables<"resources">, "id" | "node_kind" | "title" | "description" | "parent_id" | "visibility"
   | "storage_bucket" | "storage_path" | "external_url" | "status" | "is_pinned">;

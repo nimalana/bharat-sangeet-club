@@ -1,22 +1,22 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { ResourceActions } from "../components/resources/resource-actions";
+import { ResourceActions } from "./resource-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { clearCachePrefix, readCache, writeCache } from "../lib/cache";
-import type { ClubRole, Tables } from "../lib/db";
-import { formatDateOrNone } from "../lib/format";
-import { useDebounced } from "../lib/hooks/use-debounced";
-import { canManageGroupResources, isExecutive } from "../lib/permissions";
-import { keepRowsOnFailure } from "../lib/refresh";
-import { LoadErrorBanner } from "../components/ui/load-error";
+import { clearCachePrefix, readCache, writeCache } from "../../../lib/cache";
+import type { ClubRole, Tables } from "../../../lib/db";
+import { formatDateOrNone } from "../../../lib/format";
+import { useDebounced } from "../../../lib/hooks/use-debounced";
+import { canManageGroupResources, isExecutive } from "../../../lib/permissions";
+import { keepRowsOnFailure } from "../../../lib/refresh";
+import { LoadErrorBanner } from "../../../components/ui/load-error";
 import {
   RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS, applyListPlan, buildListPlan, chainFromKnown, crumbCacheKey, folderUrl, isFlatListing, listCacheKey,
   mergePage, orderForDisplay, parseFolderParam, resolveFolderChain, resolveSubtreeFolderIds, subtreeCacheKey, thumbnailCacheKey, thumbnailExpiry, thumbnailsToSign,
   type LibraryTab, type ScopeFilter, type SortKey, type ThumbnailEntry,
-} from "../lib/resources-query";
-import { supabase } from "../lib/supabase";
-import type { Notify } from "../lib/toast";
+} from "../../../lib/resources-query";
+import { supabase } from "../../../lib/supabase";
+import type { Notify } from "../../../lib/toast";
 import styles from "./resources.module.css";
 
 // A library row as RESOURCE_FIELDS reads it (every column but `metadata`), plus the signed link the screen attaches.

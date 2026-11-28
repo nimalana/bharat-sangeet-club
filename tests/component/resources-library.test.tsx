@@ -29,7 +29,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ResourceLibrary } from "../../app/resources";
+import { ResourceLibrary } from "../../features/resources/components/resource-library";
 import { setCacheOwner } from "../../lib/cache";
 import type { GroupRole, MembershipStatus } from "../../lib/db";
 import { RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS } from "../../lib/resources-query";
