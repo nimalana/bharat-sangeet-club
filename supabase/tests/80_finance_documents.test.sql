@@ -32,20 +32,19 @@ begin
   -- ---------------------------------------------------------------------
   perform test.login(v_member);
   select expense_id, reimbursement_id into e1, r1 from public.submit_member_reimbursement('Strings', 'Shop', 30, date '2026-11-04', 'Supplies', '1111');
-  -- Both rows below pass row level security for the member: nothing stops a request having no reimbursement link.
+  perform test.logout();
+  -- The rows below are written as the table owner (signed-in users register through register_finance_document, tested in
+  -- 81_finance_register.test.sql): a receipt linked to the expense only, without a reimbursement link, which the old policies allowed.
   insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by)
   values ('receipt', 'Receipt', v_member::text || '/receipt-a.pdf', 'application/pdf', 10, v_member) returning id into v_doc;
   insert into public.finance_expense_documents (expense_id, document_id) values (e1, v_doc);
-  perform test.logout();
 
   -- While it waits, the only receipt stays, and a replacement makes the first one removable.
   message := test.error_as(v_member, format('select public.remove_finance_document(%s)', v_doc));
   assert message like 'A submitted request needs a receipt%', 'only receipt, expense link only: ' || coalesce(message, 'no error');
-  perform test.login(v_member);
   insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by)
   values ('receipt', 'Receipt B', v_member::text || '/receipt-b.pdf', 'application/pdf', 10, v_member) returning id into v_doc2;
   insert into public.finance_expense_documents (expense_id, document_id) values (e1, v_doc2);
-  perform test.logout();
 
   -- Approved at 30 and paid: neither the member nor an executive can strip the receipt.
   perform test.login(v_exec2);
@@ -76,12 +75,12 @@ begin
 
   perform test.login(v_member);
   select expense_id, reimbursement_id into e2, r2 from public.submit_member_reimbursement('Picks', 'Shop', 12, date '2026-11-04', 'Supplies', '1111');
+  perform test.logout();
   insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by)
   values ('receipt', 'Picks receipt 1', v_member::text || '/picks-1.pdf', 'application/pdf', 10, v_member) returning id into v_doc;
   insert into public.finance_documents (document_type, title, storage_path, mime_type, file_size_bytes, uploaded_by)
   values ('receipt', 'Picks receipt 2', v_member::text || '/picks-2.pdf', 'application/pdf', 10, v_member) returning id into v_doc2;
   insert into public.finance_expense_documents (expense_id, document_id) values (e2, v_doc), (e2, v_doc2);
-  perform test.logout();
   -- Two receipts: a waiting request may drop one. Put the expense on a claim (an old direct write) and the member may not.
   perform test.login(v_exec);
   v_club := public.record_club_expense('Tabla', 'Shop', 100, date '2026-11-02', 'Instruments', 'Club bank account', '4242');
@@ -142,8 +141,9 @@ begin
     ('receipt', 'Registered by someone else under this path', v_squat, 'application/pdf', 10, v_other);
   -- Storage reads the object before it removes it. A member sees their own registered file and their own
   -- unregistered one, never somebody else's unregistered one; an executive sees the whole bucket.
-  -- (The squatted path is left out of these counts: whoever registers a path can read it, which plan item
-  -- P1-05 closes in Phase 4.)
+  -- (The squatted path is left out of these counts: a record naming another person's path makes that person's file readable
+  -- to the record's uploader. register_finance_document (P1-05) can no longer create such a record, so the row is written
+  -- here as the table owner; 81_finance_register.test.sql shows it refused.)
   assert test.count_as(v_member, format('select count(*) from storage.objects where bucket_id = ''finance-private'' and name = any (array[%L, %L])', v_pm1, v_pm2)) = 2, 'a member sees their registered and their unregistered file';
   assert test.count_as(v_member, format('select count(*) from storage.objects where bucket_id = ''finance-private'' and name = %L', v_po1)) = 0, 'a member does not see another member''s unregistered file';
   assert test.count_as(v_other, format('select count(*) from storage.objects where bucket_id = ''finance-private'' and name = any (array[%L, %L])', v_po1, v_pm2)) = 1, 'another member sees only their own unregistered file';
