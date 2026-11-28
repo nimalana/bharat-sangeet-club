@@ -5,6 +5,7 @@ import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
 import "./globals.css";
+import { SAVED_SESSION_SCRIPT } from "../features/shell/saved-session";
 
 export const metadata: Metadata = {
   title: "Bharat Sangeet at UNC Chapel Hill",
@@ -24,5 +25,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     FORM: Rhythmic Floor Plan, grounded direction 3, seed 3e1205aa.
     FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
   */
-  return <html lang="en"><body data-design-seed="3e1205aa">{children}</body></html>;
+  // The script in the head marks the page when this browser holds a saved sign-in, before the first paint, so that the prerendered landing page is not
+  // shown to somebody who is about to see the portal (features/shell/saved-session.ts). The attribute is set by the script, not by React, hence
+  // suppressHydrationWarning on <html>.
+  return <html lang="en" suppressHydrationWarning><head><script>{SAVED_SESSION_SCRIPT}</script></head><body data-design-seed="3e1205aa">{children}</body></html>;
 }

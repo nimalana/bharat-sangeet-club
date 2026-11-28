@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SectionBoundary } from "../../../components/ui/section-boundary";
 import { ToastViewport, useToast } from "../../../components/ui/toast";
 import { isSupabaseConfigured } from "../../../lib/api/auth";
+import { SAVED_SESSION_ATTRIBUTE } from "../saved-session";
 import { canManageClub } from "../../../lib/permissions";
 import type { PublicConcert } from "../../../lib/public-concerts";
 import { SECTION_LABELS, resolveSection } from "../../../lib/sections";
@@ -35,6 +36,9 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   const data = usePortalData();
   const { archive, events, announcements, groups, memberships, resourceCount, dataLoading, setResourceCount, loadData } = data;
   const { savedSession, authLoading, user, shellState, role, name, setName, pendingSignups, setPendingSignups, retry, loadWorkspaces, signOutQuietly } = usePortalSession(data);
+  // The page was hidden from the first paint if this browser holds a saved sign-in (saved-session.ts); once the session check has answered the
+  // shell draws what it is, and a person whose sign-in did not hold sees the landing.
+  useEffect(() => { if (!authLoading) document.documentElement.removeAttribute(SAVED_SESSION_ATTRIBUTE); }, [authLoading]);
   const nav = usePortalNavigation({ user, loadData });
   const { section, navigate } = nav;
   const calendar = useCalendarPage({ onChanged: loadData });

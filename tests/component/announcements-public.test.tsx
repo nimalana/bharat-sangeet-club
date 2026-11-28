@@ -295,16 +295,23 @@ describe("the public site", () => {
     expect(call.uses("order")).toEqual([["event_date", { ascending: false }]]);
   });
 
-  it("a read that fails is an empty archive, not an error on the page", async () => {
-    fake.from("archive_items", "select").reply(fail("canceling statement due to statement timeout"));
+  // Phase 3.1: a read that failed used to be shown as "Concert archive coming soon" (an empty archive); it says what happened, with Try again.
+  it("a read that fails is said, with Try again, and is not an empty archive; Try again reads once more", async () => {
+    fake.from("archive_items", "select").replyOnce(fail("canceling statement due to statement timeout")).reply(ok([row(1, "Spring Concert")]));
     render(<PublicSite onSignIn={vi.fn()} initialRecordings={null} />);
-    expect(await screen.findByText("Concert archive coming soon")).toBeInTheDocument();
+    const alert = await screen.findByText("The concert recordings could not be loaded.", { selector: "[role=alert]" });
+    expect(screen.queryByText("Concert archive coming soon")).not.toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Spring Concert")).toBeInTheDocument();
+    expect(screen.queryByText("The concert recordings could not be loaded.")).not.toBeInTheDocument();
+    expect(fake.from("archive_items", "select").count).toBe(2);
   });
 
-  it("a read that cannot even be sent is an empty archive too", async () => {
+  it("a read that cannot even be sent is the same", async () => {
     fake.from("archive_items", "select").reply(rejects());
     render(<PublicSite onSignIn={vi.fn()} initialRecordings={null} />);
-    expect(await screen.findByText("Concert archive coming soon")).toBeInTheDocument();
+    expect(await screen.findByText("The concert recordings could not be loaded.", { selector: "[role=alert]" })).toBeInTheDocument();
+    expect(screen.queryByText("Concert archive coming soon")).not.toBeInTheDocument();
   });
 
   it("the list the server handed over is not read again", async () => {
@@ -314,15 +321,49 @@ describe("the public site", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("Watch signs the file for ten minutes from club-archive and opens it in a new tab; a file that cannot be signed does nothing", async () => {
+  it("Watch signs the file for ten minutes from club-archive and opens it in a new tab", async () => {
     render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert")]} />);
     fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
     await waitFor(() => expect(window.open).toHaveBeenCalledWith("https://files.test/club-archive/public/4.mp4?signed", "_blank", "noopener,noreferrer"));
     expect(fake.storage("club-archive", "createSignedUrl").calls[0].args).toEqual(["public/4.mp4", 600]);
-    vi.mocked(window.open).mockClear();
-    fake.storage("club-archive", "createSignedUrl").reply(fail("Object not found"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // Phase 3.1: a file that could not be signed did nothing at all; it now says so next to its button.
+  it("a file that cannot be signed says so next to its button (an alert), opens nothing, and the button works again", async () => {
+    fake.storage("club-archive", "createSignedUrl").replyOnce(fail("Object not found"));
+    render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert")]} />);
     fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
-    await waitFor(() => expect(fake.storage("club-archive", "createSignedUrl").count).toBe(2));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This recording could not be opened. Try again.");
     expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
+    await waitFor(() => expect(window.open).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("a signing that throws says so too, and does not leave an unhandled error", async () => {
+    fake.storage("club-archive", "createSignedUrl").replyOnce(rejects(new Error("network down")));
+    render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert")]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Watch or listen/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This recording could not be opened. Try again.");
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("pressing Watch again while the file is being signed does nothing: one request, one tab, and the buttons say Opening…", async () => {
+    const slow = deferred();
+    fake.storage("club-archive", "createSignedUrl").reply(slow.reply);
+    render(<PublicSite onSignIn={vi.fn()} initialRecordings={[concert(4, "Spring Concert"), concert(5, "Autumn Concert")]} />);
+    const [first, second] = screen.getAllByRole("button", { name: /Watch or listen/ });
+    fireEvent.click(first);
+    fireEvent.click(first);
+    fireEvent.click(second);
+    await waitFor(() => expect(fake.storage("club-archive", "createSignedUrl").count).toBe(1));
+    expect(first).toHaveTextContent("Opening…");
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+    await act(async () => { slow.resolve(ok({ signedUrl: "https://files.test/x" })); });
+    await waitFor(() => expect(window.open).toHaveBeenCalledTimes(1));
+    expect(fake.storage("club-archive", "createSignedUrl").count).toBe(1);
+    await waitFor(() => expect(first).toBeEnabled());
   });
 });

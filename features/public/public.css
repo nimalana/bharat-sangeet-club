@@ -155,3 +155,7 @@
 }
 /* The small print under the Google button: styles/late.css sets it to #817870 (4.3:1 on white); this is a step more specific and reads 5.6:1. */
 .login-panel .login-box small{color:#6f665f}
+/* A recording that could not be opened says so under its button. */
+.public-recording-error{margin:10px 0 0!important;color:#8b2832;font-size:13px}
+/* F3: while the browser holds a saved sign-in and has not yet said whether it is still good (features/shell/saved-session.ts), the prerendered landing page is not shown to somebody who is about to see the portal. */
+html[data-saved-session] .public-site{visibility:hidden}
