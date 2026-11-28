@@ -4,16 +4,18 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../components/admin/member-access";
-import { readCache, setCacheOwner, writeCache } from "../lib/cache";
+import { setCacheOwner } from "../lib/cache";
 import { runBootstrap, type ShellState } from "../lib/bootstrap";
 import { friendlyError } from "../lib/errors";
 import { formatDate, initials } from "../lib/format";
 import { canManageClub, canPostToGroup } from "../lib/permissions";
 import type { ArchiveVisibility, ClubRole, EnrollmentMode, Tables, TablesInsert } from "../lib/db";
+import { must } from "../lib/api/_core";
+import { useQuery } from "../lib/hooks/use-query";
 import { removeStoredFile } from "../lib/storage";
 import type { Notify } from "../lib/toast";
 import type { PublicConcert } from "../lib/public-concerts";
-import { anyFailed, countOrKeep, listOrKeep } from "../lib/refresh";
+import { countOrKeep, listOrKeep } from "../lib/refresh";
 import { createRequestGate } from "../lib/request-gate";
 import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../lib/sections";
 import { supabase } from "../lib/supabase";
@@ -48,6 +50,7 @@ type ClubEvent = Pick<Tables<"events">, "id" | "title" | "description" | "starts
 type Announcement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "published_at" | "subgroup_id">;
 type Subgroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode" | "archived_at">;
 type SubgroupMembership = Pick<Tables<"subgroup_memberships">, "subgroup_id" | "member_id" | "status" | "membership_role">;
+type MemberDirectory = { members: MemberProfile[]; groups: Subgroup[]; memberships: SubgroupMembership[] };
 type AccountStatus = "active" | "deactivated"; // profiles.status is text with a CHECK constraint
 type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: AccountStatus } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
 type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: AccountStatus };
@@ -687,36 +690,32 @@ function CalendarView({ events, groups, canManage, onEdit, onDelete }: { events:
 }
 
 function MembersPage({ user, notify }: { user: User; notify: Notify }) {
-  // Reopening the directory shows the last data at once and refreshes behind it.
-  const [cached] = useState(() => readCache<{ members: MemberProfile[]; groups: Subgroup[]; memberships: SubgroupMembership[] }>(user.id, "members"));
-  const [members, setMembers] = useState<MemberProfile[]>(cached?.members || []);
-  const [groups, setGroups] = useState<Subgroup[]>(cached?.groups || []);
-  const [memberships, setMemberships] = useState<SubgroupMembership[]>(cached?.memberships || []);
+  // Reopening the directory shows the last data at once and refreshes behind it; a failed refresh keeps the directory already
+  // shown instead of emptying it (lib/hooks/use-query.ts).
+  const directory = useQuery<MemberDirectory>({
+    userId: user.id,
+    key: "members",
+    enabled: Boolean(supabase),
+    load: async () => {
+      const client = supabase;
+      if (!client) throw new Error("Supabase is not configured");
+      const [memberResult, groupResult, membershipResult] = await Promise.all([
+        client.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name").limit(2000),
+        client.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
+        client.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
+      ]);
+      return { members: (must(memberResult) || []) as MemberProfile[], groups: (must(groupResult) || []) as Subgroup[], memberships: (must(membershipResult) || []) as SubgroupMembership[] };
+    },
+    onError: () => notify("The member directory could not be loaded"),
+  });
+  const { members, groups, memberships } = directory.data || { members: [], groups: [], memberships: [] };
+  const loading = directory.loading;
+  const loadFailed = directory.failed;
+  const loadMembers = directory.refetch;
   const [query, setQuery] = useState("");
   const [subgroupFilter, setSubgroupFilter] = useState<ScopeFilter>("all");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(!cached);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [loadGate] = useState(createRequestGate);
-  const loadMembers = useCallback(async () => {
-    if (!supabase) return;
-    const isCurrent = loadGate.begin();
-    const [memberResult, groupResult, membershipResult] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role,phone,class_year,specialty,joined_at").eq("status", "active").order("full_name").limit(2000),
-      supabase.from("subgroups").select("id,name,description,enrollment_mode").order("name"),
-      supabase.from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").limit(5000),
-    ]);
-    if (!isCurrent()) return;
-    // A failed refresh keeps the directory already shown instead of emptying it.
-    if (anyFailed([memberResult, groupResult, membershipResult])) { setLoadFailed(true); setLoading(false); notify("The member directory could not be loaded"); return; }
-    setLoadFailed(false);
-    const next = { members: (memberResult.data || []) as MemberProfile[], groups: (groupResult.data || []) as Subgroup[], memberships: (membershipResult.data || []) as SubgroupMembership[] };
-    setMembers(next.members); setGroups(next.groups); setMemberships(next.memberships);
-    writeCache(user.id, "members", next);
-    setLoading(false);
-  }, [loadGate, notify, user.id]);
-  useEffect(() => { loadMembers(); }, [loadMembers]);
   const ownProfile = members.find((member) => member.id === user.id);
   const filtered = members.filter((member) => {
     const matchesSearch = `${member.full_name} ${member.email} ${member.specialty || ""} ${member.class_year || ""}`.toLowerCase().includes(query.toLowerCase());
