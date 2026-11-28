@@ -24,6 +24,7 @@ import { createRequestGate } from "../../../lib/request-gate";
 import { createSingleFlight } from "../../../lib/single-flight";
 import type { ClubRole, Tables } from "../../../lib/db";
 import type { Notify } from "../../../lib/toast";
+import { useToast } from "../../../components/ui/toast";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { LoadErrorBanner } from "../../../components/ui/load-error";
@@ -77,13 +78,14 @@ function readPurchaseDetails(form: FormData, last4: string): PurchaseDetails {
   };
 }
 
-export function FinancePage({ user, role, groups, events, notify }: {
+export function FinancePage({ user, role, groups, events }: {
   user: User;
   role: ClubRole;
   groups: Subgroup[];
   events: ClubEvent[];
-  notify: Notify;
+  notify?: Notify; // kept until the cleanup step removes it from every caller; the screen reads useToast()
 }) {
+  const { notify } = useToast();
   const canManage = canManageClub(role);
   const [view, setView] = useState<FinanceView>(canManage ? "overview" : "reimbursements");
   const [modal, setModal] = useState<FinanceModal>(null);
