@@ -28,6 +28,7 @@ import { AttendancePage } from "../../features/attendance/components/attendance-
 import { setCacheOwner } from "../../lib/cache";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, rejects, type Call } from "../support/fake-supabase";
+import { installFakeXhr } from "../support/fake-xhr";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Data
@@ -687,7 +688,13 @@ describe("the absence form: the proof image, and what happens to it when the for
     return file;
   };
 
+  // The proof goes up through XMLHttpRequest (uploadWithProgress, so the form can show its progress): the test is the server.
+  let xhr: ReturnType<typeof installFakeXhr>;   // installed by fillExcuse: the setup removes the fake after every test
+  const stored = (request: { url: string }) => decodeURIComponent(request.url.split("/object/attendance-excuses/")[1]);
+  const accept = (request: { url: string; respond: (status: number, body: unknown) => void }) => request.respond(200, { Id: "obj-1", Key: `attendance-excuses/${stored(request)}` });
+
   async function fillExcuse(file?: File) {
+    xhr = installFakeXhr();
     scriptOverview({ sessions: [session(1)] });
     const rendered = renderAttendance({ role: "member" });
     fireEvent.click(await screen.findByRole("button", { name: "Submit absence form" }));
@@ -702,10 +709,15 @@ describe("the absence form: the proof image, and what happens to it when the for
     fake.rpc("submit_attendance_excuse").reply(ok(null));
     const { form, notify } = await fillExcuse(PROOF());
     fireEvent.submit(form);
+    const upload = await xhr.waitForRequest();
+    // The form is not sent before its proof is stored.
+    expect(rpcCount("submit_attendance_excuse")).toBe(0);
+    expect(upload.url).toMatch(/\/storage\/v1\/object\/attendance-excuses\/u-me\/1\/[0-9a-f-]{36}-note-from-doctor\.png$/);
+    expect(upload.headers["x-upsert"]).toBe("false");
+    accept(upload);
     await waitFor(() => expect(notify.find("Absence form submitted")).toBeTruthy());
-    const upload = fake.storage("attendance-excuses", "upload").calls[0];
-    expect(upload.args[0]).toMatch(/^u-me\/1\/[0-9a-f-]{36}-note-from-doctor\.png$/);
-    expect(fake.rpc("submit_attendance_excuse").calls[0].payload).toMatchObject({ p_session_id: 1, p_reason: "I was ill and saw a doctor", p_proof_path: upload.args[0], p_reason_category: "other", p_notified_at: null });
+    expect(stored(upload)).toMatch(/^u-me\/1\/[0-9a-f-]{36}-note-from-doctor\.png$/);
+    expect(fake.rpc("submit_attendance_excuse").calls[0].payload).toMatchObject({ p_session_id: 1, p_reason: "I was ill and saw a doctor", p_proof_path: stored(upload), p_reason_category: "other", p_notified_at: null });
     expect(fake.storage("attendance-excuses", "remove").count).toBe(0);
   });
 
@@ -714,9 +726,11 @@ describe("the absence form: the proof image, and what happens to it when the for
     fake.rpc("submit_attendance_excuse").reply(fail("You already submitted a form for this meeting"));
     const { form, notify } = await fillExcuse(PROOF());
     fireEvent.submit(form);
+    const upload = await xhr.waitForRequest();
+    accept(upload);
     await waitFor(() => expect(notify.find("You already submitted a form for this meeting").tone).toBe("error"));
     expect(fake.storage("attendance-excuses", "remove").calls).toHaveLength(1);
-    expect(fake.storage("attendance-excuses", "remove").calls[0].args[0]).toEqual([fake.storage("attendance-excuses", "upload").calls[0].args[0]]);
+    expect(fake.storage("attendance-excuses", "remove").calls[0].args[0]).toEqual([stored(upload)]);
     expect(screen.getByRole("button", { name: "Submit form" })).toBeInTheDocument();
   });
 
@@ -726,14 +740,14 @@ describe("the absence form: the proof image, and what happens to it when the for
     fireEvent.submit(form);
     await waitFor(() => expect(rpcCount("submit_attendance_excuse")).toBe(1));
     expect(fake.rpc("submit_attendance_excuse").calls[0].payload).toMatchObject({ p_proof_path: null });
-    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(xhr.requests).toHaveLength(0);
     expect(fake.storage("*", "remove").count).toBe(0);
   });
 
   it("a proof that cannot be uploaded stops the form: nothing is submitted", async () => {
-    fake.storage("attendance-excuses", "upload").reply(fail("Bucket not found"));
     const { form, notify } = await fillExcuse(PROOF());
     fireEvent.submit(form);
+    (await xhr.waitForRequest()).respond(400, { message: "Bucket not found" });
     await waitFor(() => expect(notify.find("Bucket not found").tone).toBe("error"));
     expect(rpcCount("submit_attendance_excuse")).toBe(0);
   });
@@ -745,7 +759,7 @@ describe("the absence form: the proof image, and what happens to it when the for
     fireEvent.change(within(form).getByLabelText(/Proof image/), { target: { files: [PROOF({ name: "notes.pdf", type: "application/pdf" })] } });
     fireEvent.submit(form);
     expect(notify.find("Choose an image as proof").tone).toBe("error");
-    expect(fake.storage("*", "upload").count).toBe(0);
+    expect(xhr.requests).toHaveLength(0);
     expect(rpcCount("submit_attendance_excuse")).toBe(0);
   });
 });
@@ -813,7 +827,7 @@ describe("a failure that shows the database's own sentence is announced as an er
 
   it("the absence form: a refused upload and a refused form", async () => {
     scriptOverview({ sessions: [session(1)] });
-    fake.storage("attendance-excuses", "upload").replyOnce(cheerful());
+    const xhr = installFakeXhr();
     fake.rpc("submit_attendance_excuse").reply(cheerful());
     const { notify } = renderAttendance({ role: "member" });
     fireEvent.click(await screen.findByRole("button", { name: "Submit absence form" }));
@@ -822,8 +836,11 @@ describe("a failure that shows the database's own sentence is announced as an er
     fireEvent.change(within(form).getByLabelText(/What happened/), { target: { value: "I was ill and saw a doctor" } });
     fireEvent.change(within(form).getByLabelText(/Proof image/), { target: { files: [new File(["x"], "p.png", { type: "image/png" })] } });
     fireEvent.submit(form);
+    (await xhr.waitForRequest()).respond(400, { message: CHEERFUL });
     await waitFor(() => expect(toneOfSentence(notify)).toEqual(["error"]));
     fireEvent.submit(form);
+    await waitFor(() => expect(xhr.requests.filter((request) => request.sent)).toHaveLength(2));
+    xhr.last.respond(200, { Id: "obj-2", Key: "attendance-excuses/x" });
     await waitFor(() => expect(toneOfSentence(notify)).toEqual(["error", "error"]));
   });
 

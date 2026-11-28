@@ -7,7 +7,7 @@
 import { ApiError, toApiError } from "../errors";
 import type { AttendanceStatus, EligibilityStatus, RemediationStatus, RpcArgs, RpcReturns, Tables } from "../db";
 import { supabase } from "../supabase";
-import { must, safeFileName } from "./_core";
+import { must, safeFileName, uploadWithProgress, type UploadProgress } from "./_core";
 
 // What the screen is showing: the audience (all, club-wide, or one subgroup) and the term (null: every term).
 export type AttendanceViewArgs = Pick<RpcArgs<"get_attendance_overview">, "p_scope" | "p_subgroup_id" | "p_term_key">;
@@ -134,12 +134,15 @@ export async function clearAttendanceStatus(sessionId: number, memberId: string)
 
 // ---------------------------------------------------------------- absence forms
 
-/** Uploads the proof image under the member's own folder and the meeting's; resolves to the stored path. */
-export async function uploadExcuseProof(userId: string, sessionId: number, file: File): Promise<string> {
+/**
+ * Uploads the proof image under the member's own folder and the meeting's; resolves to the stored path. `onProgress` hears how many
+ * bytes have gone (the same request storage-js sends, through XMLHttpRequest: see uploadWithProgress in _core.ts).
+ */
+export async function uploadExcuseProof(userId: string, sessionId: number, file: File, onProgress?: (progress: UploadProgress) => void): Promise<string> {
   const client = db();
   const path = `${userId}/${sessionId}/${crypto.randomUUID()}-${safeFileName(file)}`;
-  const upload = await client.storage.from("attendance-excuses").upload(path, file, { upsert: false });
-  if (upload.error) throw toApiError(upload.error);
+  const upload = await uploadWithProgress(client, "attendance-excuses", path, file, { upsert: false }, onProgress);
+  if (upload.error) throw upload.error;
   return path;
 }
 

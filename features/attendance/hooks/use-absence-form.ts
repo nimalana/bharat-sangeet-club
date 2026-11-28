@@ -1,10 +1,12 @@
-// A member's absence form: the proof image is uploaded first, then the form is submitted with its path, and a refused form
-// takes the proof back out. Also the executive's link to a form's proof.
+// A member's absence form: the proof image is uploaded first (with its progress shown), then the form is submitted with its path, and a
+// refused form takes the proof back out. Also the executive's link to a form's proof.
 import type { User } from "@supabase/supabase-js";
 import { useState, type FormEvent } from "react";
+import type { UploadItem } from "../../../components/ui/upload-progress";
 import { attempt } from "../../../lib/api/attempt";
 import { createExcuseProofUrl, removeExcuseProof, submitAttendanceExcuse, uploadExcuseProof } from "../../../lib/api/attendance";
 import { useToast } from "../../../components/ui/toast";
+import { friendlyError } from "../../../lib/errors";
 import type { Excuse } from "../model";
 import type { Exclusive } from "./use-exclusive";
 
@@ -14,7 +16,11 @@ export function useAbsenceForm({ user, load, exclusive }: {
   exclusive: Exclusive;
 }) {
   const { notify } = useToast();
-  const [showExcuse, setShowExcuse] = useState(false);
+  const [showExcuse, setShow] = useState(false);
+  // The proof image on its way: one row for the dialog's upload list (empty when there is no proof, and again when the form closes).
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const setShowExcuse = (open: boolean) => { if (!open) setUploads([]); setShow(open); };
+  const patchUpload = (change: Partial<UploadItem>) => setUploads((list) => list.map((item) => ({ ...item, ...change })));
   // The form whose proof link is being made (the button says so, and a second press waits for the first).
   const [openingProofId, setOpeningProofId] = useState<number | null>(null);
 
@@ -29,9 +35,21 @@ export function useAbsenceForm({ user, load, exclusive }: {
       const sessionId = Number(form.get("session_id"));
       let proofPath: string | null = null;
       if (file?.size) {
-        const upload = await attempt(() => uploadExcuseProof(user.id, sessionId, file));
-        if (upload.error) { notify(upload.error.message, "error"); return; }
+        // (A second try starts from a clean row: the failure of the first is not left beside it.)
+        setUploads([{ id: "proof", name: file.name, status: "uploading", loaded: 0, total: file.size }]);
+        const upload = await attempt(() => uploadExcuseProof(user.id, sessionId, file, (progress) => patchUpload({ loaded: progress.loaded, total: progress.total })));
+        if (upload.error) {
+          // The row and the toast say the same sentence: the storage server's own words when they are readable, else a plain one
+          // (a dropped connection is "The connection dropped..." and not the browser's "Failed to fetch").
+          const message = friendlyError(upload.error, "The proof image could not be uploaded.");
+          patchUpload({ status: "failed", error: message });
+          notify(message, "error");
+          return;
+        }
         proofPath = upload.data;
+        patchUpload({ status: "done", loaded: file.size, total: file.size });
+      } else {
+        setUploads([]);
       }
       const { error } = await attempt(() => submitAttendanceExcuse({
         sessionId,
@@ -42,6 +60,8 @@ export function useAbsenceForm({ user, load, exclusive }: {
       }));
       if (error) {
         if (proofPath) await removeExcuseProof(proofPath);
+        // The proof is gone again: a try after this one uploads it afresh, so its row goes back to "waiting for the form".
+        setUploads([]);
         notify(error.message, "error");
         return;
       }
@@ -64,5 +84,5 @@ export function useAbsenceForm({ user, load, exclusive }: {
     }
   }
 
-  return { showExcuse, setShowExcuse, submitExcuse, openProof, openingProofId };
+  return { showExcuse, setShowExcuse, submitExcuse, openProof, openingProofId, uploads };
 }

@@ -42,6 +42,6 @@ export function useAttendanceActions({ user, groups, summaryTerm, load, rereadRo
     openAttendance: live.openAttendance, rotateCode: live.rotateCode, resetLive: live.resetLive,
     showNewSession: live.showNewSession, setShowNewSession: live.setShowNewSession, createSession: live.createSession,
     dialog: dialogs.dialog, setDialog: dialogs.setDialog, submitDialog: dialogs.submitDialog, confirmSession: dialogs.confirmSession,
-    showExcuse: absence.showExcuse, setShowExcuse: absence.setShowExcuse, submitExcuse: absence.submitExcuse, openProof: absence.openProof, openingProofId: absence.openingProofId,
+    showExcuse: absence.showExcuse, setShowExcuse: absence.setShowExcuse, uploads: absence.uploads, submitExcuse: absence.submitExcuse, openProof: absence.openProof, openingProofId: absence.openingProofId,
   };
 }

@@ -115,7 +115,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     </> : <MemberView view={view} sessions={sessions} user={user} scopeLabel={scopeLabel} termFilter={termFilter} onSubmitExcuse={() => actions.setShowExcuse(true)} onWithdrawn={() => load(true)} />}
 
     {actions.showNewSession && <NewMeetingDialog scopeFilter={scopeFilter} scopeInGroups={scopeInGroups} groups={groups} saving={saving} onSubmit={actions.createSession} onClose={() => actions.setShowNewSession(false)} />}
-    {actions.showExcuse && <AbsenceFormDialog sessions={sessions} saving={saving} onSubmit={actions.submitExcuse} onClose={() => actions.setShowExcuse(false)} />}
+    {actions.showExcuse && <AbsenceFormDialog sessions={sessions} saving={saving} uploads={actions.uploads} onSubmit={actions.submitExcuse} onClose={() => actions.setShowExcuse(false)} />}
 
     {summaryFor && canManage && <MemberSummaryDialog userId={user.id} member={summaryFor} sessions={sessions} summaryTerm={view.summary_term} periodLabel={viewLabel} onClose={() => setSummaryFor(null)} />}
 
