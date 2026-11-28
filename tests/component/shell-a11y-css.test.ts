@@ -68,10 +68,11 @@ describe("the touch layout (under 700px): 44px tap targets", () => {
     expect(block(css("members"), "700px")).toMatch(/\.member-card dd a\{[^}]*min-height:44px/);
   });
 
-  it("the calendar's own controls were already 44px (the arrows, Today, and the buttons of a date in the agenda)", () => {
+  it("the calendar's own controls were already 44px (the arrows, Today, the buttons of a date in the agenda) and the date itself, which opens its detail,", () => {
     const rules = block(css("calendar"), "700px");
     expect(rules).toMatch(/\.calendar-controls>button,\.calendar-controls div button\{min-width:44px;height:44px\}/);
-    expect(rules).toMatch(/\.calendar-agenda-event button\{[^}]*width:44px;height:44px/);
+    expect(rules).toMatch(/\.calendar-agenda-event>button:not\(\.calendar-event-open\)\{[^}]*width:44px;height:44px/);
+    expect(rules).toMatch(/\.calendar-agenda-event \.calendar-event-open\{[^}]*min-height:44px/);
   });
 });
 

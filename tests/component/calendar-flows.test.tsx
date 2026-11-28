@@ -7,7 +7,7 @@
 // features/calendar/{components/calendar-page,components/calendar-dialogs,hooks/use-calendar-page}.tsx cannot change it.
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { deferred, fake, ok } from "../support/fake-supabase";
 import { openPortal } from "../support/portal";
 
@@ -29,7 +29,8 @@ const calendarOpen = () => screen.findByRole("heading", { level: 1, name: "Impor
 /** The month grid and the agenda below it both list a date: the grid is the first. */
 const gridEvents = () => document.querySelectorAll<HTMLElement>(".calendar-grid .calendar-event");
 const gridTitles = () => Array.from(gridEvents()).map((item) => item.querySelector("b")!.textContent);
-const form = (heading: string) => screen.getByRole("heading", { name: heading }).closest("form")!;
+/** The form opens a moment after the press: its code is fetched the first time it is needed. */
+const form = async (heading: string) => (await screen.findByRole("heading", { name: heading })).closest("form")!;
 
 describe("adding a date", () => {
   it("sends the form's fields with the person who added it, closes the form, says so and reads the calendar again", async () => {
@@ -37,7 +38,7 @@ describe("adding a date", () => {
     fake.from("events", "select").reply(ok([row(9, "Open mic", 7, { description: "Bring a song" })]));
     openPortal({ role: "executive", page: "calendar", boot: { groups: [vocal, violin], events: [] } });
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add important date" }));
-    const add = form("Add an important date");
+    const add = await form("Add an important date");
     fireEvent.change(within(add).getByLabelText("Audience"), { target: { value: "7" } });
     fireEvent.change(within(add).getByLabelText("Title"), { target: { value: "Open mic" } });
     fireEvent.change(within(add).getByLabelText("Date and time"), { target: { value: `${today}T19:30` } });
@@ -59,7 +60,7 @@ describe("adding a date", () => {
     fake.from("events", "insert").reply(ok([{ id: 9 }]));
     openPortal({ role: "executive", page: "calendar", boot: { groups: [vocal], events: [] } });
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add important date" }));
-    const add = form("Add an important date");
+    const add = await form("Add an important date");
     expect(within(add).getByLabelText("Audience")).toHaveValue("");
     fireEvent.change(within(add).getByLabelText("Title"), { target: { value: "Open mic" } });
     fireEvent.change(within(add).getByLabelText("Date and time"), { target: { value: `${today}T19:30` } });
@@ -71,20 +72,25 @@ describe("adding a date", () => {
   it("offers every group as an audience", async () => {
     openPortal({ role: "executive", page: "calendar", boot: { groups: [vocal, violin], events: [] } });
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add important date" }));
-    const options = within(within(form("Add an important date")).getByLabelText("Audience")).getAllByRole("option").map((option) => option.textContent);
+    const options = within(within(await form("Add an important date")).getByLabelText("Audience")).getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual(["Whole club", "Hindustani Vocal", "Carnatic Violin"]);
   });
 
-  it("the form is closed by its × and by a press outside it, not by a press inside it", async () => {
+  // Phase 3.4: the form is the portal's Dialog: Close is named (it was a bare ×), Escape closes it, and a click beside it does not (a stray click
+  // lost what was typed: it used to close the form).
+  it("the form is closed by Close and by Escape, not by a press inside it or beside it", async () => {
     openPortal({ role: "executive", page: "calendar", boot: { events: [] } });
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add important date" }));
-    const modal = form("Add an important date");
+    const modal = await form("Add an important date");
     fireEvent.mouseDown(within(modal).getByLabelText("Title"));
+    fireEvent.change(within(modal).getByLabelText("Title"), { target: { value: "Open mic" } });
+    fireEvent.click(document.querySelector('[role="presentation"]')!);
     expect(screen.getByRole("heading", { name: "Add an important date" })).toBeInTheDocument();
-    fireEvent.click(modal.querySelector(".modal-close")!);
+    expect(within(await form("Add an important date")).getByLabelText("Title")).toHaveValue("Open mic");
+    fireEvent.click(within(modal).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("heading", { name: "Add an important date" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "＋ Add important date" }));
-    fireEvent.mouseDown(document.querySelector(".modal-backdrop")!);
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("heading", { name: "Add an important date" })).not.toBeInTheDocument();
     expect(fake.from("events", "insert").calls).toHaveLength(0);
   });
@@ -94,7 +100,7 @@ describe("adding a date", () => {
     fake.from("events", "insert").reply(slow.reply);
     openPortal({ role: "executive", page: "calendar", boot: { events: [] } });
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add important date" }));
-    const add = form("Add an important date");
+    const add = await form("Add an important date");
     fireEvent.change(within(add).getByLabelText("Title"), { target: { value: "Open mic" } });
     fireEvent.change(within(add).getByLabelText("Date and time"), { target: { value: `${today}T19:30` } });
     fireEvent.submit(add);
@@ -111,7 +117,7 @@ describe("changing a date", () => {
     fake.from("events", "select").reply(ok([row(4, "Diwali concert, moved", 7)]));
     openPortal({ role: "executive", page: "calendar", boot: { groups: [vocal, violin], events: [row(4, "Diwali concert", 7)] } });
     fireEvent.click((await screen.findAllByRole("button", { name: "Edit Diwali concert" }))[0]);
-    const edit = form("Edit this date");
+    const edit = await form("Edit this date");
     expect(within(edit).getByLabelText("Audience")).toHaveValue("7");
     expect(within(edit).getByLabelText("Title")).toHaveValue("Diwali concert");
     expect(within(edit).getByLabelText("Date and time")).toHaveValue(`${today}T19:30`);
@@ -133,10 +139,10 @@ describe("changing a date", () => {
     fake.from("events", "select").reply(ok([row(4, "First", 7), row(5, "Second", null, { location: "Online" })]));
     openPortal({ role: "executive", page: "calendar", boot: { groups: [vocal], events: [row(4, "First", 7), row(5, "Second", null, { location: "Online" })] } });
     fireEvent.click((await screen.findAllByRole("button", { name: "Edit First" }))[0]);
-    expect(within(form("Edit this date")).getByLabelText("Title")).toHaveValue("First");
+    expect(within(await form("Edit this date")).getByLabelText("Title")).toHaveValue("First");
     fireEvent.click(document.querySelector(".modal-close")!);
     fireEvent.click((await screen.findAllByRole("button", { name: "Edit Second" }))[0]);
-    const edit = form("Edit this date");
+    const edit = await form("Edit this date");
     expect(within(edit).getByLabelText("Title")).toHaveValue("Second");
     expect(within(edit).getByLabelText("Location")).toHaveValue("Online");
     expect(within(edit).getByLabelText("Audience")).toHaveValue("");
@@ -144,11 +150,15 @@ describe("changing a date", () => {
 });
 
 describe("removing a date", () => {
-  it("asks first; if the person declines, nothing is sent", async () => {
-    vi.mocked(window.confirm).mockReturnValueOnce(false);
+  // Phase 3.4 (the only window.confirm in the portal): the question is the shared confirmation dialog, which names the date and the action.
+  it("asks first, in a dialog that names the date; if the person declines, nothing is sent", async () => {
     openPortal({ role: "executive", page: "calendar", boot: { events: [row(3, "Diwali concert")] } });
     fireEvent.click((await screen.findAllByRole("button", { name: "Delete Diwali concert" }))[0]);
-    expect(window.confirm).toHaveBeenCalledWith("Remove this date from the calendar?");
+    const question = await screen.findByRole("dialog", { name: "Remove this date from the calendar?" });
+    expect(question).toHaveTextContent("\"Diwali concert\" disappears from the calendar for everyone");
+    expect(window.confirm).not.toHaveBeenCalled();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(fake.from("events", "delete").calls).toHaveLength(0);
     expect(toast()).toBeNull();
     expect(gridTitles()).toEqual(["Diwali concert"]);
@@ -159,6 +169,7 @@ describe("removing a date", () => {
     fake.from("events", "select").reply(ok([]));
     openPortal({ role: "executive", page: "calendar", boot: { events: [row(3, "Diwali concert"), row(4, "Rehearsal")] } });
     fireEvent.click((await screen.findAllByRole("button", { name: "Delete Diwali concert" }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove date" }));
     await waitFor(() => expect(toast()).toHaveTextContent("Calendar date removed"));
     expect(toast()).toHaveClass("success");
     expect(fake.from("events", "delete").calls).toHaveLength(1);
@@ -232,7 +243,7 @@ describe("the audience filter", () => {
 });
 
 describe("while the shell reads the calendar again", () => {
-  it("the page shows a loading line in place of the month, then the month", async () => {
+  it("the page shows a placeholder of the month (announced as Loading the calendar) in place of the month, then the month", async () => {
     openPortal({ role: "member", page: "calendar", boot: { events: [row(3, "Diwali concert")] } });
     await calendarOpen();
     const slow = deferred();
@@ -241,12 +252,13 @@ describe("while the shell reads the calendar again", () => {
     nav("Overview");
     await screen.findByText(/Welcome back/);
     nav("Calendar");
-    expect(await screen.findByText("Loading the archive…")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading the calendar");
+    expect(document.querySelector(".calendar-skeleton .skeleton")).not.toBeNull();
     expect(document.querySelector(".month-calendar")).toBeNull();
     // The page's own title and filter stay while it waits.
     expect(screen.getByRole("heading", { level: 1, name: "Important dates" })).toBeInTheDocument();
     slow.resolve(ok([row(3, "Diwali concert"), row(6, "Rehearsal")]));
-    await waitFor(() => expect(screen.queryByText("Loading the archive…")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Loading the calendar")).not.toBeInTheDocument());
     expect(gridTitles()).toEqual(["Diwali concert", "Rehearsal"]);
   });
 });

@@ -21,7 +21,10 @@
 .calendar-event time{font-size:12px;color:#78695e}
 .calendar-event b{font:400 12px Georgia,serif;margin-top:2px}
 .calendar-event small{font-size:12px;margin-top:2px}
-.calendar-event button{position:absolute;top:2px;right:4px;border:0;background:transparent;cursor:pointer;color:#80685f}
+/* A date is a button that opens its detail (.calendar-event-open); a manager's Edit and Remove sit in its corner. */
+.calendar-event>button:not(.calendar-event-open){position:absolute;top:2px;right:4px;border:0;background:transparent;cursor:pointer;color:#80685f}
+.calendar-event .calendar-event-open{display:block;width:100%;min-width:0;margin:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;overflow:hidden}
+.calendar-event .calendar-event-open:hover b{text-decoration:underline}
 .calendar-empty{text-align:center;color:#766c64;font:italic 13px Georgia,serif;padding:18px;margin:0}
 @media (max-width:700px){
 .month-calendar{overflow-x:auto}
@@ -56,15 +59,28 @@
 .calendar-agenda-event small{margin-top:5px;color:#526774;font-size:12px;overflow-wrap:anywhere}
 .calendar-agenda-event .calendar-scope{color:#1f6593;font-weight:750;letter-spacing:.05em;text-transform:uppercase}
 .calendar-agenda-event p{margin:8px 0 0;color:#526774;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
-.calendar-agenda-event button{position:absolute;top:50%;right:5px;width:44px;height:44px;transform:translateY(-50%);border:1px solid transparent;background:transparent;color:var(--ink);font-size:20px;cursor:pointer}
-.calendar-agenda-event button:hover,.calendar-agenda-event button:focus-visible{border-color:var(--carolina);background:var(--paper)}
+.calendar-agenda-event>button:not(.calendar-event-open){position:absolute;top:50%;right:5px;width:44px;height:44px;transform:translateY(-50%);border:1px solid transparent;background:transparent;color:var(--ink);font-size:20px;cursor:pointer}
+.calendar-agenda-event>button:not(.calendar-event-open):hover,.calendar-agenda-event>button:not(.calendar-event-open):focus-visible{border-color:var(--carolina);background:var(--paper)}
+.calendar-agenda-event .calendar-event-open{display:block;width:100%;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.calendar-agenda-event .calendar-event-open:hover b{text-decoration:underline}
 .calendar-agenda-empty{margin:0;background:var(--paper);padding:32px 16px;text-align:center;color:#607785;font:italic 13px Georgia,serif}
 .calendar-empty{display:none}
 }
 /* Calendar: edit sits beside delete on each date. */
 .calendar-event{padding-right:44px}
 .calendar-event button.calendar-edit{right:22px}
-.calendar-agenda-event button.calendar-edit{right:51px;font-size:17px}
-.calendar-agenda-event{padding-right:104px}
+.calendar-agenda-event>button.calendar-edit{right:51px;font-size:17px}
+.calendar-agenda-event.has-actions{padding-right:104px}
 /* The "View" label of the audience filter: the shared rule for .scope-picker (styles/late.css) sets it at 8px; this is the calendar's own, a step more specific, at 12px. */
 .scope-picker.calendar-scope-filter>span{font-size:12px}
+/* The placeholder of the month while the shell reads the club's lists: about the height of the month it stands for. */
+.calendar-skeleton .skeleton-row{height:110px}
+/* The detail of a date: what a person reads, then (for a manager) Edit and Remove. */
+.event-detail h2{overflow-wrap:anywhere}
+.event-facts{margin:0 0 6px}
+.event-facts>div{padding:12px 0;border-top:1px solid var(--line)}
+.event-facts dt{margin:0 0 4px;color:#4f5f6b;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.event-facts dd{margin:0;font-size:15px;line-height:1.5;overflow-wrap:anywhere}
+.event-facts .event-details{white-space:pre-wrap}
+.event-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.event-actions>button{flex:1 1 150px}

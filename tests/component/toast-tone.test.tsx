@@ -130,8 +130,9 @@ describe("the calendar announces a database sentence as a failure", () => {
     openPortal({ role: "executive", page: "calendar", boot: { events: [soon] } });
     // The date is on the month grid and in the agenda below it; either button removes it.
     fireEvent.click((await screen.findAllByRole("button", { name: "Delete Diwali concert" }))[0]);
+    // The question is the shared confirmation dialog now (window.confirm was the only one in the portal).
+    fireEvent.click(await screen.findByRole("button", { name: "Remove date" }));
     await expectFailureToast(CHEERFUL);
-    expect(window.confirm).toHaveBeenCalledWith("Remove this date from the calendar?");
     expect(fake.from("events", "delete").calls[0].used("eq", "id", 3)).toBe(true);
   });
 
@@ -141,7 +142,7 @@ describe("the calendar announces a database sentence as a failure", () => {
     fake.from("events", "insert").reply(fail(CHEERFUL));
     openPortal({ role: "executive", page: "calendar", boot: { events: [] } });
     fireEvent.click(await screen.findByRole("button", { name: "＋ Add important date" }));
-    const form = screen.getByRole("heading", { name: "Add an important date" }).closest("form")!;
+    const form = (await screen.findByRole("heading", { name: "Add an important date" })).closest("form")!;
     fireEvent.change(within(form).getByLabelText("Title"), { target: { value: "Open mic" } });
     fireEvent.change(within(form).getByLabelText("Date and time"), { target: { value: "2026-12-01T19:00" } });
     fireEvent.submit(form);

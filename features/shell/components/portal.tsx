@@ -9,8 +9,6 @@ import type { PublicConcert } from "../../../lib/public-concerts";
 import { SECTION_LABELS, resolveSection } from "../../../lib/sections";
 import { AdminPage } from "../../admin/components/admin-page";
 import { DeactivatedScreen } from "../../admin/components/member-access";
-import { CalendarDialogs } from "../../calendar/components/calendar-dialogs";
-import { CalendarPage } from "../../calendar/components/calendar-page";
 import { useCalendarPage } from "../../calendar/hooks/use-calendar-page";
 import { ClubDashboard } from "../../dashboard/components/club-dashboard";
 import { SubgroupSpaces } from "../../groups/components/subgroup-spaces";
@@ -23,7 +21,7 @@ import { usePortalSession } from "../hooks/use-portal-session";
 import { useProfilePrompt } from "../hooks/use-profile-prompt";
 import { SignupRequestsPage } from "../../admin/components/signup-requests-page";
 import { BootstrapFailedScreen } from "./bootstrap-failed-screen";
-import { AttendancePage, ClubArchiveManager, CompleteProfileDialog, FinancePage, MembersPage, OwnProfileDialog, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
+import { AttendancePage, CalendarDialogs, CalendarPage, ClubArchiveManager, CompleteProfileDialog, FinancePage, MembersPage, OwnProfileDialog, RecordingWorkspace, ResourceLibrary } from "./lazy-screens";
 import { LoadingScreen } from "./loading-screen";
 import { PendingScreen, RejectedScreen } from "./membership-screens";
 import { PortalFooter } from "./portal-footer";
@@ -95,7 +93,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
       {showUpload && <ArchiveModal user={user} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadData(); notify("Saved to the club archive"); }} />}
       {profileStep.profile && <SectionBoundary key="profile-step"><CompleteProfileDialog user={user} profile={profileStep.profile} onSkip={profileStep.skip} onSaved={(fullName) => { if (fullName) setName(fullName); profileStep.saved(); }} /></SectionBoundary>}
       {showProfile && <SectionBoundary key="own-profile"><OwnProfileDialog user={user} onClose={() => setShowProfile(false)} onSaved={(fullName) => { if (fullName) setName(fullName); }} /></SectionBoundary>}
-      <CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} />
+      {(calendar.adding || calendar.editing) && <SectionBoundary key="calendar-dialogs"><CalendarDialogs user={user} groups={groups} calendar={calendar} onChanged={loadData} /></SectionBoundary>}
       <ToastViewport />
     </main>
   );
