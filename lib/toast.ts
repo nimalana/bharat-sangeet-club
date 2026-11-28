@@ -31,5 +31,35 @@ export function toastTone(message: string, tone?: ToastTone): ToastTone {
 
 export const toastMark: Record<ToastTone, string> = { success: "✓", error: "!" };
 
-// Failures stay a little longer: they say what to do next.
-export const toastDuration = (tone: ToastTone) => (tone === "error" ? 6000 : 2800);
+// A confirmation fades after 2.8 s. A failure says what to do next, so it does not fade at all: it stays until the person dismisses it
+// or the next failure replaces it (Infinity: the provider sets no timer for it).
+export const toastDuration = (tone: ToastTone) => (tone === "error" ? Infinity : 2800);
+
+// ---------------------------------------------------------------- the stack of toasts on screen
+
+/** At most this many toasts are on screen at once. */
+export const TOAST_LIMIT = 3;
+
+export type ToastItem = { id: number; message: string; tone: ToastTone };
+
+/**
+ * Puts `item` on the stack (a list, oldest first) and says what left it. Pure: the provider calls it and clears the timers of `removed`.
+ *  - a failure replaces the failure before it (one failure is on screen at a time: the newest says what to do now);
+ *  - the same confirmation again replaces its earlier copy instead of showing twice;
+ *  - past `limit`, the oldest toast that is not a failure goes first (a failure is only dropped when nothing else can be).
+ */
+export function pushToast(list: readonly ToastItem[], item: ToastItem, limit: number = TOAST_LIMIT): { list: ToastItem[]; removed: number[] } {
+  const removed: number[] = [];
+  const next = list.filter((shown) => {
+    const replaced = item.tone === "error" ? shown.tone === "error" : shown.tone === item.tone && shown.message === item.message;
+    if (replaced) removed.push(shown.id);
+    return !replaced;
+  });
+  next.push(item);
+  while (next.length > limit) {
+    const oldest = next.findIndex((shown) => shown.tone !== "error");
+    const [dropped] = next.splice(oldest === -1 ? 0 : oldest, 1);
+    removed.push(dropped.id);
+  }
+  return { list: next, removed };
+}
