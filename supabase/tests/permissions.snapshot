@@ -446,7 +446,7 @@ storage.objects  [Members delete own unregistered finance files]  DELETE  to aut
     using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT private.finance_path_registered(name)))
     check: -
 storage.objects  [Members delete their recording files]  DELETE  to authenticated
-    using: ((bucket_id = 'recordings'::text) AND ((EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))) OR (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM recordings recording WHERE (recording.storage_path = objects.name)))))))
+    using: ((bucket_id = 'recordings'::text) AND ((EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (recording.storage_bucket = objects.bucket_id) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))) OR (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (recording.storage_bucket = objects.bucket_id))))))))
     check: -
 storage.objects  [Members delete their recording notation]  DELETE  to authenticated
     using: ((bucket_id = 'recording-notations'::text) AND ((EXISTS ( SELECT 1 FROM recording_notes note WHERE ((note.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (note.uploaded_by = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.id = note.recording_id) AND (recording.uploaded_by = ( SELECT auth.uid() AS uid))))))))) OR (((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT (EXISTS ( SELECT 1 FROM recording_notes note WHERE (note.storage_path = objects.name)))))))
@@ -455,7 +455,7 @@ storage.objects  [Members read accessible recording notation]  SELECT  to authen
     using: ((bucket_id = 'recording-notations'::text) AND (EXISTS ( SELECT 1 FROM recording_notes note WHERE (note.storage_path = objects.name))))
     check: -
 storage.objects  [Members read accessible recordings]  SELECT  to authenticated
-    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE (recording.storage_path = objects.name))))
+    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (recording.storage_bucket = objects.bucket_id)))))
     check: -
 storage.objects  [Members read own unregistered finance files]  SELECT  to authenticated
     using: ((bucket_id = 'finance-private'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (NOT private.finance_path_registered(name)))
@@ -476,7 +476,7 @@ storage.objects  [Members replace own attendance excuse proof]  UPDATE  to authe
     using: ((bucket_id = 'attendance-excuses'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
     check: ((bucket_id = 'attendance-excuses'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
 storage.objects  [Members update their recording files]  UPDATE  to authenticated
-    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
+    using: ((bucket_id = 'recordings'::text) AND (EXISTS ( SELECT 1 FROM recordings recording WHERE ((recording.storage_path = objects.name) AND (recording.storage_bucket = objects.bucket_id) AND (( SELECT private.is_executive() AS is_executive) OR (recording.uploaded_by = ( SELECT auth.uid() AS uid)))))))
     check: (bucket_id = 'recordings'::text)
 storage.objects  [Members upload finance files to own folder]  INSERT  to authenticated
     using: -
