@@ -1,0 +1,128 @@
+# ======================================================================================================================
+# DRAFT. NOT ACTIVE.
+#
+# This file is a template. GitHub only runs workflows in `.github/workflows/`, so it does nothing here. It becomes live when
+# somebody copies it to `.github/workflows/nightly-backup.yml` AND the repository secrets below exist AND the one decision
+# marked "DECISION" has been made. Until then the copy would fail on its first step, on purpose, rather than run half done.
+# Nothing in it has been run against a real project; run it once by hand (Actions, "Run workflow") and open the result before
+# you trust it. See docs/OWNER_CHECKLIST.md, item 9 ("Backups and point-in-time recovery"), and docs/RUNBOOK.md, section 4.
+#
+# What it does: once a night it makes a dump of the `public` and `auth` schemas of the Supabase project (the rows: members,
+# groups, finance, attendance, audit trails, sign-in accounts), encrypts it, and hands it to a destination that is NOT this
+# repository and NOT a public download.
+#
+# What it does NOT do:
+#   * It does not copy the files in Storage (receipts, recordings, PDFs, notation). Neither does any database backup.
+#   * It does not rotate or expire old copies. Retention is set at the destination (a lifecycle rule on a bucket, or a
+#     cleanup on the drive): the owner's decision, "Backup destination and retention" in OWNER_CHECKLIST.
+#   * It does not prove a copy can be restored. Rehearse that once (RUNBOOK, section 4B).
+#
+# Secrets (GitHub, repository, Settings, Secrets and variables, Actions). None of these is ever written into the repository:
+#   SUPABASE_DB_URL     The database connection string with its password (Supabase, Project Settings, Database, Connection
+#                       string: use the "session pooler" form if the direct address does not resolve over IPv4). Required.
+#                       This is the one secret that can read everything: give it to nobody else, and rotate the database
+#                       password if it leaks (RUNBOOK, section 6).
+#   BACKUP_PASSPHRASE   A long random phrase used to encrypt the dump before it leaves this runner. Keep a copy somewhere
+#                       other than GitHub (a password manager the club's officers share): without it the backups are noise.
+#   BACKUP_*            Whatever the DECISION step below needs for the chosen destination.
+#
+# The Postgres client must be at least as new as the server. Check Project Settings, Infrastructure for the project's major
+# version and set PG_MAJOR to it (new projects are on 17).
+# ======================================================================================================================
+name: Nightly backup (draft)
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC every day; not on the hour, when the shared runners are busy
+  workflow_dispatch: {}
+
+# The job checks out nothing and calls no GitHub API, so the token needs no rights at all.
+permissions: {}
+
+concurrency:
+  group: nightly-backup
+  cancel-in-progress: false
+
+env:
+  PG_MAJOR: "17"
+
+jobs:
+  dump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Refuse to run without its secrets
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          test -n "$SUPABASE_DB_URL" || { echo "::error::The secret SUPABASE_DB_URL is not set"; exit 1; }
+          test -n "$BACKUP_PASSPHRASE" || { echo "::error::The secret BACKUP_PASSPHRASE is not set"; exit 1; }
+
+      - name: Install the PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y "postgresql-client-${PG_MAJOR}"
+          "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_dump" --version
+
+      - name: Dump the public and auth schemas
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "STAMP=${stamp}" >> "$GITHUB_ENV"
+          # Custom format: compressed, and pg_restore can pick tables out of it. The same options as RUNBOOK section 4.
+          "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_dump" "$SUPABASE_DB_URL" \
+            --format=custom --no-owner --no-privileges --schema=public --schema=auth \
+            --file="backup-${stamp}.dump"
+
+      - name: Check the dump is not empty and can be read
+        run: |
+          size="$(stat -c %s "backup-${STAMP}.dump")"
+          echo "dump size: ${size} bytes"
+          test "$size" -gt 10000 || { echo "::error::The dump is suspiciously small"; exit 1; }
+          entries="$("/usr/lib/postgresql/${PG_MAJOR}/bin/pg_restore" --list "backup-${STAMP}.dump" | grep -c 'TABLE DATA' || true)"
+          echo "tables with data: ${entries}"
+          test "$entries" -ge 20 || { echo "::error::Fewer tables than expected in the dump"; exit 1; }
+
+      - name: Encrypt it
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 --output "backup-${STAMP}.dump.gpg" "backup-${STAMP}.dump"
+          rm "backup-${STAMP}.dump"
+          ls -l "backup-${STAMP}.dump.gpg"
+
+      # ---------------------------------------------------------------------------------------------------------------
+      # DECISION (the owner's): where does the encrypted dump go? Until one of the blocks below is chosen and filled in,
+      # this step fails, so a night's dump is never silently thrown away and never published. Do NOT use
+      # actions/upload-artifact for it: an artifact of a public repository can be downloaded by anybody, and even in a private
+      # repository it is kept for a short time inside GitHub, which is not "somewhere else".
+      #
+      # Option 1, an S3-compatible bucket that is private (Backblaze B2, Cloudflare R2, AWS S3, a bucket in another Supabase
+      # project): needs BACKUP_S3_ENDPOINT, BACKUP_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY as secrets, and a
+      # lifecycle rule on the bucket for the retention (for example: delete after 30 days; keep the first of each month for 12).
+      #
+      #   - name: Upload to the private bucket
+      #     env:
+      #       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #       AWS_DEFAULT_REGION: auto
+      #     run: |
+      #       aws s3 cp "backup-${STAMP}.dump.gpg" "s3://${{ secrets.BACKUP_S3_BUCKET }}/nightly/backup-${STAMP}.dump.gpg" \
+      #         --endpoint-url "${{ secrets.BACKUP_S3_ENDPOINT }}"
+      #
+      # Option 2, a drive the club controls (Google Drive, OneDrive) through rclone: needs a BACKUP_RCLONE_CONFIG secret
+      # holding an rclone configuration for a folder only this job can write to; retention is a cleanup you set on the drive.
+      #
+      # Option 3, a second Supabase project's Storage used as the store: the same as option 1, with that project's S3 settings.
+      # It protects against a lost project, not against a lost Supabase account.
+      # ---------------------------------------------------------------------------------------------------------------
+      - name: "Hand the dump to its destination (DECISION - not chosen yet)"
+        run: |
+          echo "::error::No backup destination has been chosen. Edit this step (docs/OWNER_CHECKLIST.md, item 9) before activating the workflow."
+          exit 1

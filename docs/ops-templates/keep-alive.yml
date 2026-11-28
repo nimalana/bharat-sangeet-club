@@ -1,0 +1,61 @@
+# ======================================================================================================================
+# DRAFT. NOT ACTIVE.
+#
+# This file is a template. GitHub only runs workflows in `.github/workflows/`, so it does nothing here. It becomes live when
+# somebody copies it to `.github/workflows/keep-alive.yml` AND the two repository secrets below exist. Until the secrets exist
+# the copy fails on its first step, on purpose. Not run against a real project: run it once by hand (Actions, "Run workflow")
+# and read its log before you rely on it. See docs/OWNER_CHECKLIST.md, item 10 ("Pausing and keep-alive").
+#
+# Why: a Supabase project on the Free plan is paused after about a week without activity, and a paused portal shows an error on
+# every page that needs data. This sends two harmless read requests every three days. On the Pro plan projects are not paused
+# and this file is not needed; delete the copy.
+#
+# What it sends: the project's PUBLIC key, the one every visitor's browser already has, as the `apikey` header. No login, no
+# secret, no write. (A publishable key is not a JWT: it goes in `apikey` only, never in an Authorization header.)
+#   1. GET <project>/auth/v1/health        proves the project is reachable and its sign-in service answers.
+#   2. GET <project>/rest/v1/archive_items?select=id&limit=1
+#                                          runs one real query on the database as a visitor (the landing page reads the same
+#                                          table for the public concerts). An empty answer, [], is a success.
+# Whether Supabase counts these as the activity that keeps a project awake is Supabase's rule, not this repository's: after
+# turning it on, watch the project page for two weeks. If it still pauses, go to Pro.
+#
+# Repository secrets (Settings, Secrets and variables, Actions). The address of the project is a secret here only so that it is
+# never written in the repository:
+#   SUPABASE_URL                   https://<project ref>.supabase.co
+#   SUPABASE_PUBLISHABLE_KEY       the publishable key (Project Settings, API Keys)
+#
+# GitHub switches off scheduled workflows of a PUBLIC repository that nobody has pushed to for 60 days. Look at the Actions tab
+# now and then.
+# ======================================================================================================================
+name: Keep the project awake (draft)
+
+on:
+  schedule:
+    - cron: "23 6 */3 * *" # 06:23 UTC every third day
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Refuse to run without its secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$SUPABASE_URL" || { echo "::error::The secret SUPABASE_URL is not set"; exit 1; }
+          test -n "$SUPABASE_PUBLISHABLE_KEY" || { echo "::error::The secret SUPABASE_PUBLISHABLE_KEY is not set"; exit 1; }
+
+      - name: Ask the sign-in service and the database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          echo "::add-mask::${SUPABASE_URL}"
+          curl --fail --silent --show-error --max-time 30 --retry 2 \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" "${SUPABASE_URL%/}/auth/v1/health" -o /dev/null -w "auth health: %{http_code}\n"
+          curl --fail --silent --show-error --max-time 30 --retry 2 \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" "${SUPABASE_URL%/}/rest/v1/archive_items?select=id&limit=1" -o /dev/null -w "rest read: %{http_code}\n"
