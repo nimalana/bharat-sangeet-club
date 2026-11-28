@@ -55,7 +55,12 @@ export function usePortalNavigation({ user, loadData }: { user: User | null; loa
     if (next === "home" && user) loadData();
     setSection(next);
     const nextUrl = sectionUrl(window.location.pathname, next);
-    if (`${window.location.pathname}${window.location.search}` !== nextUrl) window.history.pushState({ section: next }, "", nextUrl);
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.pushState({ section: next }, "", nextUrl);
+      // The same page with another address (a group open in My groups, then "My groups" in the menu again): the screens that keep their state
+      // in the address (lib/hooks/use-url-state.ts) only hear the browser's own back and forward event, so they are told the address changed.
+      if (next === section) window.dispatchEvent(new PopStateEvent("popstate"));
+    }
     window.scrollTo({ top: 0, behavior: scrollBehavior() });
   };
 

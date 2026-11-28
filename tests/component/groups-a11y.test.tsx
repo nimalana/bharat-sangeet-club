@@ -77,12 +77,13 @@ describe("the list of groups", () => {
 });
 
 describe("one group's page, every tab (an executive in the group sees them all)", () => {
+  // The shell fills Resources and Attendance with those screens for the group (renderGroupTab); the other tabs are the group page's own.
   const TABS: Array<[string, string, RegExp]> = [
     ["announcements", "Announcements", /Rehearsal moved/],
     ["dates", "Dates", /Winter concert/],
-    ["resources", "Resources", /shared resource library/],
+    ["resources", "Resources", /^Club library$/],
     ["recordings", "Recordings", /recording room/],
-    ["attendance", "Attendance", /Attendance page/],
+    ["attendance", "Attendance", /^Attendance$/],
     ["roster", "Roster", /Meera Iyer/],
     ["requests", "Requests", /Requests to join/],
   ];

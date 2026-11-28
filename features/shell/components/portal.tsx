@@ -13,6 +13,7 @@ import { DeactivatedScreen } from "../../admin/components/member-access";
 import { useCalendarPage } from "../../calendar/hooks/use-calendar-page";
 import { ClubDashboard } from "../../dashboard/components/club-dashboard";
 import { SubgroupSpaces } from "../../groups/components/subgroup-spaces";
+import type { GroupTabRenderer } from "../../groups/model";
 import { LoginScreen } from "../../public/components/login-screen";
 import { PublicSite } from "../../public/components/public-site";
 import { ArchiveModal } from "../../recordings/components/archive-modal";
@@ -65,6 +66,15 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
   if (shellState === "failed") return <BootstrapFailedScreen onRetry={retry} onSignOut={signOutQuietly} />;
   if (shellState === "loading") return <LoadingScreen />;
 
+  // A group's Resources and Attendance tabs show those screens for the group (features may not import each other: the shell combines them).
+  // Recordings keeps its short panel with the button that opens the page: that screen keeps its own group filter in the address under the
+  // name the group page uses for the open group (`?group=`), so the two cannot share one address. Dates is the group page's own list.
+  const renderGroupTab: GroupTabRenderer = (tab, group) => {
+    if (tab === "resources") return <ResourceLibrary user={user} role={role} groups={availableGroups} memberships={memberships} events={events} onResourceCountChange={setResourceCount} initialScope={group.id} />;
+    if (tab === "attendance") return <AttendancePage user={user} role={role} groups={availableGroups} initialScope={group.id} />;
+    return null;
+  };
+
   const outcome = resolveSection(section, role);
   const shown = outcome.kind === "render" ? outcome.section : null;
 
@@ -75,7 +85,7 @@ export function Portal({ publicConcerts = null }: { publicConcerts?: PublicConce
       <SectionBoundary key={section}>
         {shown === "home" && <ClubDashboard name={name} role={role} events={events} resourceCount={resourceCount} announcements={announcements} onNavigate={navigate} manage={canManage ? { user, groups, onChanged: loadData } : undefined} />}
 
-        {shown === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={nav.openAttendanceFor} onOpenRecordings={nav.openRecordingsFor} onOpenResources={nav.openResourcesFor} />}
+        {shown === "groups" && <SubgroupSpaces user={user} role={role} onGroupsChanged={loadWorkspaces} onOpenAttendance={nav.openAttendanceFor} onOpenRecordings={nav.openRecordingsFor} onOpenResources={nav.openResourcesFor} renderGroupTab={renderGroupTab} />}
 
         {shown === "signups" && <SignupRequestsPage onCount={setPendingSignups} />}
 

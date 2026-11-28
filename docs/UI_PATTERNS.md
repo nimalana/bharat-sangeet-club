@@ -632,3 +632,28 @@ Do these in the area's files; use the piece, do not copy it. Anything a piece la
 **In the report**
 - [ ] Per file: what moved onto which piece. Every user-visible sentence added or changed (word for word). Every test that had to change and why. Mutation evidence for the new tests. What was **not** verified (section 9's list).
 - [ ] Every `needs:` (what the piece lacks) and every file changed outside the area.
+
+## 11. Where each area used the pieces (end of Phase 3)
+
+What the address carries now (all with `useUrlState`; a bad value falls back to the default and is never written back):
+
+| Page | Parameters |
+|---|---|
+| Any | `page` (the shell's, unchanged) |
+| My Groups | `group` (open group), `tab` (announcements, dates, resources, recordings, attendance, roster, requests) |
+| Calendar | `month` (push), `event` (replace) |
+| Members | `q` (replace), `group` (push) |
+| Attendance | `scope` (all, club, group-N), `term`, `session`; the tab is NOT in the address |
+| Recordings | `view`, `group`, `q`, `recording` |
+| Resources | `folder`, `q` |
+| Finance | `tab` (overview, expenses, reimbursements, claims; `requests` is read as reimbursements), `flow`, `request` / `expense` / `payment` (the open detail) |
+| Admin | `q`, `deactivated` |
+
+Notes for whoever changes a page next:
+- A group's Resources and Attendance tabs show those screens for the group; the shell supplies them (`renderGroupTab` in `features/shell/components/portal.tsx`). Recordings and Dates stay the group page's own panels: the recordings screen keeps its own group filter under `?group=`, the name the group page uses for the open group.
+- Choosing "My Groups" while a group is open takes the person back to the list: `navigate()` tells the screens that keep state in the address when the same page gets another address.
+- Uploads (`uploadWithProgress` + `UploadProgress`): resources and folders, recording takes, notation files, club archive, finance receipts and claim documents, attendance excuse proof. Order of operations and clean-up rules are as before.
+- Every destructive action asks first, through `ConfirmDialog` (the action runs inside it and keeps it open and busy) or `useConfirm`; actions that need a reason use `FormDialog`.
+- Previews (`PreviewDialog`): library files, notation files, archive items, receipts and claim documents. External links stay links.
+- Account menu in the top bar (My profile, Sign out); "Complete your profile" once after the first sign-in (see docs/KNOWN_GAPS.md entry 2).
+- Embedded screens inside a group tab each draw their own `<h1>`; a heading structure that fits the tab layout is a later cleanup.

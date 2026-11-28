@@ -1,9 +1,9 @@
-# Bundle size baseline (Phase 2.5, R0; reset in R5 and R4)
+# Bundle size baseline (Phase 2.5, R0; reset in R5, R4 and Phase 3)
 
 R0 of the refactoring plan: bundle size per route is reported before and after every step, and "per-route bundles no larger
 than before" is part of the definition of done (R7). The first baseline (R0, commit `988b3b7`) had `/` at 273.8 kB gzip. After the data
 layer and the file moves (R2, R3) `/` was at 280.4 kB; the R5 bundle diet (below) brought it to 265.5 kB, and this file now holds that
-number, so the gain cannot be given back unnoticed. The R4 CSS split removed the unused rules and took the CSS from 27.0 to 23.0 kB gzip.
+number, so the gain cannot be given back unnoticed. The R4 CSS split removed the unused rules and took the CSS from 27.0 to 23.0 kB gzip. Phase 3 (accessible dialogs, toasts, confirm, upload progress, previews, URL state, the account menu, the sign-up queue) took `/` to 270.0 kB gzip (+4.5, inside the 5 kB rule; the screens that grew most are lazy: JS that no first load needs went from 171.6 to 199.6 kB) and the CSS to 24.9 kB (12px text floor, 44px targets, focus rings).
 
 | | |
 |---|---|
@@ -15,9 +15,9 @@ number, so the gain cannot be given back unnoticed. The R4 CSS split removed the
 
 | Route | First-load JS gzip | brotli | raw | JS chunks | CSS gzip | CSS raw |
 |---|---:|---:|---:|---:|---:|---:|
-| `/` (the whole portal) | 265.5 kB | 227.3 kB | 940.0 kB | 9 | 23.0 kB | 122.9 kB |
-| `/meetings` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 23.0 kB | 122.9 kB |
-| `/_not-found` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 23.0 kB | 122.9 kB |
+| `/` (the whole portal) | 270.0 kB | 231.9 kB | 950.2 kB | 9 | 24.9 kB | 134.3 kB |
+| `/meetings` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 24.9 kB | 134.3 kB |
+| `/_not-found` | 146.2 kB | 125.5 kB | 516.7 kB | 6 | 24.9 kB | 134.3 kB |
 
 kB = 1000 bytes, as Next prints. gzip is level 9, brotli quality 11. Also in the JSON: JS that no route loads on a first visit
 ("lazy"): 171.6 kB gzip, 609.8 kB raw, 8 chunks. That is the legacy-browser polyfill chunk, the Tone.js / wavesurfer.js chunk loaded
