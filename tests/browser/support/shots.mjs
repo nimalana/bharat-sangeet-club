@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { SHOT_DIR, WIDTHS } from "./config.mjs";
 
-export const MASKS = [
+const MASKS = [
   ".dashboard-measure",          // a random talam pattern with a running beat animation
   ".toast",                     // a notification that has a timer
   "time",                       // dates and times that depend on today
@@ -18,7 +18,7 @@ export const MASKS = [
 
 // Regions whose HEIGHT changes with every run (a list that grows with each run's audit rows): painting over them would still move
 // everything below, so they are taken out of the page for the picture.
-export const HIDDEN = [
+const HIDDEN = [
   ".audit-panel",               // "Recent admin activity": the last 20 admin actions, which every run adds to
 ];
 

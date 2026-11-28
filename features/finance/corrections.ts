@@ -12,7 +12,7 @@ import type { Expense, FinanceDocument, FundingClaim, Payment, Reimbursement } f
 import { FILE_LEFT_IN_STORAGE, expenseCategories } from "./constants";
 import type { FinanceAction } from "./types";
 
-export const reasonField = (label = "Reason"): FormField => ({ name: "reason", label, type: "textarea", required: true, minLength: 3, maxLength: 500, placeholder: "Kept in the audit trail" });
+const reasonField = (label = "Reason"): FormField => ({ name: "reason", label, type: "textarea", required: true, minLength: 3, maxLength: 500, placeholder: "Kept in the audit trail" });
 
 export function voidPaymentAction(payment: Payment): FinanceAction {
   const effect = payment.purpose === "member_reimbursement" ? "The reimbursement goes back to approved so it can be paid again."

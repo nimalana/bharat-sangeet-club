@@ -42,7 +42,7 @@ export function buildSnapshot(wave: FinanceWave): FinanceSnapshot {
   };
 }
 
-export type ChecklistItem = { label: string; done: boolean };
+type ChecklistItem = { label: string; done: boolean };
 export type ClaimChecklist = { checks: ChecklistItem[]; complete: boolean; linkedExpenses: Expense[] };
 
 // A claim can be edited (documents, expenses) until the funder has it.

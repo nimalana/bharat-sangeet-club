@@ -53,7 +53,7 @@ export const FINANCE_LIST_LIMIT = 500;
 const LIST_LIMIT = FINANCE_LIST_LIMIT;
 
 /** One read as it came back: its rows (null when it failed) and its error (null when it worked). */
-export type FinanceAnswer<T> = { data: T | null; error: ApiError | null };
+type FinanceAnswer<T> = { data: T | null; error: ApiError | null };
 export type FinanceWave = {
   expenses: FinanceAnswer<Expense[]>;
   reimbursements: FinanceAnswer<Reimbursement[]>;

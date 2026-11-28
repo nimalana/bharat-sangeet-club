@@ -10,7 +10,7 @@
 // Type-only import: lib modules that tests load directly import nothing at run time.
 import type { ClubRole } from "./sections";
 
-export type BootstrapProfile = { full_name: string; role: ClubRole; status: "active" | "deactivated" };
+type BootstrapProfile = { full_name: string; role: ClubRole; status: "active" | "deactivated" };
 
 export type BootstrapOutcome<T> =
   | { kind: "ready"; boot: T & { profile: BootstrapProfile } }

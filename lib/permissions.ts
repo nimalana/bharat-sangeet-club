@@ -33,7 +33,11 @@ export function isAdmin(role: ClubRole): boolean {
   return role === "admin";
 }
 
-/** Club-wide screens that members see in a reduced form (finances, attendance, calendar and recording management). */
+/**
+ * Club-wide screens that members see in a reduced form (finances, attendance, calendar and recording management).
+ * The same rule as isExecutive under the name the permission table uses for it.
+ * @alias
+ */
 export const canManageClub = isExecutive;
 
 /** Post a group announcement, add an important date, run attendance: executive only. */

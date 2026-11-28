@@ -17,13 +17,3 @@ export async function storageHasObject(page, bucket, path) {
     return rows.some((row) => row.name === path.slice(slash + 1));
   }, { base: state.supabaseUrl, key: state.supabaseKey, sessionKey: SESSION_KEY, bucket, path });
 }
-
-export async function restRows(page, query) {
-  const state = loadState();
-  return page.evaluate(async ({ base, key, sessionKey, query }) => {
-    const token = JSON.parse(window.localStorage.getItem(sessionKey) || "{}").access_token;
-    const response = await fetch(`${base}/rest/v1/${query}`, { headers: { apikey: key, Authorization: `Bearer ${token}` } });
-    if (!response.ok) throw new Error(`${query} answered ${response.status}`);
-    return response.json();
-  }, { base: state.supabaseUrl, key: state.supabaseKey, sessionKey: SESSION_KEY, query });
-}

@@ -20,10 +20,10 @@
 // one, or one of the controls below (never, rejects, after, deferred). Calls nobody scripted get
 // an empty answer and are listed in `fake.unscripted`.
 
-export type FakeError = { message: string; code?: string; details?: string; hint?: string };
+type FakeError = { message: string; code?: string; details?: string; hint?: string };
 export type Answer = { data?: unknown; error?: FakeError | null; count?: number | null; status?: number };
 
-export type Link = { method: string; args: unknown[] };
+type Link = { method: string; args: unknown[] };
 export type Call = {
   /** Order of the call among all calls since the last reset (1, 2, 3, ...). */
   seq: number;
@@ -45,7 +45,7 @@ export type Call = {
 };
 
 type Control = { readonly __control: "never" | "rejects" | "after" | "deferred"; [key: string]: unknown };
-export type ReplyValue = Answer | Control;
+type ReplyValue = Answer | Control;
 export type Reply = ReplyValue | ((call: Call) => ReplyValue | Promise<ReplyValue>);
 
 // ---------- ways to answer ----------
@@ -108,7 +108,7 @@ function makeCall(seq: number, kind: Call["kind"], target: string, op: string, c
   };
 }
 
-export function createFakeSupabase() {
+function createFakeSupabase() {
   let seq = 0;
   const calls: Call[] = [];
   const unscripted: Call[] = [];

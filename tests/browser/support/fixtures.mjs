@@ -11,7 +11,6 @@
 //   finance      requests by member1: two submitted with two receipts each, one approved (to pay), one paid; club expenses
 //                (one to claim, one to void, one on the fixture funding claim); the claim; income
 //   archive      a public concert (it must exist BEFORE `next build`: the landing page is prerendered with it) and a members-only recording
-import { ACCOUNTS } from "../../../scripts/e2e/accounts.mjs";
 import { mark, RUN } from "../../../scripts/e2e/lib/ctx.mjs";
 import { png, pdf, wav } from "../../../scripts/e2e/lib/fixtures.mjs";
 import { put, uid } from "../../../scripts/e2e/lib/storage.mjs";
@@ -22,8 +21,6 @@ const daysFromNow = (days) => hoursFromNow(days * 24);
 const today = () => new Date().toISOString().slice(0, 10);
 // Today at 16:00 UTC (noon in New York): inside the calendar's current month whatever the time of day.
 const todayNoon = () => { const d = new Date(); d.setUTCHours(16, 0, 0, 0); return d.toISOString(); };
-
-export { RUN };
 
 // The deactivation, role and group state the suite needs before anything is seeded.
 export async function prepareAccounts(ctx) {
@@ -262,5 +259,3 @@ export async function removeWhatTheAppMayDelete(ctx) {
   }
   return done;
 }
-
-export { ACCOUNTS };

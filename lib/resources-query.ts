@@ -12,11 +12,11 @@ export const RESOURCE_PAGE_SIZE = 100;
 export const MAX_FOLDER_DEPTH = 3;
 // Searching inside a folder lists the folder ids in the URL; stop well short of
 // a request line too long for the API gateway.
-export const MAX_SUBTREE_FOLDERS = 400;
-export const SEARCH_MAX_LENGTH = 100;
+const MAX_SUBTREE_FOLDERS = 400;
+const SEARCH_MAX_LENGTH = 100;
 export const THUMBNAIL_TTL_SECONDS = 3600;
 // A signed link is treated as expired this long before it really is.
-export const THUMBNAIL_REFRESH_MARGIN_SECONDS = 300;
+const THUMBNAIL_REFRESH_MARGIN_SECONDS = 300;
 
 export type LibraryTab = "all" | "documents" | "links" | "photos";
 export type SortKey = "updated" | "created" | "name" | "event";
@@ -36,7 +36,7 @@ export type ResourceListParams = {
   limit: number;
 };
 
-export type FilterOp =
+type FilterOp =
   | { op: "eq"; column: string; value: string | number | boolean }
   | { op: "neq"; column: string; value: string | number | boolean }
   | { op: "is"; column: string; value: null }

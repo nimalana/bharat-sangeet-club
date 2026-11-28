@@ -21,7 +21,7 @@ export const RESOURCE_FIELDS = "id,node_kind,media_kind,title,description,parent
 export type ResourceRow = Omit<Tables<"resources">, "metadata">;
 
 /** The bucket every uploaded library file goes to. */
-export const RESOURCE_BUCKET = "club-resources";
+const RESOURCE_BUCKET = "club-resources";
 
 /** False when the portal has no Supabase configuration: the library says so and does nothing, as it always did. */
 export const resourcesAvailable = (): boolean => supabase !== null;

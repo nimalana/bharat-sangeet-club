@@ -15,7 +15,7 @@ function client() {
   return supabase;
 }
 
-export type ListAnswer<T> = { data: T[] | null; error: PostgrestError | null };
+type ListAnswer<T> = { data: T[] | null; error: PostgrestError | null };
 
 /** get_portal_bootstrap: the profile and everything the first screen needs, in one request. The answer is judged by lib/bootstrap.ts. */
 export async function getPortalBootstrap() {

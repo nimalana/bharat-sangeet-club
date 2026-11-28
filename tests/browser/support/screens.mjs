@@ -5,8 +5,6 @@
 // when R3 moves the files.
 import { expect } from "./test.mjs";
 
-export const SCREEN_KEYS = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "finances", "admin"];
-
 export const SCREEN_PATH = {
   home: "/", groups: "/?page=groups", calendar: "/?page=calendar", members: "/?page=members", attendance: "/?page=attendance",
   recordings: "/?page=recordings", documents: "/?page=documents", finances: "/?page=finances", admin: "/?page=admin",
@@ -82,7 +80,7 @@ export function landmarks(page, screen, kind, fx) {
 }
 
 // What this kind of person must not see on the screen. Each locator must match nothing.
-export function absences(page, screen, kind, fx) {
+function absences(page, screen, kind, fx) {
   const t = fx.titles;
   const notMember = kind === "member";
   const list = [];

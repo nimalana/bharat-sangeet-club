@@ -15,7 +15,7 @@ database (Postgres, RLS, RPC)          supabase/migrations: the only source of w
         |
 lib/database.types.ts                  GENERATED from the database; never edited by hand
         |
-lib/db.ts                              Tables<"x">, TablesInsert, TablesUpdate, Enums<"x">, Functions<"rpc">, the union types
+lib/db.ts                              Tables<"x">, TablesInsert, TablesUpdate, RpcArgs/RpcReturns<"rpc">, the union types
         |                              derived from the enums (roles, statuses), and the row shapes the screens share (Subgroup,
         |                              ClubEvent, Profile, ArchiveItem ...: tables narrowed with Pick)
 lib/supabase.ts                        the one place that creates the client: createClient<AppDatabase> (null without a URL and key)
@@ -237,6 +237,7 @@ Before merging, CI and a reviewer expect all of these to pass:
 npx tsc --noEmit                                              # types
 npm test                                                      # pure logic + component tests (includes the boundary test)
 npm run lint:ratchet                                          # lint count may not rise; import boundaries (lint:boundaries)
+npm run knip                                                  # no unused file, export, type or dependency (knip.jsonc: what is kept on purpose, and why)
 npm run build                                                 # NEXT_PUBLIC_SUPABASE_URL / _PUBLISHABLE_KEY as in CI
 npm run report:bundle -- --compare docs/bundle-baseline.json  # no route more than 5 kB gzip larger
 npm run test:contract:selftest                                # every table, column, RPC, bucket the frontend uses exists (docs/CONTRACT_CHECK.md)

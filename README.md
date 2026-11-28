@@ -164,6 +164,7 @@ npm run report:bundle   # per-route bundle sizes of that build; --compare docs/b
 npm test                # pure-logic tests, then the component tests against a fake Supabase client (tests/README.md)
 npm run lint:ratchet    # ESLint against lint-baseline.json (counts may only fall) and the import rules below
 npm run lint:boundaries # which folder may import which, and no import cycle (scripts/check-boundaries.mjs)
+npm run knip            # no unused file, export, type or dependency (knip.jsonc says what is kept on purpose)
 npm run test:contract   # every table, column, RPC and bucket the frontend uses exists in the migrated database (docs/CONTRACT_CHECK.md)
 npm run test:types-drift # lib/database.types.ts still matches the migrated database
 ```

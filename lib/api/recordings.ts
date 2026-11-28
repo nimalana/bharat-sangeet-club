@@ -25,7 +25,7 @@ export const recordingBucket = (recording: { storage_bucket?: string }) => recor
 
 export const RECORDINGS_PAGE_SIZE = 24;
 
-export type RecordingsView = "published" | "drafts" | "archived";
+type RecordingsView = "published" | "drafts" | "archived";
 export type RecordingsQuery = {
   view: RecordingsView;
   /** "all", or one group. */

@@ -8,7 +8,7 @@
 // A calendar day has no time zone and is shown as written. An instant is shown
 // in the club's own time zone so every member sees the same day and time.
 
-export const CLUB_TIME_ZONE = "America/New_York";
+const CLUB_TIME_ZONE = "America/New_York";
 
 const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 

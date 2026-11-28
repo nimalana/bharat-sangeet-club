@@ -29,11 +29,11 @@ const ALLOWED_ROLES: Record<Section, readonly ClubRole[]> = {
   recordings: ALL_ROLES, documents: ALL_ROLES, finances: ALL_ROLES, admin: ["admin"],
 };
 
-export function isClubRole(value: unknown): value is ClubRole {
+function isClubRole(value: unknown): value is ClubRole {
   return typeof value === "string" && (ALL_ROLES as readonly string[]).includes(value);
 }
 
-export function isSection(value: unknown): value is Section {
+function isSection(value: unknown): value is Section {
   return typeof value === "string" && (SECTIONS as readonly string[]).includes(value);
 }
 

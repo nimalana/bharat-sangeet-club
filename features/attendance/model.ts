@@ -2,12 +2,12 @@
 // Kept free of React and Supabase so they run under `node --test`.
 
 // Type-only import: this file is loaded by node's test runner, so it imports nothing at run time.
-import type { AttendanceStatus, ClubRole, EligibilityStatus, ExcuseStatus, Profile, RemediationStatus, SessionStatus, Tables } from "../../lib/db";
+import type { AttendanceStatus, ClubRole, EligibilityStatus, Profile, SessionStatus, Tables } from "../../lib/db";
 
 // The values come from the database enums (lib/db.ts). Re-exported so the screens keep importing them from here.
-export type { ClubRole, EligibilityStatus, ExcuseStatus, RemediationStatus, SessionStatus };
+export type { ClubRole, SessionStatus };
 // A mark, or "pending": no mark yet. "pending" is the UI's own word; the database has no such status.
-export type RecordStatus = AttendanceStatus | "pending";
+type RecordStatus = AttendanceStatus | "pending";
 export type AbsenceCategory = "class_exam" | "family_emergency" | "illness" | "other_club_event" | "other";
 // The tab an executive is on. (The audience, ScopeFilter, and a group as a choice, GroupOption, are in lib/db.ts.)
 export type AttendanceTab = "overview" | "meetings" | "excuses";
@@ -27,7 +27,7 @@ export type AttendanceRecord = Pick<Tables<"attendance_records">, "session_id" |
 export type Excuse = Pick<Tables<"attendance_excuses">, "id" | "session_id" | "member_id" | "reason" | "proof_path" | "notified_at" | "status" | "submitted_at" | "reviewed_at" | "review_note">
   & { reason_category: AbsenceCategory };
 export type Remediation = Pick<Tables<"attendance_remediations">, "id" | "session_id" | "member_id" | "assignment" | "due_at" | "status" | "note">;
-export type Eligibility = Pick<Tables<"attendance_eligibility">, "term_key" | "member_id" | "status" | "reason">;
+type Eligibility = Pick<Tables<"attendance_eligibility">, "term_key" | "member_id" | "status" | "reason">;
 // One member's totals over the closed meetings in view. The server sends these
 // only for members at or above the warning level.
 export type FlaggedRow = {
@@ -68,7 +68,7 @@ export type AttendanceOverview = {
   list_limit: number;
 };
 
-export type RosterRow = {
+type RosterRow = {
   member_id: string;
   full_name: string | null;
   email: string | null;
@@ -78,7 +78,7 @@ export type RosterRow = {
 };
 export type Roster = { session_id: number; version: string; rows: RosterRow[] };
 
-export type PulseSession = {
+type PulseSession = {
   id: number;
   status: SessionStatus;
   closes_at: string | null;

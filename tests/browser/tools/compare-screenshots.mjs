@@ -9,7 +9,7 @@
 // different when any colour channel differs by more than 24 of 255, which ignores JPEG noise. A size difference counts as 100 %.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { BASELINE_DIR, OUT } from "../support/config.mjs";
 
 const args = process.argv.slice(2);

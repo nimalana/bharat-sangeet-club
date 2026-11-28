@@ -6,7 +6,7 @@ import type { ManagedNote } from "./components/recording-manage";
 export type Group = Pick<Subgroup, "id" | "name" | "description">;
 // Looser than SubgroupMembership on purpose: `status` is any string, so a screen can be given a list as a test or a caller writes it.
 export type Membership = { subgroup_id: number; status: string };
-export type RecordingAudience = "subgroup" | "club" | "public";
+type RecordingAudience = "subgroup" | "club" | "public";
 // media_kind and audience are text columns with a CHECK constraint, so the generated type is `string`; the UI knows the values.
 export type Recording = Pick<Tables<"recordings">, "id" | "title" | "description" | "subgroup_id" | "uploaded_by" | "storage_path" | "mime_type" | "status" | "recording_kind"
   | "event_date" | "raga" | "tala" | "sruthi" | "tempo" | "duration_seconds" | "created_at" | "updated_at" | "published_at">

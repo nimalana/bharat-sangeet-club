@@ -36,5 +36,4 @@ export function browserConfig() {
   return cfg;
 }
 
-export const SUPABASE_HOST = `${TEST_PROJECT_REF}.supabase.co`;
 export const SESSION_KEY = `sb-${TEST_PROJECT_REF}-auth-token`;

@@ -5,7 +5,7 @@
 //
 // No React or Next imports, so the module runs under `node --test`.
 
-export const PUBLIC_CONCERTS_REVALIDATE_SECONDS = 300;
+const PUBLIC_CONCERTS_REVALIDATE_SECONDS = 300;
 export const PUBLIC_CONCERT_COLUMNS = "id,title,description,type,storage_path,event_date,raga,tala,created_at,is_public";
 
 export type PublicConcert = {
