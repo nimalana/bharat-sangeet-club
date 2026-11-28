@@ -33,10 +33,10 @@
 .primary:hover{background:var(--maroon-dark);border-color:var(--maroon-dark)}
 .section-shell,.page-section{max-width:none;padding:54px clamp(24px,4.5vw,72px) 88px}
 .page-title>p:last-child{max-width:72ch;margin:0;color:#4f5e66;font-size:14px;line-height:1.65}
-.recording-row,.document-card,.member-card,.discover-card,.admin-panel,.attendance-panel,.finance-panel,.claim-card,.reimbursement-card,.public-recording-grid article{border-color:var(--line)!important;border-radius:0!important;background:rgba(255,253,248,.72)!important;box-shadow:none!important}
-.document-grid,.member-grid,.discover-grid,.admin-stats,.attendance-summary-grid,.finance-summary{gap:1px;background:var(--line);border:1px solid var(--line)}
-.document-card,.member-card,.discover-card,.admin-stats>div,.attendance-summary-grid>div,.finance-summary>div{border:0!important;background:var(--paper)!important}
-.pill,.attendance-status,.finance-status,.enrollment-status{border-radius:999px!important}
+.recording-row,.member-card,.discover-card,.admin-panel,.attendance-panel,.finance-panel,.claim-card,.reimbursement-card,.public-recording-grid article{border-color:var(--line)!important;border-radius:0!important;background:rgba(255,253,248,.72)!important;box-shadow:none!important}
+.member-grid,.discover-grid,.admin-stats,.attendance-summary-grid,.finance-summary{gap:1px;background:var(--line);border:1px solid var(--line)}
+.member-card,.discover-card,.admin-stats>div,.attendance-summary-grid>div,.finance-summary>div{border:0!important;background:var(--paper)!important}
+.attendance-status,.finance-status,.enrollment-status{border-radius:999px!important}
 .attendance-title-row h1,.finance-title-row h1{font-family:var(--display);font-weight:600;text-transform:uppercase;letter-spacing:-.02em;color:var(--ink)}
 .attendance-tabs button.active,.finance-tabs button.active{background:transparent;border-bottom-color:var(--maroon);color:var(--maroon)}
 .modal h2,.admin-panel h2,.finance-panel h2{font-family:var(--display);font-weight:600;text-transform:uppercase;letter-spacing:.01em}

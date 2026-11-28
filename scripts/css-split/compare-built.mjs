@@ -13,7 +13,7 @@
 //      or no element can carry both: the same test the split used, scripts/css-split/conflicts.mjs). A changed pair that may conflict
 //      is reported.
 // The exit code is 1 when a used item was added or removed, a conflicting pair changed order, an unused item appeared, or the unused
-// items did not behave as asked (kept without --removed; at least one gone with it).
+// items did not behave as asked (all kept without --removed; all gone with it).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -171,6 +171,7 @@ export function compare(beforeCss, afterCss, { usage, index }) {
     }
   }
   const isUnused = (item) => {
+    if (item.context.startsWith("@layer ")) return false; // Tailwind's own layers (and the one custom utilities rule): always compared
     if (item.whole) {
       const m = /^@(?:-webkit-)?keyframes (.+)$/.exec(item.selector);
       return Boolean(m) && !animated.has(m[1]) && usage.areasOf(m[1]).size === 0;
@@ -259,6 +260,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     report.removed > 0 ||
     report.conflictingPairsReordered > 0 ||
     report.unusedItemsAdded > 0 ||
-    (removedMode ? report.unusedItemsRemoved === 0 : report.unusedItemsRemoved > 0);
+    (removedMode ? report.unusedItemsAfter > 0 : report.unusedItemsRemoved > 0);
   process.exit(bad ? 1 : 0);
 }

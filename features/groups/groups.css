@@ -18,7 +18,7 @@
 .discover-grid{grid-template-columns:1fr 1fr}
 }
 @media (max-width:650px){
-.course-grid,.workspace-columns,.discover-grid{grid-template-columns:1fr}
+.discover-grid{grid-template-columns:1fr}
 }
 .group-detail-actions{display:flex;justify-content:flex-end;gap:8px;margin:-25px 0 28px}
 .group-detail-grid{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:1px;border:1px solid var(--line);background:var(--line)}

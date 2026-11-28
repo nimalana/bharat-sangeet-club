@@ -2,7 +2,9 @@
 // Splits app/globals.css into per-area stylesheets without changing the cascade. See scripts/css-split/README.md.
 //
 //   node scripts/css-split/split.mjs plan  --base <rev>               print the area of every rule, the file table, the late and dead rules
-//   node scripts/css-split/split.mjs apply --base <rev> --through <n> write the files of the first n groups (n = 0 .. groups + 1)
+//   node scripts/css-split/split.mjs apply --base <rev> --through <n> write the files of the first n groups (n = 0 .. groups + 2:
+//                                                                     groups + 1 moves the late rules and parks the unused ones,
+//                                                                     groups + 2 deletes the unused ones)
 //
 // <rev> is the commit whose app/globals.css is the original (the analysis always starts from it, so the script can be run again at
 // any stage). The class usage is read from the working tree (features/, components/, app/, lib/).
@@ -80,9 +82,21 @@ function header(area) {
 
 const IMPORT_NOTE = "/* Feature stylesheets, next to the code that uses them. Order matters: rules of equal specificity are decided by the order they come in\n   (docs/ARCHITECTURE.md, \"CSS\"). Add a new area's file at the position its rules need, never at random. */";
 
-/** The files of stage `through`: groups 1..through are extracted, through = groups + 1 also moves the late rules and parks the unused ones. */
+/** A rule with only some dead selectors, written with the live ones only. */
+function withoutDeadSelectors(entry) {
+  if (entry.dead || !entry.deadSelectors?.length || entry.kind !== "rule") return entry;
+  const live = entry.selectors.filter((_, i) => !entry.deadSelectors.includes(i));
+  return { ...entry, raw: `${live.join(",")}${entry.raw.slice(entry.raw.indexOf("{"))}` };
+}
+
+/**
+ * The files of stage `through`: groups 1..through are extracted, through = groups + 1 also moves the late rules and parks the unused
+ * ones, through = groups + 2 deletes the unused rules (and the dead selectors of rules that have live ones too).
+ */
 export function stage(split, through) {
-  const { headText, plan, order, files } = split;
+  const { headText, plan, order } = split;
+  const removing = through > GROUPS.length + 1;
+  const files = removing ? new Map([...split.files].map(([area, list]) => [area, list.map(withoutDeadSelectors)])) : split.files;
   const extractedAreas = new Set(GROUPS.slice(0, Math.min(through, GROUPS.length)).flat());
   // the extracted files come first, in the import order: the groups must be a prefix of it
   const prefix = order.slice(0, extractedAreas.size);
@@ -99,8 +113,10 @@ export function stage(split, through) {
   if (through > GROUPS.length) {
     out.set(fileOfArea("late"), `${header("late")}${renderEntries(files.get("late"), { annotate: true })}\n`);
     importOrder.push("late");
-    out.set(fileOfArea("unused"), `${header("unused")}${renderEntries(files.get("unused"))}\n`);
-    importOrder.push("unused");
+    if (!removing) {
+      out.set(fileOfArea("unused"), `${header("unused")}${renderEntries(files.get("unused"))}\n`);
+      importOrder.push("unused");
+    }
     remainderEntries = [];
   }
   const imports = importOrder.map((a) => `@import "${path.posix.relative("app", fileOfArea(a))}";`).join("\n");
@@ -137,7 +153,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     printPlan(split);
   } else if (command === "apply") {
     const through = Number(args.through);
-    if (!Number.isInteger(through) || through < 0 || through > GROUPS.length + 1) throw new Error(`--through must be 0..${GROUPS.length + 1}`);
+    if (!Number.isInteger(through) || through < 0 || through > GROUPS.length + 2) throw new Error(`--through must be 0..${GROUPS.length + 2}`);
     for (const [file, content] of stage(split, through)) {
       fs.mkdirSync(path.dirname(path.join(ROOT, file)), { recursive: true });
       fs.writeFileSync(path.join(ROOT, file), content);
