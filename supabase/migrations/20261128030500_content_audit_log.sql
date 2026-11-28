@@ -36,7 +36,7 @@
 --
 -- WHO CAN DO WHAT.
 --   * Read: executives and administrators (private.is_executive()), active only, through the "Executives read
---     content audit log" policy; anon and authenticated hold SELECT and nothing else on the table. The function
+--     content audit log" policy; authenticated holds SELECT and nothing else on the table, anon holds nothing. The function
 --     public.list_content_audit(p_limit, p_before, p_entity_type) is SECURITY INVOKER (the policy applies),
 --     refuses everyone else with 42501, pages newest first (keyset on id), and adds the actor's name.
 --   * Write: nobody through the API. No INSERT/UPDATE/DELETE/TRUNCATE privilege for anon or authenticated, and the
