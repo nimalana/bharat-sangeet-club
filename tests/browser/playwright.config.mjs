@@ -38,7 +38,8 @@ export default defineConfig({
     navigationTimeout: 30_000,
     launchOptions: {
       executablePath,
-      args: ["--no-sandbox"],
+      // The fake devices let the recording studio record without a microphone or camera and without a permission prompt (csp.spec.mjs).
+      args: ["--no-sandbox", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
       // The app itself runs on localhost: that must NOT go through the proxy (it only tunnels HTTPS).
       ...(proxyUrl ? { proxy: { server: proxyUrl, bypass: "localhost,127.0.0.1,[::1]" } } : {}),
     },

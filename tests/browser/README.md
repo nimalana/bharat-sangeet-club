@@ -57,7 +57,14 @@ HTTP 4xx/5xx from Supabase or from the app, unless the test listed it with `guar
 answer is the right one (for example "the deactivated member's direct read is answered 401 by the database"). An allowance nobody hit is
 reported by `guard.unusedAllowances()`, so a stale one shows.
 
-The two third-party hero photos of the public site are replaced by a 1x1 PNG, so the network policy and the photo hosts cannot change a run.
+The third-party hero photo of the public site (`features/public/hero-photos.ts`, `docs/ASSETS.md`) is replaced by a 1x1 PNG, so the network policy and the photo host cannot change a run.
+
+Since the security headers (`next.config.ts`, plan 4.4 P3-02) the guard also fails the test on:
+
+* **a Content-Security-Policy violation**, enforced or report-only, in any frame or tab of the test (`securitypolicyviolation`, sent to Node as it happens so it survives the navigation after it; `guard.cspViolations` lists them);
+* **a page of the app that arrives without** the Content-Security-Policy, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy` or `Cross-Origin-Opener-Policy` header, or with a policy that allows `unsafe-eval` or lacks `object-src 'none'` / `frame-ancestors 'none'`;
+* **a browser warning about a malformed** `Permissions-Policy` or Content-Security-Policy (the browser only warns; an unknown feature name is a typo);
+* **a request to any origin** other than the app, the test project and the one hero picture `hero-photos.ts` still names (P3-03). Inline `data:` and `blob:` addresses and the browser's own pages (`chrome-error:`, the built-in PDF viewer) are not requests to anybody.
 
 ## Roles
 
@@ -84,6 +91,7 @@ what the role must not see is absent (no Admin entry, no ledger, no "New group",
 | `specs/member.spec.mjs` | The 8 screens as a member, the navigation | A member seeing the club ledger, an executive's expense, an Admin entry, a posting button |
 | `specs/deactivated.spec.mjs` | Only the deactivated notice, no data request; no screen reachable by address; direct reads answered with nothing | A deactivated member reaching anything; a data request being sent before the status is known |
 | `specs/public.spec.mjs` | Landing page with the public archive and nothing from members; a public concert's signed link is requested in `club-archive`; sign-in screen; an old `/meetings` link | The public archive leaking a members-only item; a broken public page; a data request on the public site |
+| `specs/csp.spec.mjs` | The security headers on the running server (pages, a static file, an unknown address, the redirect), then the whole policy against real use: the studio recording audio and video from the browser's fake devices, wavesurfer and Tone.js, a receipt, a take, a PDF from a signed Storage address shown in an `<img>`, `<audio>`, `<video>` and `<iframe>` and as `blob:` addresses, the realtime socket, files opened in a new tab; and the other direction: a picture, script, frame, object, stylesheet, audio, form, `<base>`, connection, socket and `eval` aimed at a stranger are each refused and reported, the portal cannot be framed (with and without `X-Frame-Options`), and the browser parsed the Permissions-Policy as written | A policy that is too strict for a screen (a refused preview, recorder or player), too loose (`unsafe-eval`, a missing header, report-only instead of enforced), or a header lost from some kind of response |
 | `specs/write-journeys.spec.mjs` | 10 journeys, listed below | A journey breaking in the browser while every API test still passes |
 | `specs/findings.spec.mjs` | Product problems found by the first runs (F1 and F2 are fixed and now ordinary tests; F3 to F6 are `test.fixme`), see the end | Nothing until fixed, then the problem coming back |
 | `specs/timings.spec.mjs` | Not in the default run; see `docs/BROWSER_TIMINGS.md` | Nothing: it measures |
