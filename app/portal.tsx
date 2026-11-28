@@ -7,12 +7,13 @@ import { DeactivatedScreen, MemberAccessActions, adminActionLabels } from "../co
 import { readCache, setCacheOwner, writeCache } from "../lib/cache";
 import { runBootstrap, type ShellState } from "../lib/bootstrap";
 import { friendlyError } from "../lib/errors";
+import type { ArchiveVisibility, ClubRole, EnrollmentMode, Tables, TablesInsert } from "../lib/db";
 import { removeStoredFile } from "../lib/storage";
 import { toastDuration, toastMark, toastTone, type Notify, type ToastTone } from "../lib/toast";
 import type { PublicConcert } from "../lib/public-concerts";
 import { anyFailed, countOrKeep, listOrKeep } from "../lib/refresh";
 import { createRequestGate } from "../lib/request-gate";
-import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type ClubRole, type Section } from "../lib/sections";
+import { SECTION_LABELS, menuGroups, menuPages, resolveSection, sectionFromSearch, sectionUrl, type Section } from "../lib/sections";
 import { supabase } from "../lib/supabase";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -34,23 +35,16 @@ const ResourceLibrary = dynamic(() => import("./resources").then((module) => mod
 const RecordingWorkspace = dynamic(() => import("../components/recordings/recording-workspace").then((module) => module.RecordingWorkspace), { ssr: false, loading: SectionLoading });
 const ClubArchiveManager = dynamic(() => import("../components/recordings/club-archive-manager").then((module) => module.ClubArchiveManager), { ssr: false, loading: SectionLoading });
 
-type ArchiveType = "recording";
-type ArchiveItem = {
-  id: number; title: string; description: string; type: ArchiveType;
-  storage_path: string; visibility: "members" | "executives";
-  event_date: string | null; raga: string | null; tala: string | null; created_at: string;
-  signedUrl?: string;
-  is_public?: boolean;
-  subgroup_id?: number | null;
-};
-type ClubEvent = { id: number; title: string; description: string; starts_at: string; location: string; created_at: string; subgroup_id: number | null };
-type Announcement = { id: number; title: string; body: string; is_pinned: boolean; published_at: string; subgroup_id: number | null };
-type EnrollmentMode = "open" | "approval" | "invite";
-type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive" | "removed";
-type Subgroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode; archived_at: string | null };
-type SubgroupMembership = { subgroup_id: number; member_id: string; status: MembershipStatus; membership_role: "member" | "leader" | "manager" };
-type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: "active" | "deactivated" } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
-type MemberProfile = { id: string; full_name: string; email: string; role: ClubRole; status?: "active" | "deactivated"; phone?: string; class_year?: string; specialty?: string; joined_at?: string };
+// Rows are the generated table types (lib/db.ts), narrowed to the columns the shell reads; what only the UI knows is added next to them.
+type ArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
+  & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">> & { type: "recording"; signedUrl?: string };
+type ClubEvent = Pick<Tables<"events">, "id" | "title" | "description" | "starts_at" | "location" | "created_at" | "subgroup_id">;
+type Announcement = Pick<Tables<"announcements">, "id" | "title" | "body" | "is_pinned" | "published_at" | "subgroup_id">;
+type Subgroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode" | "archived_at">;
+type SubgroupMembership = Pick<Tables<"subgroup_memberships">, "subgroup_id" | "member_id" | "status" | "membership_role">;
+type AccountStatus = "active" | "deactivated"; // profiles.status is text with a CHECK constraint
+type PortalBootstrap = { profile: { full_name: string; role: ClubRole; status: AccountStatus } | null; groups: Subgroup[]; memberships: SubgroupMembership[]; announcements: Announcement[]; events: ClubEvent[]; archive: ArchiveItem[]; resource_count: number };
+type MemberProfile = Pick<Tables<"profiles">, "id" | "full_name" | "email" | "role"> & Partial<Pick<Tables<"profiles">, "phone" | "class_year" | "specialty" | "joined_at">> & { status?: AccountStatus };
 type ScopeFilter = "all" | "club" | number;
 type TalamPattern = { name: string; tradition: "Hindustani" | "Carnatic"; beats: number; divisions: number[] };
 
@@ -360,7 +354,7 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
   const [members, setMembers] = useState<MemberProfile[]>([]);
   const [memberships, setMemberships] = useState<SubgroupMembership[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [audit, setAudit] = useState<Array<{ id: number; action: string; actor_email: string; target_email: string; details: Record<string, string>; created_at: string }>>([]);
+  const [audit, setAudit] = useState<Array<Pick<Tables<"admin_audit_log">, "id" | "action" | "actor_email" | "target_email" | "details" | "created_at">>>([]);
   const [editingMember, setEditingMember] = useState<MemberProfile | null>(null);
   const [savingMember, setSavingMember] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -418,7 +412,7 @@ function AdminPage({ user, groups, notify }: { user: User; groups: Subgroup[]; n
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const subgroupId = String(form.get("subgroup_id") || "");
-    const payload: Record<string, string | boolean | number> = { title: String(form.get("title")), body: String(form.get("body")), is_pinned: form.get("is_pinned") === "on", created_by: user.id };
+    const payload: TablesInsert<"announcements"> = { title: String(form.get("title")), body: String(form.get("body")), is_pinned: form.get("is_pinned") === "on", created_by: user.id };
     if (subgroupId) payload.subgroup_id = Number(subgroupId);
     const { error } = await supabase.from("announcements").insert(payload);
     if (error) notify(friendlyError(error), "error"); else { formElement.reset(); notify("Announcement published"); load(); }
@@ -597,7 +591,7 @@ function SubgroupSpaces({ user, role, onGroupsChanged, onOpenAttendance, onOpenR
     const { data, error } = await supabase.rpc("create_subgroup", {
       subgroup_name: String(form.get("name") || ""),
       subgroup_description: String(form.get("description") || ""),
-      subgroup_mode: String(form.get("enrollment_mode") || "approval"),
+      subgroup_mode: String(form.get("enrollment_mode") || "approval") as EnrollmentMode, // the form's select offers exactly the enum's values
     });
     if (error) { notify(friendlyError(error), "error"); return; }
     const created = data as Subgroup;
@@ -810,7 +804,7 @@ function ArchiveModal({ user, onClose, onSaved, notify }: { user: User; onClose:
     const upload = await supabase.storage.from("club-archive").upload(storagePath, file, { upsert: false });
     if (upload.error) { setSaving(false); notify(friendlyError(upload.error, "The file could not be uploaded."), "error"); return; }
     const access = String(form.get("visibility") || "members");
-    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type: "recording", storage_path: storagePath, visibility: access === "public" ? "members" : access, is_public: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploaded_by: user.id });
+    const saved = await supabase.from("archive_items").insert({ title, description: String(form.get("description") || ""), type: "recording", storage_path: storagePath, visibility: (access === "public" ? "members" : access) as ArchiveVisibility, is_public: access === "public", raga: String(form.get("raga") || "") || null, tala: String(form.get("tala") || "") || null, uploaded_by: user.id });
     if (saved.error) {
       // The row was not saved, so the file just uploaded is an orphan: remove it, and say so if it stays.
       const leftover = await removeStoredFile("club-archive", storagePath, { refusedMessage: "The recording could not be saved, and its uploaded file could not be removed. Ask an administrator to delete it." });

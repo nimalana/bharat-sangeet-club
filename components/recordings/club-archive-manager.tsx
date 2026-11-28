@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { SHARED_ACCESS_NOTICE, SHARED_DELETE_NOTICE, accessChangeBreaksPlayback, accessColumns, archiveAccess, loweringToExecutivesOnly, type ArchiveAccess } from "../../lib/archive-sharing";
+import type { Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
 import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
@@ -13,11 +14,8 @@ import { Dialog } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
-export type ClubArchiveItem = {
-  id: number; title: string; description: string; storage_path: string; visibility: "members" | "executives";
-  event_date: string | null; raga: string | null; tala: string | null; created_at: string;
-  is_public?: boolean; subgroup_id?: number | null;
-};
+export type ClubArchiveItem = Pick<Tables<"archive_items">, "id" | "title" | "description" | "storage_path" | "visibility" | "event_date" | "raga" | "tala" | "created_at">
+  & Partial<Pick<Tables<"archive_items">, "is_public" | "subgroup_id">>;
 
 const accessLabel: Record<ArchiveAccess, string> = { public: "Public concert page", members: "All club members", executives: "Executives only" };
 

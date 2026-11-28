@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { friendlyError } from "../lib/errors";
+import type { AttendanceStatus } from "../lib/db";
 import { readCache, writeCache } from "../lib/cache";
 import { supabase } from "../lib/supabase";
 import type { Notify } from "../lib/toast";
@@ -14,7 +15,7 @@ import {
   DEFAULT_LIST_LIMIT, EMPTY_OVERVIEW, applyPulse, createFailureGate, createSequencer, flaggedSummaries, nextListLimit, normalizeOverview, overallRate, parseMinutesLate,
   pulseNeedsReload, queueNote, rosterIsStale, shouldPoll, termChoices, termLabel,
   type AbsenceCategory, type AttendanceOverview, type AttendanceSession, type ClubRole, type EligibilityStatus, type Excuse, type Pulse,
-  type RecordStatus, type Remediation, type Roster,
+  type Remediation, type Roster,
 } from "../components/attendance/attendance-model";
 
 type Workspace = { id: number; name: string };
@@ -23,7 +24,7 @@ type AttendanceTab = "overview" | "meetings" | "excuses";
 
 // What an open dialog is asking about. Nothing is sent until its form is submitted.
 type ActionDialog =
-  | { kind: "status"; sessionId: number; memberId: string; memberName: string; status: RecordStatus }
+  | { kind: "status"; sessionId: number; memberId: string; memberName: string; status: AttendanceStatus }
   | { kind: "review"; excuse: Excuse; memberName: string; decision: "approved" | "denied" }
   | { kind: "remediation"; item: Remediation; memberName: string }
   | { kind: "eligibility"; memberId: string; memberName: string; status: EligibilityStatus }
@@ -303,7 +304,8 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       return;
     }
     const result = Array.isArray(opened) ? opened[0] : opened;
-    const code = result?.check_in_code || result?.code || "";
+    // `code` is not a column the function returns (none of the migrations ever returned it): an old fallback that never fires. The cast keeps it.
+    const code = result?.check_in_code || (result as { code?: string } | undefined)?.code || "";
     if (!code) {
       const message = "Check-in opened, but no sign-in code was returned. Refresh and try again.";
       setFeedback(message);
@@ -332,7 +334,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
       const groupName = groups.find((group) => group.id === subgroupId)?.name;
       const { data: created, error } = await client.rpc("create_attendance_session", {
         p_scope: subgroupId === null ? "club" : "subgroup",
-        p_subgroup_id: subgroupId,
+        p_subgroup_id: subgroupId as number, // NULL for a club-wide meeting: the function takes it, the generated type cannot say so for a required argument
         p_title: subgroupId === null ? "General Body Meeting" : `${groupName || "Subgroup"} rehearsal`,
         p_starts_at: new Date(String(form.get("starts_at"))).toISOString(),
       });
@@ -357,7 +359,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
     await exclusive(async () => {
       const { data: rotated, error } = await client.rpc("rotate_attendance_code", { p_session_id: sessionId });
       if (error) notify(friendlyError(error, "The code could not be changed."), "error");
-      else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLiveCode(result?.check_in_code || result?.code || ""); notify("A new code is active"); load(); }
+      else { const result = Array.isArray(rotated) ? rotated[0] : rotated; setLiveCode(result?.check_in_code || /* `code` is never returned: see openCheckIn */ (result as { code?: string } | undefined)?.code || ""); notify("A new code is active"); load(); }
     });
   }
 
@@ -539,7 +541,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
                         <div><b>{row.full_name || row.email || "Member"}</b><small>{row.email}</small></div>
                         <span className={`attendance-status ${row.status || "pending"}`}>{row.status || "pending"}</span>
                         <span>{row.status === "tardy" ? `${row.minutes_late} min late · ${formatUnits(row.unexcused_units ?? 0)} unexcused` : row.status === "absent" ? "1 unexcused" : row.status === "excused" ? "Remediation required" : "-"}</span>
-                        <select value={row.status || "pending"} disabled={saving} onChange={(event) => setDialog({ kind: "status", sessionId: selectedSession.id, memberId: row.member_id, memberName, status: event.target.value as RecordStatus })} aria-label={`Attendance status for ${memberName}`}>
+                        <select value={row.status || "pending"} disabled={saving} onChange={(event) => setDialog({ kind: "status", sessionId: selectedSession.id, memberId: row.member_id, memberName, status: event.target.value as AttendanceStatus })} aria-label={`Attendance status for ${memberName}`}>
                           <option value="pending" disabled>Pending</option><option value="present">Present</option><option value="tardy">Tardy</option><option value="absent">Absent</option><option value="excused">Excused</option>
                         </select>
                         {row.status && selectedSession.status !== "canceled" && <ClearMarkButton sessionId={selectedSession.id} memberId={row.member_id} memberName={memberName} notify={notify} onChanged={refresh} />}

@@ -6,7 +6,9 @@
 // menu, the ?page= handling and the screen switch in app/portal.tsx all read
 // the same table, so a screen cannot be built and then left unreachable.
 
-export type ClubRole = "member" | "executive" | "admin";
+// Type-only import: lib modules that tests load directly import nothing at run time.
+import type { ClubRole } from "./db";
+export type { ClubRole };
 export type Section = "home" | "groups" | "calendar" | "members" | "attendance" | "recordings" | "documents" | "finances" | "admin";
 
 export const SECTIONS: readonly Section[] = ["home", "groups", "calendar", "members", "attendance", "recordings", "documents", "finances", "admin"];

@@ -153,7 +153,13 @@ types in 13 ways and a clone of the replayed database in 10 ways, and fails when
 
 ## After R2
 
-Generated types turn a wrong column or argument name into a compile error, so the first two rows of the table above
-become redundant. The grants, the missing RPC EXECUTE, enum and CHECK values (when a value is a plain `string`), buckets
-and policies are not in the types: keep this check for them. When `lib/api/*.ts` holds every call, `maxUnresolved` should
-go to 0 or stay at the few bucket cases, and `config.json` `rowTypes` can shrink to what the generated types do not cover.
+The client is `createClient<AppDatabase>` (lib/supabase.ts, lib/db.ts), so a wrong column, argument name or enum value is
+now a compile error and the first two rows of the table under "What it does" are largely redundant with `tsc`. The grants,
+the missing RPC EXECUTE, CHECK values on text columns, buckets and policies are not in the types: this check stays for them.
+
+`config.json` `rowTypes` used to list 30 hand-written row types. Row types are now written as `Pick<Tables<"x">, ...>`, which
+the compiler keeps in step with the database, so only the 8 that narrow a text column with a CHECK constraint (or add the
+UI-only attendance mark `pending`) remain: their literal unions are still compared with the constraint. `rpcShapes` stay,
+because a function's JSON answer is `Json` in the generated types. The one accepted finding (`pending` sent to
+`set_attendance_status`) is gone: the dialog's status type is now the enum. When `lib/api/*.ts` holds every call,
+`maxUnresolved` should go to 0 or stay at the few bucket cases.

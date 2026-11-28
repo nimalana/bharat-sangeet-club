@@ -1,12 +1,13 @@
 // Types and pure helpers for the attendance screen (app/attendance.tsx).
 // Kept free of React and Supabase so they run under `node --test`.
 
-export type ClubRole = "member" | "executive" | "admin";
-export type SessionStatus = "draft" | "open" | "closed" | "canceled";
-export type RecordStatus = "pending" | "present" | "absent" | "excused" | "tardy";
-export type ExcuseStatus = "pending" | "approved" | "denied" | "withdrawn";
-export type RemediationStatus = "pending" | "complete" | "waived";
-export type EligibilityStatus = "eligible" | "under_review" | "restricted" | "reinstated";
+// Type-only import: this file is loaded by node's test runner, so it imports nothing at run time.
+import type { AttendanceStatus, ClubRole, EligibilityStatus, ExcuseStatus, RemediationStatus, SessionStatus, Tables } from "../../lib/db";
+
+// The values come from the database enums (lib/db.ts). Re-exported so the screens keep importing them from here.
+export type { ClubRole, EligibilityStatus, ExcuseStatus, RemediationStatus, SessionStatus };
+// A mark, or "pending": no mark yet. "pending" is the UI's own word; the database has no such status.
+export type RecordStatus = AttendanceStatus | "pending";
 export type AbsenceCategory = "class_exam" | "family_emergency" | "illness" | "other_club_event" | "other";
 
 // What an executive sees about a meeting that is open right now. `version`
@@ -16,58 +17,16 @@ export type AbsenceCategory = "class_exam" | "family_emergency" | "illness" | "o
 // opaque: only compare it for equality.
 export type SessionLive = { roster_count: number; checked_in_count: number; version: string };
 
-export type AttendanceSession = {
-  id: number;
-  scope: "club" | "subgroup";
-  subgroup_id: number | null;
-  subgroup_name?: string | null;
-  title: string;
-  starts_at: string;
-  status: SessionStatus;
-  opened_at: string | null;
-  closes_at: string | null;
-  closed_at: string | null;
-  canceled_at: string | null;
-  cancel_reason?: string | null;
-  code_expires_at: string | null;
-  created_at: string;
-  counts_toward_metrics: boolean;
-  live?: SessionLive | null;
-};
-export type AttendanceRecord = {
-  session_id: number;
-  member_id: string;
-  status: RecordStatus;
-  source: string;
-  note: string | null;
-  marked_at: string | null;
-  minutes_late: number;
-  unexcused_units: number;
-};
-export type Profile = { id: string; full_name: string; email: string };
-export type Excuse = {
-  id: number;
-  session_id: number;
-  member_id: string;
-  reason: string;
-  proof_path: string | null;
-  reason_category: AbsenceCategory;
-  notified_at: string | null;
-  status: ExcuseStatus;
-  submitted_at: string;
-  reviewed_at: string | null;
-  review_note: string | null;
-};
-export type Remediation = {
-  id: number;
-  session_id: number;
-  member_id: string;
-  assignment: string;
-  due_at: string | null;
-  status: RemediationStatus;
-  note: string | null;
-};
-export type Eligibility = { term_key: string; member_id: string; status: EligibilityStatus; reason: string | null };
+// subgroup_name and live are added by the RPC; cancel_reason is not sent by every query.
+export type AttendanceSession = Pick<Tables<"attendance_sessions">, "id" | "scope" | "subgroup_id" | "title" | "starts_at" | "status" | "opened_at" | "closes_at" | "closed_at" | "canceled_at"
+  | "code_expires_at" | "created_at" | "counts_toward_metrics"> & Partial<Pick<Tables<"attendance_sessions">, "cancel_reason">> & { subgroup_name?: string | null; live?: SessionLive | null };
+export type AttendanceRecord = Pick<Tables<"attendance_records">, "session_id" | "member_id" | "source" | "note" | "marked_at" | "minutes_late" | "unexcused_units"> & { status: RecordStatus };
+export type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
+// reason_category is text with a CHECK constraint, so the generated type is `string`; the UI knows the values.
+export type Excuse = Pick<Tables<"attendance_excuses">, "id" | "session_id" | "member_id" | "reason" | "proof_path" | "notified_at" | "status" | "submitted_at" | "reviewed_at" | "review_note">
+  & { reason_category: AbsenceCategory };
+export type Remediation = Pick<Tables<"attendance_remediations">, "id" | "session_id" | "member_id" | "assignment" | "due_at" | "status" | "note">;
+export type Eligibility = Pick<Tables<"attendance_eligibility">, "term_key" | "member_id" | "status" | "reason">;
 // One member's totals over the closed meetings in view. The server sends these
 // only for members at or above the warning level.
 export type FlaggedRow = {

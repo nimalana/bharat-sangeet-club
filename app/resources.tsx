@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { ResourceActions } from "../components/resources/resource-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { clearCachePrefix, readCache, writeCache } from "../lib/cache";
+import type { Tables } from "../lib/db";
 import { keepRowsOnFailure } from "../lib/refresh";
 import { LoadErrorBanner } from "../components/ui/load-error";
 import {
@@ -15,33 +16,8 @@ import { supabase } from "../lib/supabase";
 import type { Notify } from "../lib/toast";
 import styles from "./resources.module.css";
 
-export type ResourceItem = {
-  id: number;
-  node_kind: "folder" | "file" | "link";
-  media_kind: "document" | "image" | "other" | null;
-  title: string;
-  description: string | null;
-  parent_id: number | null;
-  subgroup_id: number | null;
-  visibility: "members" | "executives";
-  storage_bucket: string | null;
-  storage_path: string | null;
-  external_url: string | null;
-  original_filename: string | null;
-  mime_type: string | null;
-  byte_size: number | null;
-  checksum_sha256: string | null;
-  event_id: number | null;
-  occurred_on: string | null;
-  season_label: string | null;
-  status: "pending_upload" | "ready" | "failed" | "archived";
-  is_pinned: boolean;
-  import_id: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-  signedUrl?: string;
-};
+// A library row as RESOURCE_FIELDS reads it (every column but `metadata`), plus the signed link the screen attaches.
+export type ResourceItem = Omit<Tables<"resources">, "metadata"> & { signedUrl?: string };
 
 export type ResourceLibraryProps = {
   user: User;

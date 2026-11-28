@@ -11,6 +11,7 @@ import { financeRefreshFailed } from "../lib/finance-load";
 import { createRequestGate } from "../lib/request-gate";
 import { createSingleFlight } from "../lib/single-flight";
 import { removeStoredFile } from "../lib/storage";
+import type { ClubRole, Tables } from "../lib/db";
 import type { Notify } from "../lib/toast";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
 import { LoadErrorBanner } from "../components/ui/load-error";
@@ -19,37 +20,24 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
 
-type ClubRole = "member" | "executive" | "admin";
-type Subgroup = { id: number; name: string };
-type ClubEvent = { id: number; title: string; starts_at: string };
-type Expense = {
-  id: number; description: string; vendor: string; amount: number; purchase_date: string;
-  category: string; paid_by: "club" | "member"; paid_by_member_id: string | null;
-  payment_card_last4: string | null; subgroup_id: number | null; club_event_id: number | null;
-  event_related: boolean; event_name: string; event_starts_at: string | null;
-  event_attendee_count: number | null; event_schedule: string; status: string; created_by: string | null;
-};
-type Reimbursement = {
-  id: number; expense_id: number; member_id: string; requested_amount: number;
-  approved_amount: number | null; status: string; member_note: string; review_note: string;
-  created_at: string; void_reason?: string | null;
-};
-type Payment = {
-  id: number; direction: "inflow" | "outflow"; purpose: string; amount: number;
-  description: string; category: string; account_name: string; counterparty: string;
-  payment_date: string; status: string; expense_id?: number | null; reimbursement_id: number | null; funding_claim_id: number | null;
-};
-type FundingClaim = {
-  id: number; title: string; funder_name: string; award_reference: string;
-  heellife_reference: string; requested_amount: number; approved_amount: number | null;
-  received_amount: number; submission_deadline: string | null; status: string; notes: string;
-};
-type ClaimExpense = { claim_id: number; expense_id: number; claimed_amount: number };
-type FinanceDocument = { id: number; document_type: string; title: string; storage_path: string; uploaded_by: string };
-type ExpenseDocument = { expense_id: number; document_id: number };
-type ReimbursementDocument = { reimbursement_id: number; document_id: number };
-type ClaimDocument = { claim_id: number; document_id: number };
-type Profile = { id: string; full_name: string; email: string };
+type Subgroup = Pick<Tables<"subgroups">, "id" | "name">;
+type ClubEvent = Pick<Tables<"events">, "id" | "title" | "starts_at">;
+// paid_by and direction are text columns with a CHECK constraint, so the generated type is `string`; the UI knows the two values.
+type Expense = Pick<Tables<"finance_expenses">, "id" | "description" | "vendor" | "amount" | "purchase_date" | "category" | "paid_by_member_id"
+  | "payment_card_last4" | "subgroup_id" | "club_event_id" | "event_related" | "event_name" | "event_starts_at"
+  | "event_attendee_count" | "event_schedule" | "status" | "created_by"> & { paid_by: "club" | "member" };
+type Reimbursement = Pick<Tables<"personal_reimbursements">, "id" | "expense_id" | "member_id" | "requested_amount" | "approved_amount" | "status"
+  | "member_note" | "review_note" | "created_at"> & Partial<Pick<Tables<"personal_reimbursements">, "void_reason">>;
+type Payment = Pick<Tables<"finance_payments">, "id" | "purpose" | "amount" | "description" | "category" | "account_name" | "counterparty"
+  | "payment_date" | "status" | "reimbursement_id" | "funding_claim_id"> & Partial<Pick<Tables<"finance_payments">, "expense_id">> & { direction: "inflow" | "outflow" };
+type FundingClaim = Pick<Tables<"funding_claims">, "id" | "title" | "funder_name" | "award_reference" | "heellife_reference" | "requested_amount"
+  | "approved_amount" | "received_amount" | "submission_deadline" | "status" | "notes">;
+type ClaimExpense = Pick<Tables<"funding_claim_expenses">, "claim_id" | "expense_id" | "claimed_amount">;
+type FinanceDocument = Pick<Tables<"finance_documents">, "id" | "document_type" | "title" | "storage_path" | "uploaded_by">;
+type ExpenseDocument = Pick<Tables<"finance_expense_documents">, "expense_id" | "document_id">;
+type ReimbursementDocument = Pick<Tables<"finance_reimbursement_documents">, "reimbursement_id" | "document_id">;
+type ClaimDocument = Pick<Tables<"finance_claim_documents">, "claim_id" | "document_id">;
+type Profile = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 type FinanceView = "overview" | "expenses" | "reimbursements" | "claims";
 // `warning` is for a change that went through but left something undone; it is shown instead of the success message.
 type ActionResult = PromiseLike<{ error: { message?: string; code?: string } | null; warning?: string }>;
@@ -330,7 +318,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
     const saved = await supabase.rpc("create_funding_claim", {
       p_title: String(form.get("title") || ""), p_funder_name: String(form.get("funder_name") || "GPSG Senate"),
       p_award_reference: String(form.get("award_reference") || ""), p_heellife_reference: String(form.get("heellife_reference") || ""),
-      p_submission_deadline: String(form.get("submission_deadline") || "") || null, p_notes: String(form.get("notes") || ""),
+      p_submission_deadline: (String(form.get("submission_deadline") || "") || null) as string, /* NULL means no deadline: the function stores it, the generated type cannot say so for a required argument */ p_notes: String(form.get("notes") || ""),
       p_expense_ids: [...selectedClaimExpenses],
     });
     if (saved.error || !saved.data) { setSaving(false); notify(friendlyError(saved.error, "Claim could not be created"), "error"); return; }

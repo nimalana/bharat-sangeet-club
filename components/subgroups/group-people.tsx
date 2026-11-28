@@ -2,6 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import type { ClubRole, EnrollmentMode, GroupRole, RpcReturns, Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
 import { createRequestGate } from "../../lib/request-gate";
 import { createSingleFlight } from "../../lib/single-flight";
@@ -13,13 +14,9 @@ import { Dialog } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
-type ClubRole = "member" | "executive" | "admin";
-type EnrollmentMode = "open" | "approval" | "invite";
-type GroupRole = "member" | "leader" | "manager";
-type MembershipStatus = "active" | "pending" | "waitlisted" | "inactive" | "removed";
-export type ManagedGroup = { id: number; name: string; description: string; enrollment_mode: EnrollmentMode; archived_at?: string | null };
-type RosterRow = { member_id: string; full_name: string; email: string; status: MembershipStatus; membership_role: GroupRole; joined_at: string; status_updated_at: string };
-type Candidate = { id: string; full_name: string; email: string };
+export type ManagedGroup = Pick<Tables<"subgroups">, "id" | "name" | "description" | "enrollment_mode"> & Partial<Pick<Tables<"subgroups">, "archived_at">>;
+type RosterRow = RpcReturns<"list_subgroup_roster">[number]; // what list_subgroup_roster returns, row by row
+type Candidate = Pick<Tables<"profiles">, "id" | "full_name" | "email">;
 type Pending =
   | { kind: "remove"; row: RosterRow }
   | { kind: "decline"; row: RosterRow }

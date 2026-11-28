@@ -6,6 +6,7 @@ import { useDropzone, type DropzoneOptions } from "react-dropzone";
 import WaveSurfer from "wavesurfer.js";
 import * as Tone from "tone";
 import { readCache, writeCache } from "../../lib/cache";
+import type { Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
 import { createRequestGate } from "../../lib/request-gate";
 import { removeStoredFile } from "../../lib/storage";
@@ -14,36 +15,16 @@ import type { Notify } from "../../lib/toast";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { LoadErrorBanner } from "../ui/load-error";
-import { NoteActions, RecordingManageBar, recordingBucket } from "./recording-manage";
+import { NoteActions, RecordingManageBar, recordingBucket, type ManagedNote } from "./recording-manage";
 
 type Group = { id: number; name: string; description: string };
 type Membership = { subgroup_id: number; status: string };
-type RecordingStatus = "draft" | "published" | "archived";
 type RecordingAudience = "subgroup" | "club" | "public";
-type Recording = {
-  id: number;
-  title: string;
-  description: string;
-  subgroup_id: number | null;
-  uploaded_by: string;
-  storage_path: string;
-  storage_bucket?: string;
-  mime_type: string;
-  media_kind: "audio" | "video";
-  status: RecordingStatus;
-  audience: RecordingAudience;
-  recording_kind: string;
-  event_date: string | null;
-  raga: string | null;
-  tala: string | null;
-  sruthi: string | null;
-  tempo: string | null;
-  duration_seconds: number | null;
-  created_at: string;
-  updated_at: string;
-  published_at: string | null;
-};
-type RecordingNote = { id: number; recording_id: number; title: string; note_type: "text" | "file"; body: string; storage_path: string | null; mime_type: string | null; uploaded_by?: string };
+// media_kind and audience are text columns with a CHECK constraint, so the generated type is `string`; the UI knows the values.
+type Recording = Pick<Tables<"recordings">, "id" | "title" | "description" | "subgroup_id" | "uploaded_by" | "storage_path" | "mime_type" | "status" | "recording_kind"
+  | "event_date" | "raga" | "tala" | "sruthi" | "tempo" | "duration_seconds" | "created_at" | "updated_at" | "published_at">
+  & Partial<Pick<Tables<"recordings">, "storage_bucket">> & { media_kind: "audio" | "video"; audience: RecordingAudience };
+type RecordingNote = ManagedNote;
 type WorkspaceProps = { user: User; groups: Group[]; memberships: Membership[]; canManage: boolean; initialScope?: Scope; notify: Notify; onDataChanged?: () => void };
 type Scope = "all" | number;
 

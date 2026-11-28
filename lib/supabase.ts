@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { AppDatabase } from "./db";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -38,8 +39,10 @@ if (measure && typeof window !== "undefined") {
   };
 }
 
+// The one place the client is created. It is typed with the generated schema (lib/database.types.ts through lib/db.ts):
+// a wrong table, column, argument or enum value is a compile error.
 export const supabase = url && key
-  ? createClient(url, key, {
+  ? createClient<AppDatabase>(url, key, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
       ...(measure ? { global: { fetch: timedFetch } } : {}),
     })

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import type { Tables, TablesUpdate } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
 import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
@@ -11,12 +12,8 @@ import { Dialog } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
-export type ManagedResource = {
-  id: number; node_kind: "folder" | "file" | "link"; title: string; description: string | null;
-  parent_id: number | null; visibility: "members" | "executives";
-  storage_bucket: string | null; storage_path: string | null; external_url: string | null;
-  status: "pending_upload" | "ready" | "failed" | "archived"; is_pinned: boolean;
-};
+export type ManagedResource = Pick<Tables<"resources">, "id" | "node_kind" | "title" | "description" | "parent_id" | "visibility"
+  | "storage_bucket" | "storage_path" | "external_url" | "status" | "is_pinned">;
 
 type Pending = "edit" | "visibility" | "archive" | "restore" | "delete" | null;
 
@@ -38,7 +35,7 @@ export function ResourceActions({ item, canManage, isExecutive, childCount, noti
     event.preventDefault();
     if (!supabase) return;
     const form = new FormData(event.currentTarget);
-    const changes: Record<string, string> = { title: String(form.get("title") || "").trim(), description: String(form.get("description") || "").trim() };
+    const changes: TablesUpdate<"resources"> = { title: String(form.get("title") || "").trim(), description: String(form.get("description") || "").trim() };
     if (item.node_kind === "link") {
       const raw = String(form.get("external_url") || "").trim();
       const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;

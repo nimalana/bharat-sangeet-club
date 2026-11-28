@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
+import type { Tables, TablesUpdate } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
 import { removeStoredFile } from "../../lib/storage";
 import { supabase } from "../../lib/supabase";
@@ -12,15 +13,11 @@ import { Dialog } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
-export type ManagedRecording = {
-  id: number; title: string; description: string; uploaded_by: string; storage_path: string; storage_bucket?: string;
-  status: "draft" | "published" | "archived"; recording_kind: string;
-  raga: string | null; tala: string | null; sruthi: string | null; tempo: string | null;
-};
-export type ManagedNote = {
-  id: number; recording_id: number; title: string; note_type: "text" | "file"; body: string;
-  storage_path: string | null; mime_type: string | null; uploaded_by?: string;
-};
+export type ManagedRecording = Pick<Tables<"recordings">, "id" | "title" | "description" | "uploaded_by" | "storage_path" | "status" | "recording_kind" | "raga" | "tala" | "sruthi" | "tempo">
+  & Partial<Pick<Tables<"recordings">, "storage_bucket">>;
+// note_type is text with a CHECK constraint, so the generated type is `string`; the UI knows the two values.
+export type ManagedNote = Pick<Tables<"recording_notes">, "id" | "recording_id" | "title" | "body" | "storage_path" | "mime_type">
+  & Partial<Pick<Tables<"recording_notes">, "uploaded_by">> & { note_type: "text" | "file" };
 
 export const recordingBucket = (recording: { storage_bucket?: string }) => recording.storage_bucket || "recordings";
 
@@ -131,7 +128,7 @@ export function NoteActions({ note, user, canManage, notify, onChanged }: {
     event.preventDefault();
     if (!supabase) return;
     const form = new FormData(event.currentTarget);
-    const changes: Record<string, string> = { title: String(form.get("title") || "").trim() };
+    const changes: TablesUpdate<"recording_notes"> = { title: String(form.get("title") || "").trim() };
     if (note.note_type === "text") changes.body = String(form.get("body") || "").trim();
     setBusy(true);
     const { data, error } = await supabase.from("recording_notes").update(changes).eq("id", note.id).select("id");
