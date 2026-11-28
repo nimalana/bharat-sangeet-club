@@ -19,7 +19,7 @@ npm run test:browser:timings    # real load numbers, 5 runs per role and screen,
 * `SUPABASE_URL` and `SUPABASE_KEY` of the **test** project (or the `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` pair).
   The key is the publishable one. Nothing secret is stored in the repository.
 * The generated passwords of the e2e accounts: `E2E_SECRETS` (default `/tmp/claude-0/e2e/secrets.json`), written by
-  `scripts/e2e/gen-setup-sql.mjs`. The accounts and their SQL setup are described in `scripts/e2e/README.md`.
+  `scripts/e2e/gen-setup-sql.mjs`. The accounts and their SQL setup are described in `scripts/e2e/README.md`. The setup SQL makes every account `active` (since the membership gate the signup trigger makes a new profile `pending`); the global setup checks it, approves a waiting account as an executive would, and stops with a pointer to the setup SQL when an executive or the administrator is not active.
 * Chromium. The container has one at `/opt/pw-browsers/chromium` (the config uses it; do not run `playwright install`).
   `E2E_CHROMIUM` points at another binary. Behind the agent proxy the config tells Chromium about `HTTPS_PROXY` and bypasses it for
   `localhost`; the Node side needs `NODE_USE_ENV_PROXY=1`, which the npm scripts set.

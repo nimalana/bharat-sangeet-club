@@ -544,6 +544,18 @@
    "anonGrants": []
   },
   {
+   "name": "signup_reviews",
+   "rls": true,
+   "columns": [
+    "member_id",
+    "decision",
+    "decided_at",
+    "decided_by",
+    "reason"
+   ],
+   "anonGrants": []
+  },
+  {
    "name": "subgroup_memberships",
    "rls": true,
    "columns": [
@@ -922,6 +934,11 @@
    ]
   },
   {
+   "name": "list_pending_members",
+   "anonExecute": false,
+   "args": []
+  },
+  {
    "name": "list_subgroup_roster",
    "anonExecute": false,
    "args": [
@@ -1153,6 +1170,24 @@
     },
     {
      "name": "p_note",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "name": "review_pending_member",
+   "anonExecute": false,
+   "args": [
+    {
+     "name": "p_member_id",
+     "type": "uuid"
+    },
+    {
+     "name": "p_approved",
+     "type": "boolean"
+    },
+    {
+     "name": "p_reason",
      "type": "text"
     }
    ]

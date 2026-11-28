@@ -11,7 +11,7 @@
 //   finance      requests by member1: two submitted with two receipts each, one approved (to pay), one paid; club expenses
 //                (one to claim, one to void, one on the fixture funding claim); the claim; income
 //   archive      a public concert (it must exist BEFORE `next build`: the landing page is prerendered with it) and a members-only recording
-import { ACCOUNTS } from "../../../scripts/e2e/accounts.mjs";
+import { ACCOUNTS, ACCOUNT_KEYS } from "../../../scripts/e2e/accounts.mjs";
 import { mark, RUN } from "../../../scripts/e2e/lib/ctx.mjs";
 import { png, pdf, wav } from "../../../scripts/e2e/lib/fixtures.mjs";
 import { put, uid } from "../../../scripts/e2e/lib/storage.mjs";
@@ -29,12 +29,20 @@ export { RUN };
 export async function prepareAccounts(ctx) {
   const { c, id } = ctx;
   const roleOf = async (key) => succeeded(await c[key].rpc("get_portal_bootstrap"), `${key} bootstrap`).profile;
+  // Since the membership gate (20261128010100) the signup trigger makes every profile pending; the setup SQL (scripts/e2e/gen-setup-sql.mjs)
+  // makes the suite's accounts ACTIVE. An account that is still waiting (made by an older copy of the SQL) is approved below, as an
+  // executive would, once the executives are in place: the three accounts that do the approving cannot be fixed that way.
+  const waiting = [];
+  for (const key of ACCOUNT_KEYS) if (["pending", "rejected"].includes((await roleOf(key)).status)) waiting.push(key);
+  for (const key of ["admin", "execA", "execB"]) ok(!waiting.includes(key), `${key} is not an active account (it is waiting for approval): run the setup SQL again (scripts/e2e/README.md)`);
   // A victim left deactivated by a crashed run is brought back first.
   if ((await roleOf("victim")).status === "deactivated") succeeded(await c.admin.rpc("admin_reactivate_member", { p_target_id: id.victim }), "reactivate the victim left over from an earlier run");
   for (const key of ["execA", "execB"]) {
     if ((await roleOf(key)).role !== "executive") succeeded(await c.admin.rpc("admin_change_member_role", { p_target_id: id[key], p_new_role: "executive" }), `promote ${key}`);
   }
   ok((await roleOf("admin")).role === "admin", "the admin account is not an administrator: run the setup SQL (scripts/e2e/README.md)");
+  for (const key of waiting) succeeded(await c.execA.rpc("review_pending_member", { p_member_id: id[key], p_approved: true, p_reason: "browser suite: the setup SQL left this account waiting" }), `approve ${key}`);
+  for (const key of ACCOUNT_KEYS) ok((await roleOf(key)).status === "active", `${key} is not an active account: run the setup SQL again (scripts/e2e/README.md)`);
 }
 
 export async function seed(ctx) {
