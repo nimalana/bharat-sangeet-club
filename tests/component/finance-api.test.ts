@@ -8,7 +8,7 @@
 // A Supabase answer with an error is an ApiError (message and code of the database kept); a call that rejects (no network) is
 // not, so the screen can tell "refused" from "could not reach it".
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   FINANCE_LIST_LIMIT, addFundingClaimExpense, approveFundingClaim, approveReimbursement, createFinanceDocumentUrl, createFundingClaim, declineReimbursement,
   financeAvailable, loadFinanceWave, payPersonalReimbursement, recordClubExpense, recordFinanceIncome, recordFundingClaimDecision, recordFundingClaimPayment,
@@ -18,6 +18,7 @@ import {
 } from "../../lib/api/finance";
 import { ApiError } from "../../lib/errors";
 import { fail, fake, ok, rejects, type Call } from "../support/fake-supabase";
+import { routeUploads, type RoutedUploads } from "./finance-xhr";
 
 /** The chain of a table call as plain arrays: [["select", "*"], ["order", "id", { ascending: false }], ["limit", 500]]. */
 const chainOf = (call: Call) => call.chain.map((link) => [link.method, ...link.args]);
@@ -265,6 +266,11 @@ describe("the finance api: funding claims", () => {
 });
 
 describe("the finance api: documents", () => {
+  // The file goes to storage through XMLHttpRequest (uploadWithProgress); finance-xhr.ts answers it from what the test scripted on the fake client.
+  let xhr: RoutedUploads;
+  beforeEach(() => { xhr = routeUploads(); });
+  // uploadWithProgress reads the session first (for the token): that read is not a call about a record or a file.
+  const calls = () => fake.calls.filter((call) => call.kind !== "auth");
   const file = new File(["%PDF-1.4 receipt"], "receipt.pdf", { type: "application/pdf" });
   const upload = (links: Parameters<typeof uploadFinanceDocument>[0]["links"], over: Partial<Parameters<typeof uploadFinanceDocument>[0]> = {}) =>
     uploadFinanceDocument({ file, storagePath: "member-9/abc-receipt.pdf", mimeType: "application/pdf", documentType: "receipt", title: "Receipt", cardLast4: "1234", links, ...over });
@@ -273,18 +279,53 @@ describe("the finance api: documents", () => {
     fake.rpc("register_finance_document").reply(ok(55));
     const id = await upload({ expenseId: 1, reimbursementId: 5, claimId: 3 });
     expect(id).toBe(55);
-    expect(fake.calls.map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual([
+    expect(calls().map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual([
       "storage:finance-private:upload", "rpc:register_finance_document:register_finance_document",
     ]);
     const stored = fake.storage("finance-private", "upload").calls[0];
     expect(stored.args[0]).toBe("member-9/abc-receipt.pdf");
-    expect(stored.args[1]).toBe(file);
-    expect(stored.args[2]).toEqual({ contentType: "application/pdf", upsert: false });
+    expect((stored.args[1] as File).name).toBe("receipt.pdf");
+    expect((stored.args[1] as File).type).toBe("application/pdf");
+    expect(stored.args[2]).toEqual({ upsert: false });
     expect(rpcArgs("register_finance_document")).toEqual({
       p_storage_path: "member-9/abc-receipt.pdf", p_document_type: "receipt", p_title: "Receipt", p_mime_type: "application/pdf",
       p_file_size_bytes: file.size, p_payment_card_last4: "1234", p_expense_id: 1, p_reimbursement_id: 5, p_claim_id: 3,
     });
     expect(fake.rpc("register_finance_document").calls[0].seq).toBeGreaterThan(stored.seq);
+  });
+
+  // Phase 3.1: the same request, through XMLHttpRequest, so the screen can show the bytes sent.
+  it("the file is sent as the same request supabase-js made (POST to the bucket path, the file as the unnamed part, no upsert), and reports its bytes", async () => {
+    fake.rpc("register_finance_document").reply(ok(55));
+    const progress: Array<{ loaded: number; total: number }> = [];
+    const pending = uploadFinanceDocument({ file, storagePath: "member-9/abc-receipt.pdf", mimeType: "application/pdf", documentType: "receipt", title: "Receipt", cardLast4: null, links: { expenseId: 1 } }, (bytes) => progress.push(bytes));
+    const request = await xhr.waitForRequest();
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe("https://fake-project.supabase.co/storage/v1/object/finance-private/member-9/abc-receipt.pdf");
+    expect(request.headers["x-upsert"]).toBe("false");
+    request.progress(100, 400);
+    request.progress(400, 400);
+    expect(await pending).toBe(55);
+    expect(progress).toEqual([{ loaded: 100, total: 400 }, { loaded: 400, total: 400 }]);
+  });
+
+  it("a file the browser gave no type is sent with the type the checks settled on, so the bucket's type list accepts it", async () => {
+    fake.rpc("register_finance_document").reply(ok(55));
+    const untyped = new File(["%PDF-1.4 receipt"], "scan.pdf", { type: "" });
+    await upload({ expenseId: 1 }, { file: untyped });
+    const sent = xhr.last.body!.get("") as File;
+    expect(sent.type).toBe("application/pdf");
+    expect(sent.name).toBe("scan.pdf");
+    expect(await sent.text()).toBe("%PDF-1.4 receipt");
+    expect(rpcArgs("register_finance_document")).toMatchObject({ p_mime_type: "application/pdf", p_file_size_bytes: untyped.size });
+  });
+
+  it("a dropped connection while the file goes up is an ApiError that friendlyError words as a dropped connection; nothing is registered", async () => {
+    fake.storage("finance-private", "upload").reply(rejects());
+    const error = await upload({ expenseId: 1 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toBe("Failed to fetch");
+    expect(fake.rpc("register_finance_document").count).toBe(0);
   });
 
   it("nobody is named as the uploader and no table is written: the database takes the uploader from the signed-in person", async () => {
@@ -315,13 +356,13 @@ describe("the finance api: documents", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toBeInstanceOf(Error);
     expect((error as ApiError).message).toBe("The resource already exists");
-    expect(fake.calls.map((call) => call.target)).toEqual(["finance-private"]);
+    expect(calls().map((call) => call.target)).toEqual(["finance-private"]);
   });
 
   it("when the registration is refused the database's sentence is thrown and the stored file is removed again", async () => {
     fake.rpc("register_finance_document").reply(fail("This purchase has been voided, so documents can no longer be added", "22023"));
     await expect(upload({ expenseId: 1 })).rejects.toMatchObject({ message: "This purchase has been voided, so documents can no longer be added", code: "22023" });
-    expect(fake.calls.map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual([
+    expect(calls().map((call) => `${call.kind}:${call.target}:${call.op}`)).toEqual([
       "storage:finance-private:upload", "rpc:register_finance_document:register_finance_document", "storage:finance-private:remove",
     ]);
     expect(fake.storage("finance-private", "remove").calls[0].args[0]).toEqual(["member-9/abc-receipt.pdf"]);

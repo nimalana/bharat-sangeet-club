@@ -15,7 +15,7 @@ import { ApiError, toApiError } from "../errors";
 import type { Profile, Tables } from "../db";
 import { removeStoredFile } from "../storage";
 import { supabase } from "../supabase";
-import { must } from "./_core";
+import { must, uploadWithProgress, type UploadProgress } from "./_core";
 
 // ---------------------------------------------------------------- row types (what the screen reads of each table)
 
@@ -296,10 +296,15 @@ export type DocumentLinks = { expenseId?: number; reimbursementId?: number; clai
 export async function uploadFinanceDocument(upload: {
   file: File; storagePath: string; mimeType: string; documentType: string; title: string;
   cardLast4: string | null; links: DocumentLinks;
-}): Promise<number> {
+}, onProgress?: (progress: UploadProgress) => void): Promise<number> {
   const db = connected();
-  const uploaded = await db.storage.from("finance-private").upload(upload.storagePath, upload.file, { contentType: upload.mimeType, upsert: false });
-  if (uploaded.error) throw toApiError(uploaded.error);
+  // The same request supabase-js sent, through XMLHttpRequest so the bytes sent are known (uploadWithProgress, docs/UI_PATTERNS.md section 5).
+  // supabase-js ignored the `contentType` option for a File (the file part carries the file's own type), so a file the browser gave no type
+  // (a .pdf on a system that does not know the extension) reached the bucket as application/octet-stream and was refused. The type the checks
+  // settled on (lib/finance-upload.ts) is now the type of the part: a file that already has it is sent as it is.
+  const body = upload.file.type === upload.mimeType ? upload.file : new File([upload.file], upload.file.name, { type: upload.mimeType });
+  const uploaded = await uploadWithProgress(db, "finance-private", upload.storagePath, body, { upsert: false }, onProgress);
+  if (uploaded.error) throw uploaded.error;
   let documentId: number | null;
   try {
     documentId = must(await db.rpc("register_finance_document", {

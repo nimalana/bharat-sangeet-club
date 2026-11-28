@@ -7,11 +7,15 @@
 // (the database function and its arguments), WHAT the person is told, and what happens to the dialog and the lists afterwards. Written
 // when features/finance was split into hooks and components: every one of these passes on the old single-file screen too.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { FinancePage } from "../../features/finance/components/finance-page";
 import { setCacheOwner } from "../../lib/cache";
 import { flush, notifySpy, userOf } from "../support/helpers";
 import { fail, fake, never, ok } from "../support/fake-supabase";
+import { routeUploads } from "./finance-xhr";
+
+// The finance upload goes through XMLHttpRequest (uploadWithProgress); finance-xhr.ts answers each request from `fake.storage(...)`, so a test scripts uploads as before.
+beforeEach(() => { routeUploads(); });
 
 const expense = (over: Record<string, unknown> = {}) => ({
   id: 1, description: "Tabla repair", vendor: "Raj Music", amount: 80, purchase_date: "2026-10-01", category: "Instruments", paid_by: "member", paid_by_member_id: "member-9",

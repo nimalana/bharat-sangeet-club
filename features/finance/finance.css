@@ -172,3 +172,4 @@
 .document-chip-group{display:inline-flex;align-items:center}
 .reimbursement-actions small{align-self:center;color:#4c5f6b}
 .finance-page button:disabled{opacity:.55;cursor:not-allowed}
+.finance-skeleton-cards { height:120px; margin-bottom:45px; }

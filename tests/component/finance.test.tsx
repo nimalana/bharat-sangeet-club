@@ -32,6 +32,10 @@ import { REFRESH_WAIT_MS } from "../../lib/bounded-wait";
 import { setCacheOwner } from "../../lib/cache";
 import { advance, flush, notifySpy, userOf } from "../support/helpers";
 import { after, deferred, fail, fake, never, ok, rejects } from "../support/fake-supabase";
+import { routeUploads } from "./finance-xhr";
+
+// The finance upload goes through XMLHttpRequest (uploadWithProgress); finance-xhr.ts answers each request from `fake.storage(...)`, so a test scripts uploads as before.
+beforeEach(() => { routeUploads(); });
 
 const SLOW_SAVED = "Saved. The lists are slow to refresh and will update on their own.";
 const SLOW_UNSAVED = "The lists are slow to refresh and will update on their own.";
@@ -117,18 +121,24 @@ describe("finance: reading the screen's data", () => {
     await waitFor(() => expect(card("Available cash")).toBe("$9,999.00"));
   });
 
-  it("until the first read arrives the screen says so in the loading line, and not the ledger", async () => {
+  // Phase 3.1: the first read is a skeleton in the shape of the screen, announced as a polite status with the same words as the old loading
+  // line; the cards are not drawn from nothing ($0.00 is not the club's balance, it is a read that has not come back).
+  it("until the first read arrives the screen shows a skeleton and says so as a status, and draws neither the cards nor the ledger", async () => {
     scriptFinance();
     const slow = deferred();
     READS.summary().reply(slow.reply);
     renderFinance();
-    const line = await screen.findByText("Loading finance workspace…");
-    expect(line.tagName).toBe("DIV");
-    expect(line.className).toBe("inline-loading");
+    const status = await screen.findByText("Loading finance workspace…");
+    expect(status.tagName).toBe("SPAN");
+    expect(status).toHaveAttribute("role", "status");
+    expect(status.nextElementSibling).toHaveAttribute("aria-hidden", "true");
+    expect(document.querySelectorAll(".skeleton").length).toBeGreaterThan(1);
+    expect(screen.queryByText("Available cash")).not.toBeInTheDocument();
     expect(screen.queryByText("Cash ledger")).not.toBeInTheDocument();
     await act(async () => { slow.resolve(ok(SUMMARY)); });
     await waitForLoad();
     expect(screen.queryByText("Loading finance workspace…")).not.toBeInTheDocument();
+    expect(document.querySelector(".skeleton")).toBeNull();
     expect(await screen.findByText("Cash ledger")).toBeInTheDocument();
   });
 
@@ -695,7 +705,9 @@ describe("finance: saving requests and documents", () => {
     expect(fake.rpc("submit_member_reimbursement").calls[0].args[0]).toMatchObject({ p_description: "Taxi to the venue", p_amount: 42.5 });
     const upload = fake.storage("finance-private", "upload").calls[0];
     expect(String(upload.args[0])).toMatch(/^member-9\/[0-9a-f-]{36}-taxi-receipt\.pdf$/);
-    expect(upload.args[2]).toMatchObject({ contentType: "application/pdf", upsert: false });
+    // The file travels as the file part of an XMLHttpRequest, which carries the file's own type (supabase-js's `contentType` option never did).
+    expect(upload.args[2]).toEqual({ upsert: false });
+    expect((upload.args[1] as File).type).toBe("application/pdf");
     expect(fake.rpc("register_finance_document").calls[0].args[0]).toMatchObject({ p_document_type: "receipt", p_storage_path: upload.args[0], p_expense_id: 1, p_reimbursement_id: 5 });
     expect(fake.rpc("register_finance_document").count).toBe(1);
     expect(fake.calls.filter((call) => call.kind === "from" && call.op === "insert")).toEqual([]);
