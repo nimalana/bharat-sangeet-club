@@ -4,8 +4,9 @@ import type { User } from "@supabase/supabase-js";
 import { ResourceActions } from "../components/resources/resource-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { clearCachePrefix, readCache, writeCache } from "../lib/cache";
-import type { Tables } from "../lib/db";
+import type { ClubRole, Tables } from "../lib/db";
 import { formatDateOrNone } from "../lib/format";
+import { canManageGroupResources, isExecutive } from "../lib/permissions";
 import { keepRowsOnFailure } from "../lib/refresh";
 import { LoadErrorBanner } from "../components/ui/load-error";
 import {
@@ -22,9 +23,9 @@ export type ResourceItem = Omit<Tables<"resources">, "metadata"> & { signedUrl?:
 
 export type ResourceLibraryProps = {
   user: User;
-  role: "member" | "executive" | "admin";
+  role: ClubRole;
   groups: Array<{ id: number; name: string }>;
-  memberships: Array<{ subgroup_id: number; status: string; membership_role: string }>;
+  memberships: Array<Pick<Tables<"subgroup_memberships">, "subgroup_id" | "status" | "membership_role">>;
   events: Array<{ id: number; title: string; starts_at: string; subgroup_id: number | null }>;
   notify: Notify;
   onResourceCountChange?: (count: number) => void;
@@ -160,12 +161,12 @@ export function ResourceLibrary({ user, role, groups, memberships, events, notif
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeMemberships = useMemo(() => new Set(memberships.filter((membership) => membership.status === "active").map((membership) => membership.subgroup_id)), [memberships]);
-  const canManageClub = role === "executive" || role === "admin";
+  const canManageClub = isExecutive(role);
   const availableGroups = canManageClub ? groups : groups.filter((group) => activeMemberships.has(group.id));
   const groupById = useMemo(() => new Map(groups.map((group) => [group.id, group.name])), [groups]);
   // Everything on screen that is known by id: the rows and the open folder's ancestors.
   const itemById = useMemo(() => new Map([...crumbState, ...items].map((item) => [item.id, item])), [crumbState, items]);
-  const canManageSubgroup = useCallback((subgroupId: number | null) => Boolean(subgroupId && (canManageClub || memberships.some((membership) => membership.subgroup_id === subgroupId && membership.status === "active" && ["leader", "manager"].includes(membership.membership_role)))), [canManageClub, memberships]);
+  const canManageSubgroup = useCallback((subgroupId: number | null) => Boolean(subgroupId && canManageGroupResources(role, memberships.filter((membership) => membership.subgroup_id === subgroupId))), [role, memberships]);
   const canWriteScope = useCallback((subgroupId: number | null) => subgroupId === null ? canManageClub : canManageSubgroup(subgroupId), [canManageClub, canManageSubgroup]);
 
   useEffect(() => {

@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabase";
 import { readCache, writeCache } from "../lib/cache";
 import { friendlyError } from "../lib/errors";
 import { formatMoney } from "../lib/format";
+import { canManageClub } from "../lib/permissions";
 import { REFRESH_WAIT_MS, waitAtMost } from "../lib/bounded-wait";
 import { financeRefreshFailed } from "../lib/finance-load";
 import { createRequestGate } from "../lib/request-gate";
@@ -67,7 +68,7 @@ export function FinancePage({ user, role, groups, events, notify }: {
   events: ClubEvent[];
   notify: Notify;
 }) {
-  const canManage = role !== "member";
+  const canManage = canManageClub(role);
   const [view, setView] = useState<FinanceView>(canManage ? "overview" : "reimbursements");
   const [modal, setModal] = useState<FinanceModal>(null);
   const [claimUploadId, setClaimUploadId] = useState<number | null>(null);

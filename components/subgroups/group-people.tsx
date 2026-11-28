@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import type { ClubRole, EnrollmentMode, GroupRole, RpcReturns, Tables } from "../../lib/db";
 import { friendlyError } from "../../lib/errors";
+import { canRemoveGroupMember, groupCapabilities } from "../../lib/permissions";
 import { createRequestGate } from "../../lib/request-gate";
 import { createSingleFlight } from "../../lib/single-flight";
 import { supabase } from "../../lib/supabase";
@@ -26,23 +27,6 @@ type Pending =
 
 const roleLabels: Record<GroupRole, string> = { member: "Member", leader: "Leader", manager: "Manager" };
 const modeLabels: Record<EnrollmentMode, string> = { open: "Open — anyone can join", approval: "Request approval", invite: "Invitation only" };
-
-// What a signed-in person may do in one group. The database enforces the same
-// rules (supabase/migrations/20261126230100_subgroup_management.sql); this only
-// decides which controls to show.
-export function groupCapabilities(clubRole: ClubRole, myRole: GroupRole | null) {
-  const isExecutive = clubRole !== "member";
-  return {
-    isExecutive,
-    canReviewRequests: isExecutive || myRole === "leader" || myRole === "manager",
-    canRemoveMembers: isExecutive || myRole === "manager",
-    canEditGroup: isExecutive || myRole === "manager",
-    canChangeRoles: isExecutive,
-    canAddMembers: isExecutive,
-    canChangeEnrollment: isExecutive,
-    canArchive: isExecutive,
-  };
-}
 
 export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft, notify }: {
   user: User; role: ClubRole; group: ManagedGroup; myRole: GroupRole | null; isMember: boolean;
@@ -173,7 +157,7 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
     .filter((candidate) => !memberIds.has(candidate.id))
     .filter((candidate) => `${candidate.full_name} ${candidate.email}`.toLowerCase().includes(candidateQuery.toLowerCase()))
     .slice(0, 30);
-  const canRemoveRow = (row: RosterRow) => row.member_id !== user.id && (can.isExecutive || (can.canRemoveMembers && row.membership_role === "member"));
+  const canRemoveRow = (row: RosterRow) => row.member_id !== user.id && canRemoveGroupMember(role, myRole, row.membership_role);
 
   return <section className="mt-6 border border-[var(--line)] bg-[var(--paper)] p-5 sm:p-6" aria-label={`People in ${group.name}`}>
     {group.archived_at && <p className="action-feedback" role="status">This group is archived. It is hidden from members and cannot accept new requests.</p>}

@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { friendlyError } from "../lib/errors";
 import type { AttendanceStatus } from "../lib/db";
+import { canManageClub } from "../lib/permissions";
 import { readCache, writeCache } from "../lib/cache";
 import { supabase } from "../lib/supabase";
 import type { Notify } from "../lib/toast";
@@ -74,7 +75,7 @@ export function AttendancePage({ user, role, groups, initialScope = "all", initi
   initialTab?: AttendanceTab;
   notify: Notify;
 }) {
-  const canManage = role !== "member";
+  const canManage = canManageClub(role);
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(initialScope);
   const [termFilter, setTermFilter] = useState("all");
   // How many items each review queue lists for an executive (see queueNote in

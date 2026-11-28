@@ -31,6 +31,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import { ResourceLibrary } from "../../app/resources";
 import { setCacheOwner } from "../../lib/cache";
+import type { GroupRole, MembershipStatus } from "../../lib/db";
 import { RESOURCE_PAGE_SIZE, THUMBNAIL_TTL_SECONDS } from "../../lib/resources-query";
 import { advance, notifySpy, userOf } from "../support/helpers";
 import { deferred, fail, fake, ok, withCount, type Call } from "../support/fake-supabase";
@@ -87,7 +88,7 @@ function scriptLibrary(over: Partial<World> = {}): World {
   return world;
 }
 
-type Options = { role?: "member" | "executive" | "admin"; userId?: string; groups?: Array<{ id: number; name: string }>; memberships?: Array<{ subgroup_id: number; status: string; membership_role: string }>; scope?: "all" | "club" | number };
+type Options = { role?: "member" | "executive" | "admin"; userId?: string; groups?: Array<{ id: number; name: string }>; memberships?: Array<{ subgroup_id: number; status: MembershipStatus; membership_role: GroupRole }>; scope?: "all" | "club" | number };
 function renderLibrary(options: Options = {}) {
   const notify = notifySpy();
   const onResourceCountChange = vi.fn();
