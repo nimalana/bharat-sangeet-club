@@ -1,35 +1,26 @@
 "use client";
 
-// A group's roster (its members and the people waiting to join), read with list_subgroup_roster. Reloads follow every change and can
-// overlap, so only the newest answer may replace the roster; a failed read keeps the roster shown and says so.
-import { useCallback, useEffect, useState } from "react";
+// A group's roster (its members and the people waiting to join), read with list_subgroup_roster as a cached read (lib/hooks/use-query.ts,
+// key "group-roster:<id>"): reopening a group's people shows the last roster at once and refreshes behind it. Reloads follow every
+// change and can overlap, so only the newest answer may replace the roster; a failed read keeps the roster shown and says so, and a
+// failed FIRST read has nothing to show (`loadError` with an empty roster and `hasRoster` false: the screen offers Try again).
 import { listSubgroupRoster, type RosterRow } from "../../../lib/api/groups";
-import { settle } from "../../../lib/api/settle";
 import { friendlyError } from "../../../lib/errors";
-import { createRequestGate } from "../../../lib/request-gate";
+import { useQuery } from "../../../lib/hooks/use-query";
 
-export function useGroupRoster(groupId: number) {
-  const [roster, setRoster] = useState<RosterRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  // Reloads follow every change and can overlap; only the newest answer may replace the roster.
-  const [loadGate] = useState(createRequestGate);
+/** `userId` keys the cache (a roster is remembered for the person who read it); without it the read is simply not remembered. */
+export function useGroupRoster(groupId: number, userId = "") {
+  const query = useQuery<RosterRow[]>({ userId, key: `group-roster:${groupId}`, load: () => listSubgroupRoster(groupId) });
+  const loadError = query.failed ? friendlyError(query.error as Parameters<typeof friendlyError>[0], "The roster could not be loaded.") : "";
 
-  const loadRoster = useCallback(async () => {
-    const isCurrent = loadGate.begin();
-    const { data, error } = await settle(listSubgroupRoster(groupId));
-    if (!isCurrent()) return;
-    if (error) setLoadError(friendlyError(error, "The roster could not be loaded."));
-    else { setLoadError(""); setRoster(data || []); }
-    setLoading(false);
-  }, [groupId, loadGate]);
-
-  // The loader synchronizes remote Supabase state into this client component.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRoster(); }, [loadRoster]);
-
-  /** "Try again": shows the loading line again and asks once more. */
-  const retry = () => { setLoading(true); void loadRoster(); };
-
-  return { roster, loading, loadError, loadRoster, retry };
+  return {
+    roster: query.data ?? [],
+    loading: query.loading,
+    loadError,
+    /** Something is on screen (a read answered at least once, now or in an earlier visit). */
+    hasRoster: query.data !== undefined,
+    loadRoster: query.refetch,
+    /** "Try again": shows the loading state again when there is nothing to show, and asks once more. */
+    retry: query.retry,
+  };
 }

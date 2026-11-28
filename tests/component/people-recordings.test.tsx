@@ -210,20 +210,48 @@ describe("group people: the settings and who may change what", () => {
 });
 
 describe("the roster: only the newest load may replace it", () => {
+  // Every change reloads the roster; a second change made while the first reload is still on its way starts a second reload.
+  // (Try again can no longer be pressed twice: it shows the skeleton, and the button is gone while the read runs.)
   it("of two overlapping loads, the older answer arriving last is dropped", async () => {
     const older = deferred();
+    fake.rpc("review_subgroup_request").reply(ok(null));
     fake.rpc("list_subgroup_roster")
-      .replyOnce(fail("Network is down"))
+      .replyOnce(ok([person("u-a", "Asha Ask", "pending"), person("u-b", "Bala Ask", "pending")]))
       .replyOnce(older.reply)
       .reply(ok([person("u-new", "Fresh Member")]));
     renderPeople();
-    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[0]);
     await waitFor(() => expect(fake.rpc("list_subgroup_roster").count).toBe(2));
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[1]);
     expect(await screen.findByText("Fresh Member")).toBeInTheDocument();
     await act(async () => { older.resolve(ok([person("u-old", "Stale Member")])); });
     expect(screen.queryByText("Stale Member")).not.toBeInTheDocument();
     expect(screen.getByText("Fresh Member")).toBeInTheDocument();
+  });
+
+  it("a first read that fails shows the error with Try again instead of an empty roster; the retry shows the skeleton, then the people", async () => {
+    const slow = deferred();
+    fake.rpc("list_subgroup_roster").replyOnce(fail("Network is down")).replyOnce(slow.reply);
+    renderPeople();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Network is down");
+    expect(screen.queryByText("No one is in this group yet.")).not.toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Loading the roster")).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => { slow.resolve(ok([person("u-1", "Asha Rao")])); });
+    expect(await screen.findByText("Asha Rao")).toBeInTheDocument();
+  });
+
+  it("a refresh that fails keeps the people on screen and says the list may be out of date", async () => {
+    fake.rpc("list_subgroup_roster").replyOnce(ok([person("u-1", "Asha Rao"), person("u-ask", "Dev Ask", "pending")])).reply(fail("Network is down"));
+    fake.rpc("review_subgroup_request").reply(ok(null));
+    renderPeople();
+    fireEvent.click(await screen.findByRole("button", { name: "Waitlist" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Network is down");
+    expect(screen.getByText("Asha Rao")).toBeInTheDocument();
+    expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 });
 

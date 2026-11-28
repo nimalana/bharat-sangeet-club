@@ -1,4 +1,4 @@
-// The hooks that hold the data of the group, admin and member screens: use-group-spaces (the Groups page's five reads),
+// The hooks that hold the data of the group, admin and member screens: use-group-spaces (the Groups page's four reads, one cached read),
 // use-admin-data (the Admin page's four), use-group-roster (one group's people) and use-member-directory (the Members page).
 // What each promises: loading until the first answer, every list from its own read, a list that fails keeps what it had (and says so
 // once), only the newest answer counts, and a reload never starts by itself.
@@ -6,7 +6,7 @@ import type { User } from "@supabase/supabase-js";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useAdminData } from "../../features/admin/hooks/use-admin-data";
-import { countRequestsByGroup, useGroupSpaces } from "../../features/groups/hooks/use-group-spaces";
+import { countRequestsByGroup, splitMembershipRows, useGroupSpaces } from "../../features/groups/hooks/use-group-spaces";
 import { useGroupRoster } from "../../features/groups/hooks/use-group-roster";
 import { useMemberDirectory } from "../../features/members/hooks/use-member-directory";
 import { setCacheOwner } from "../../lib/cache";
@@ -30,15 +30,28 @@ describe("countRequestsByGroup", () => {
   });
 });
 
+describe("splitMembershipRows", () => {
+  const row = (member_id: string, subgroup_id: number, status: string) => ({ subgroup_id, member_id, status, membership_role: "member" }) as SubgroupMembership;
+
+  it("tells apart the person's own rows (any status) and the waiting requests of other people; others' active rows are neither", () => {
+    const rows = [row("u-me", 7, "active"), row("u-me", 8, "pending"), row("u-a", 7, "pending"), row("u-b", 7, "waitlisted"), row("u-c", 7, "active"), row("u-d", 9, "removed")];
+    const { mine: own, waitingOfOthers } = splitMembershipRows(rows, "u-me");
+    expect(own.map((entry) => [entry.subgroup_id, entry.status])).toEqual([[7, "active"], [8, "pending"]]);
+    expect(waitingOfOthers.map((entry) => entry.member_id)).toEqual(["u-a", "u-b"]);
+  });
+});
+
 describe("useGroupSpaces", () => {
+  // The memberships and the waiting requests of others come back from ONE read (finding F4): rows of both kinds.
+  const waiting = (subgroup_id: number, member_id: string, status = "pending") => ({ subgroup_id, member_id, status, membership_role: "member" });
   function scriptGroups() {
     fake.from("subgroups", "select").reply(ok([group(7, "Vocal")]));
-    fake.from("subgroup_memberships", "select").reply((call) => ok(call.used("in", "status") ? [{ subgroup_id: 7 }, { subgroup_id: 7 }] : [mine(7)]));
+    fake.from("subgroup_memberships", "select").reply(ok([mine(7), waiting(7, "u-a"), waiting(7, "u-b", "waitlisted")]));
     fake.from("archive_items", "select").reply(ok([recording(1)]));
     fake.from("announcements", "select").reply(ok([announcement(1, "First")]));
   }
 
-  it("is loading until the five reads have answered, then has every list and the request counts", async () => {
+  it("is loading until the four reads have answered, then has every list and the request counts", async () => {
     const slow = deferred();
     scriptGroups();
     fake.from("announcements", "select").reply(slow.reply);
@@ -56,16 +69,17 @@ describe("useGroupSpaces", () => {
     expect(result.current.requestCounts).toEqual({ 7: 2 });
   });
 
-  it("reads the five lists once and not again by itself", async () => {
+  it("reads the four lists once and not again by itself: ONE read of subgroup_memberships (finding F4)", async () => {
     scriptGroups();
     const { result, rerender } = renderHook(() => useGroupSpaces(ME));
     await waitFor(() => expect(result.current.loading).toBe(false));
     rerender();
     rerender();
-    expect(fake.calls).toHaveLength(5);
+    expect(fake.calls).toHaveLength(4);
+    expect(fake.from("subgroup_memberships", "select").calls).toHaveLength(1);
   });
 
-  it("a list that fails on a reload keeps what it had, the others update, and one toast says so", async () => {
+  it("a reload in which any read fails keeps every list as it was, and one toast says so", async () => {
     const notify = notifySpy();
     scriptGroups();
     const { result } = renderHook(() => useGroupSpaces(ME));
@@ -74,21 +88,57 @@ describe("useGroupSpaces", () => {
     fake.from("announcements", "select").reply(fail("boom"));
     fake.from("archive_items", "select").reply(fail("boom"));
     await act(async () => { await result.current.load(); });
-    expect(result.current.groups).toHaveLength(2);
+    // The read is one: a half-answer is not kept, so the new group list is not shown either.
+    expect(result.current.groups).toEqual([group(7, "Vocal")]);
     expect(result.current.announcements).toEqual([announcement(1, "First")]);
     expect(result.current.items).toEqual([recording(1)]);
+    expect(result.current.failed).toBe(true);
+    expect(result.current.hasData).toBe(true);
     expect(notify.toasts()).toEqual([{ message: "Some group information could not be loaded", tone: "error" }]);
   });
 
-  it("the waiting-request counts are kept when their read fails, and that failure alone does not toast", async () => {
+  it("a failed memberships read counts as a failed read: the request counts are kept too, and it toasts like any other", async () => {
     const notify = notifySpy();
     scriptGroups();
     const { result } = renderHook(() => useGroupSpaces(ME));
     await waitFor(() => expect(result.current.requestCounts).toEqual({ 7: 2 }));
-    fake.from("subgroup_memberships", "select").reply((call) => (call.used("in", "status") ? fail("boom") : ok([mine(7)])));
+    fake.from("subgroup_memberships", "select").reply(fail("boom"));
     await act(async () => { await result.current.load(); });
     expect(result.current.requestCounts).toEqual({ 7: 2 });
-    expect(notify.toasts()).toEqual([]);
+    expect(result.current.memberships).toEqual([mine(7)]);
+    expect(notify.toasts()).toEqual([{ message: "Some group information could not be loaded", tone: "error" }]);
+  });
+
+  it("a first read that fails has nothing to show: `failed` and no data (the screen offers Try again), and retry reads again", async () => {
+    notifySpy();
+    scriptGroups();
+    fake.from("subgroups", "select").replyOnce(fail("Network is down"));
+    const { result } = renderHook(() => useGroupSpaces(ME));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.hasData).toBe(false);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.groups).toEqual([]);
+    await act(async () => { await result.current.retry(); });
+    expect(result.current.failed).toBe(false);
+    expect(result.current.hasData).toBe(true);
+    expect(result.current.groups).toEqual([group(7, "Vocal")]);
+  });
+
+  it("is remembered for the person (finding F6): a second visit has the lists at once, and the read behind it replaces them", async () => {
+    scriptGroups();
+    setCacheOwner("u-me");
+    const first = renderHook(() => useGroupSpaces(ME));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+    const slow = deferred();
+    fake.from("subgroups", "select").reply(slow.reply);
+    const second = renderHook(() => useGroupSpaces(ME));
+    // Nothing has answered yet, and the lists of the last visit are already there.
+    expect(second.result.current.loading).toBe(false);
+    expect(second.result.current.groups).toEqual([group(7, "Vocal")]);
+    expect(second.result.current.requestCounts).toEqual({ 7: 2 });
+    await act(async () => { slow.resolve(ok([group(7, "Vocal"), group(8, "Violin")])); });
+    await waitFor(() => expect(second.result.current.groups).toHaveLength(2));
   });
 
   it("of two overlapping reloads, the older answer arriving last is dropped", async () => {
@@ -105,13 +155,15 @@ describe("useGroupSpaces", () => {
     expect(result.current.announcements).toEqual([announcement(2, "Newest")]);
   });
 
-  it("a person who joins is added to the memberships at once (setMemberships), without a read", async () => {
+  it("a person who joins is added to the memberships at once (setMemberships), without a read; the next read says what the database says", async () => {
     scriptGroups();
     const { result } = renderHook(() => useGroupSpaces(ME));
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => { result.current.setMemberships((current) => [...current, mine(9)]); });
     expect(result.current.memberships).toEqual([mine(7), mine(9)]);
-    expect(fake.calls).toHaveLength(5);
+    expect(fake.calls).toHaveLength(4);
+    await act(async () => { await result.current.load(); });
+    expect(result.current.memberships).toEqual([mine(7)]);
   });
 
   it("`load` is the same function on every render, so an effect that lists it does not read again", async () => {

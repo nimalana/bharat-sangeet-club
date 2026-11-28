@@ -13,9 +13,9 @@ export function JoinRequestsPanel({ requests, busyKey, onReview, onDecline }: {
       {requests.map((row) => <li key={row.member_id} className="flex flex-wrap items-center justify-between gap-3 border-t border-[#b9d3e3] pt-3 first:border-t-0 first:pt-0">
         <div className="min-w-0"><b className="block truncate text-sm">{row.full_name || row.email}</b><small className="block truncate text-xs text-[#4c5f6b]">{row.email}{row.status === "waitlisted" ? " · Waitlisted" : ""}</small></div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={Boolean(busyKey)} onClick={() => onReview(row, "approve")}>{busyKey === `approve-${row.member_id}` ? "Approving…" : "Approve"}</Button>
-          {row.status === "pending" && <Button size="sm" variant="secondary" disabled={Boolean(busyKey)} onClick={() => onReview(row, "waitlist")}>{busyKey === `waitlist-${row.member_id}` ? "Waitlisting…" : "Waitlist"}</Button>}
-          <Button size="sm" variant="danger" disabled={Boolean(busyKey)} onClick={() => onDecline(row)}>{busyKey === `decline-${row.member_id}` ? "Declining…" : "Decline"}</Button>
+          <Button size="sm" disabled={Boolean(busyKey)} pending={busyKey === `approve-${row.member_id}`} onClick={() => onReview(row, "approve")}>{busyKey === `approve-${row.member_id}` ? "Approving…" : "Approve"}</Button>
+          {row.status === "pending" && <Button size="sm" variant="secondary" disabled={Boolean(busyKey)} pending={busyKey === `waitlist-${row.member_id}`} onClick={() => onReview(row, "waitlist")}>{busyKey === `waitlist-${row.member_id}` ? "Waitlisting…" : "Waitlist"}</Button>}
+          <Button size="sm" variant="danger" disabled={Boolean(busyKey)} pending={busyKey === `decline-${row.member_id}`} onClick={() => onDecline(row)}>{busyKey === `decline-${row.member_id}` ? "Declining…" : "Decline"}</Button>
         </div>
       </li>)}
     </ul>

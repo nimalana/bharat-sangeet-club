@@ -2,7 +2,7 @@
 // reviewing requests, the group settings, and the group's own announcements. Plain async functions with literal table and RPC
 // names (the contract check reads them); a failed call throws an ApiError (lib/errors.ts). No React, no toast, no sentences:
 // the screens (features/groups) decide what a failure says.
-import type { EnrollmentMode, GroupRole, RpcReturns, TablesInsert, Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../db";
+import type { EnrollmentMode, GroupRole, RpcReturns, TablesInsert, Announcement, ArchiveItem, ClubEvent, Subgroup, SubgroupMembership } from "../db";
 import { ApiError } from "../errors";
 import { supabase } from "../supabase";
 import { must } from "./_core";
@@ -24,9 +24,14 @@ export async function listSubgroups(): Promise<Subgroup[]> {
   return must(await client().from("subgroups").select("id,name,description,enrollment_mode,archived_at").order("name"));
 }
 
-/** The person's own memberships, whatever their status. */
-export async function listMyMemberships(memberId: string): Promise<SubgroupMembership[]> {
-  return must(await client().from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").eq("member_id", memberId));
+/**
+ * The person's own memberships (whatever their status) AND the waiting requests (pending or waitlisted) of other people, in one read:
+ * the rows of both kinds come back together and the screen tells them apart (an own row has `member_id` = `memberId`). Row-level
+ * security returns other people's waiting requests only to executives and to that group's leaders and managers, so for anyone else
+ * the answer is just their own rows. (Two reads of the same table, one for each kind, were the duplicate GET of finding F4.)
+ */
+export async function listMembershipsAndRequests(memberId: string): Promise<SubgroupMembership[]> {
+  return must(await client().from("subgroup_memberships").select("subgroup_id,member_id,status,membership_role").or(`member_id.eq.${memberId},status.in.(pending,waitlisted)`));
 }
 
 /** Every membership the person may read (their own, and the others of the groups they lead; everyone's for an executive), at most 5000. */
@@ -44,12 +49,9 @@ export async function listGroupAnnouncements(): Promise<Announcement[]> {
   return must(await client().from("announcements").select("*").not("subgroup_id", "is", null).order("published_at", { ascending: false }).limit(300));
 }
 
-/**
- * The waiting requests (pending or waitlisted) of other people, one row per request. Row-level security returns them only to
- * executives and to that group's leaders and managers, so for anyone else the list is empty.
- */
-export async function listOthersWaitingRequests(memberId: string): Promise<Array<{ subgroup_id: number }>> {
-  return must(await client().from("subgroup_memberships").select("subgroup_id").in("status", ["pending", "waitlisted"]).neq("member_id", memberId));
+/** A group's own dates from `since` onwards (an ISO instant), soonest first, at most 100. */
+export async function listGroupEvents(groupId: number, since: string): Promise<ClubEvent[]> {
+  return must(await client().from("events").select("id,title,description,starts_at,location,created_at,subgroup_id").eq("subgroup_id", groupId).gte("starts_at", since).order("starts_at", { ascending: true }).limit(100));
 }
 
 /** Asks to join a group (or joins it at once, when it is open). The answer is the person's membership row. */

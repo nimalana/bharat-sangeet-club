@@ -3,7 +3,7 @@
 // (Here and not under node --test because the modules import ../errors without an extension, as the app's code does.)
 import { describe, expect, it } from "vitest";
 import {
-  addSubgroupMember, createSubgroup, leaveSubgroup, listAllMemberships, listGroupAnnouncements, listGroupRecordings, listMyMemberships, listOthersWaitingRequests,
+  addSubgroupMember, createSubgroup, leaveSubgroup, listAllMemberships, listGroupAnnouncements, listGroupEvents, listGroupRecordings, listMembershipsAndRequests,
   listSubgroupRoster, listSubgroups, postGroupAnnouncement, removeSubgroupMember, requestSubgroupEnrollment, reviewSubgroupRequest, setSubgroupArchived,
   setSubgroupEnrollmentMode, setSubgroupMemberRole, updateSubgroup,
 } from "../../lib/api/groups";
@@ -15,11 +15,12 @@ const chainOf = (call: { chain: Array<{ method: string; args: unknown[] }> }) =>
 describe("the group reads", () => {
   const reads = [
     ["listSubgroups", "subgroups", () => listSubgroups(), [["select", "id,name,description,enrollment_mode,archived_at"], ["order", "name"]]],
-    ["listMyMemberships", "subgroup_memberships", () => listMyMemberships("u-me"), [["select", "subgroup_id,member_id,status,membership_role"], ["eq", "member_id", "u-me"]]],
+    // ONE read for the person's own memberships and the waiting requests of others (finding F4: it used to be two GETs of this table).
+    ["listMembershipsAndRequests", "subgroup_memberships", () => listMembershipsAndRequests("u-me"), [["select", "subgroup_id,member_id,status,membership_role"], ["or", "member_id.eq.u-me,status.in.(pending,waitlisted)"]]],
     ["listAllMemberships", "subgroup_memberships", () => listAllMemberships(), [["select", "subgroup_id,member_id,status,membership_role"], ["limit", 5000]]],
     ["listGroupRecordings", "archive_items", () => listGroupRecordings(), [["select", "*"], ["eq", "type", "recording"], ["not", "subgroup_id", "is", null], ["order", "created_at", { ascending: false }], ["limit", 500]]],
     ["listGroupAnnouncements", "announcements", () => listGroupAnnouncements(), [["select", "*"], ["not", "subgroup_id", "is", null], ["order", "published_at", { ascending: false }], ["limit", 300]]],
-    ["listOthersWaitingRequests", "subgroup_memberships", () => listOthersWaitingRequests("u-me"), [["select", "subgroup_id"], ["in", "status", ["pending", "waitlisted"]], ["neq", "member_id", "u-me"]]],
+    ["listGroupEvents", "events", () => listGroupEvents(7, "2026-11-28T05:00:00.000Z"), [["select", "id,title,description,starts_at,location,created_at,subgroup_id"], ["eq", "subgroup_id", 7], ["gte", "starts_at", "2026-11-28T05:00:00.000Z"], ["order", "starts_at", { ascending: true }], ["limit", 100]]],
   ] as const;
 
   it.each(reads)("%s asks for exactly the rows the page always asked for", async (_name, table, read, chain) => {

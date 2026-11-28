@@ -1,6 +1,7 @@
 // The Groups page (SubgroupSpaces), opened through the shell. What the older tests did not pin, so that the page can be taken apart
 // without changing what a person sees or what is sent:
-//  the five reads and their limits; which groups are listed, which are discoverable and what each offers;
+//  the four reads and their limits (the memberships and the waiting requests of others are ONE read, finding F4); which groups are
+//  listed, which are discoverable and what each offers;
 //  joining (open groups at once, others by request) and the inline sentence of a refused request;
 //  the number of requests waiting in a group; creating a group; posting a group update; a list that fails to reload keeps what is shown.
 // The group's people (requests, roster, settings) are in people-recordings.test.tsx; failure toasts in toast-tone.test.tsx; races in shell-races.test.tsx.
@@ -14,39 +15,38 @@ const membership = (subgroup_id: number, status = "active", membership_role = "m
 const announcement = (id: number, title: string, subgroup_id: number | null, over: Record<string, unknown> = {}) => ({ id, title, body: `${title} body`, is_pinned: false, published_at: "2026-10-01T00:00:00Z", subgroup_id, ...over });
 const chainOf = (call: { chain: Array<{ method: string; args: unknown[] }> }) => call.chain.map((link) => [link.method, ...link.args]);
 
-function openGroups(options: { role?: "member" | "executive" | "admin"; groups?: Array<Record<string, unknown>>; memberships?: Array<Record<string, unknown>>; announcements?: Array<Record<string, unknown>>; archive?: Array<Record<string, unknown>> } = {}) {
+function openGroups(options: { role?: "member" | "executive" | "admin"; groups?: Array<Record<string, unknown>>; memberships?: Array<Record<string, unknown>>; announcements?: Array<Record<string, unknown>>; archive?: Array<Record<string, unknown>>; waiting?: Array<Record<string, unknown>> } = {}) {
   const groups = options.groups ?? [group(7, "Hindustani Vocal")];
   const memberships = options.memberships ?? [membership(7)];
   fake.from("subgroups", "select").reply(ok(groups));
-  fake.from("subgroup_memberships", "select").reply((call) => ok(call.used("in", "status") ? [] : memberships));
+  // ONE read answers with the person's own rows and the waiting requests of other people.
+  fake.from("subgroup_memberships", "select").reply(ok([...memberships, ...(options.waiting ?? [])]));
   fake.from("announcements", "select").reply(ok(options.announcements ?? []));
   fake.from("archive_items", "select").reply(ok(options.archive ?? []));
   openPortal({ role: options.role ?? "member", page: "groups", boot: { groups, memberships } });
 }
 
 describe("what the page reads", () => {
-  it("asks for the groups, the person's memberships, the groups' recordings and announcements, and the waiting requests of others, once each", async () => {
+  it("asks for the groups, the memberships (the person's own and the waiting requests of others, in ONE read), the groups' recordings and announcements, once each", async () => {
     openGroups({ role: "executive" });
     await screen.findByRole("heading", { level: 1, name: "All groups" });
     const own = fake.from("subgroups", "select").calls.filter((call) => !call.used("is", "archived_at"));
     expect(own).toHaveLength(1);
     expect(chainOf(own[0])).toEqual([["select", "id,name,description,enrollment_mode,archived_at"], ["order", "name"]]);
+    // Finding F4: this page used to send two GETs of subgroup_memberships (its own rows, then the others' waiting requests).
     const memberships = fake.from("subgroup_memberships", "select").calls;
-    const mine = memberships.filter((call) => call.used("eq", "member_id", "u-me"));
-    const others = memberships.filter((call) => call.used("in", "status"));
-    expect(mine.map(chainOf)).toContainEqual([["select", "subgroup_id,member_id,status,membership_role"], ["eq", "member_id", "u-me"]]);
-    expect(others).toHaveLength(1);
-    expect(chainOf(others[0])).toEqual([["select", "subgroup_id"], ["in", "status", ["pending", "waitlisted"]], ["neq", "member_id", "u-me"]]);
+    expect(memberships).toHaveLength(1);
+    expect(chainOf(memberships[0])).toEqual([["select", "subgroup_id,member_id,status,membership_role"], ["or", "member_id.eq.u-me,status.in.(pending,waitlisted)"]]);
     expect(chainOf(fake.from("archive_items", "select").calls.find((call) => call.used("limit", 500))!)).toEqual([["select", "*"], ["eq", "type", "recording"], ["not", "subgroup_id", "is", null], ["order", "created_at", { ascending: false }], ["limit", 500]]);
     expect(chainOf(fake.from("announcements", "select").calls.find((call) => call.used("limit", 300))!)).toEqual([["select", "*"], ["not", "subgroup_id", "is", null], ["order", "published_at", { ascending: false }], ["limit", 300]]);
   });
 
-  it("shows the loading line until the first answers arrive, then the group with its update and resource counts", async () => {
+  it("shows a skeleton (a polite status, no heading yet) until the first answers arrive, then the group with its update and resource counts", async () => {
     const slow = deferred();
     openGroups({ announcements: [announcement(1, "Rehearsal", 7), announcement(2, "Other group", 8), announcement(3, "Club wide", null)], archive: [{ id: 5, title: "Take", description: "", type: "recording", storage_path: "x", visibility: "members", is_public: false, event_date: null, raga: null, tala: null, created_at: "2026-10-01T00:00:00Z", subgroup_id: 7 }] });
     fake.from("subgroups", "select").reply((call) => (call.used("is", "archived_at") ? ok([group(7, "Hindustani Vocal")]) : slow.reply));
-    const line = await screen.findByText("Loading the archive…");
-    expect(line.className).toBe("inline-loading");
+    expect(await screen.findByText("Loading your groups")).toHaveAttribute("role", "status");
+    expect(document.querySelector(".skeleton")).not.toBeNull();
     expect(screen.queryByRole("heading", { level: 1, name: "My groups" })).not.toBeInTheDocument();
     await act(async () => { slow.resolve(ok([group(7, "Hindustani Vocal")])); });
     const row = (await screen.findByRole("button", { name: /Hindustani Vocal/ }));
@@ -86,7 +86,9 @@ describe("which groups are listed", () => {
 
   it("the number of requests waiting is shown instead of the description, with the right singular", async () => {
     fake.from("subgroups", "select").reply(ok([group(7, "Hindustani Vocal"), group(8, "Carnatic Violin")]));
-    fake.from("subgroup_memberships", "select").reply((call) => ok(call.used("in", "status") ? [{ subgroup_id: 7 }, { subgroup_id: 7 }, { subgroup_id: 8 }] : []));
+    // Other people's waiting requests come in the same read as the person's own rows (here: none of their own).
+    const waiting = (subgroup_id: number, member_id: string, status = "pending") => ({ subgroup_id, member_id, status, membership_role: "member" });
+    fake.from("subgroup_memberships", "select").reply(ok([waiting(7, "u-a"), waiting(7, "u-b", "waitlisted"), waiting(8, "u-c")]));
     openPortal({ role: "executive", page: "groups" });
     expect(await screen.findByText("2 requests to review")).toBeInTheDocument();
     expect(screen.getByText("1 request to review")).toBeInTheDocument();
@@ -253,17 +255,19 @@ describe("one group's page", () => {
 });
 
 describe("a list that fails to reload keeps what is shown", () => {
-  it("one toast says something could not be loaded, and the group's announcements stay on screen", async () => {
+  it("one toast says something could not be loaded, and the lists stay on screen (the four reads are one: a half-answer is not kept)", async () => {
     openGroups({ role: "executive", memberships: [], announcements: [announcement(1, "Rehearsal moved", 7)] });
     fake.rpc("list_subgroup_roster").reply(ok([{ member_id: "u-dev", full_name: "Dev Nair", email: "u-dev@x.test", status: "pending", membership_role: "member", joined_at: "2026-01-01T00:00:00Z", status_updated_at: "2026-01-01T00:00:00Z" }]));
     fake.rpc("review_subgroup_request").reply(ok(null));
     fireEvent.click(await screen.findByRole("button", { name: /Hindustani Vocal/ }));
     await screen.findByText("Rehearsal moved");
-    // Approving a request makes the page read its lists again; the announcements read fails this time.
+    // The requests are on their own tab. Approving one makes the page read its lists again; the announcements read fails this time.
+    fireEvent.click(screen.getByRole("tab", { name: /^Requests/ }));
     fake.from("announcements", "select").reply(fail("boom"));
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByText(/Some group information could not be loaded/, { selector: ".toast" })).toHaveClass("error");
-    expect(screen.getByText("Rehearsal moved")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Announcements" }));
+    expect(await screen.findByText("Rehearsal moved")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Hindustani Vocal" })).toBeInTheDocument();
   });
 });

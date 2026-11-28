@@ -10,6 +10,9 @@ import { friendlyError } from "../../../lib/errors";
 import { canRemoveGroupMember, groupCapabilities } from "../../../lib/permissions";
 import { createSingleFlight } from "../../../lib/single-flight";
 import { Button } from "../../../components/ui/button";
+import { ErrorBlock } from "../../../components/ui/error-block";
+import { LoadErrorBanner } from "../../../components/ui/load-error";
+import { SkeletonRows } from "../../../components/ui/skeleton";
 import { useToast } from "../../../components/ui/toast";
 import { useGroupRoster } from "../hooks/use-group-roster";
 import { roleLabels, type ManagedGroup, type Pending } from "../model";
@@ -21,13 +24,21 @@ import { RosterList } from "./roster-list";
 
 export type { ManagedGroup };
 
-export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft }: {
+/**
+ * A group's people: the roster, the requests to join, and the dialogs that change them. `view` says which part is drawn: "all" (the
+ * whole panel, as the group page had it before it had tabs), "roster" (the Roster tab: the people and their buttons) or "requests"
+ * (the Requests tab). The state, the one read of the roster and the dialogs are the same in every view, so switching between the
+ * Roster and the Requests tab changes what is drawn and reads nothing again.
+ */
+export function GroupPeople({ user, role, group, myRole, isMember, onGroupChanged, onLeft, view = "all" }: {
   user: User; role: ClubRole; group: ManagedGroup; myRole: GroupRole | null; isMember: boolean;
-  onGroupChanged: () => void | Promise<void>; onLeft: () => void;
+  onGroupChanged: () => void | Promise<void>; onLeft: () => void; view?: "all" | "roster" | "requests";
 }) {
   const { notify } = useToast();
   const can = groupCapabilities(role, myRole);
-  const { roster, loading, loadError, loadRoster, retry } = useGroupRoster(group.id);
+  const { roster, loading, loadError, hasRoster, loadRoster, retry } = useGroupRoster(group.id, user.id);
+  const showRoster = view !== "requests";
+  const showRequests = view !== "roster";
   const [busyKey, setBusyKey] = useState("");
   // `busyKey` shows which change is running; `flight` stops a second click before the next render.
   const [flight] = useState(createSingleFlight);
@@ -131,22 +142,26 @@ export function GroupPeople({ user, role, group, myRole, isMember, onGroupChange
     .slice(0, 30);
   const canRemoveRow = (row: RosterRow) => row.member_id !== user.id && canRemoveGroupMember(role, myRole, row.membership_role);
 
-  return <section className="mt-6 border border-[var(--line)] bg-[var(--paper)] p-5 sm:p-6" aria-label={`People in ${group.name}`}>
-    {group.archived_at && <p className="action-feedback" role="status">This group is archived. It is hidden from members and cannot accept new requests.</p>}
-    <div className="flex flex-wrap items-center justify-between gap-3">
+  const readingLabel = view === "requests" ? "Loading the requests" : "Loading the roster";
+  return <section className={view === "all" ? "mt-6 border border-[var(--line)] bg-[var(--paper)] p-5 sm:p-6" : "group-people"} aria-label={`People in ${group.name}`}>
+    {view === "all" && group.archived_at && <p className="action-feedback" role="status">This group is archived. It is hidden from members and cannot accept new requests.</p>}
+    {showRoster && <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="dashboard-section-title m-0"><h2>People</h2><span>{members.length} {members.length === 1 ? "member" : "members"}</span></div>
       <div className="flex flex-wrap gap-2">
         {can.canAddMembers && !group.archived_at && <Button size="sm" variant="secondary" onClick={openAdd}>＋ Add member</Button>}
         {can.canEditGroup && <Button size="sm" variant="secondary" onClick={() => setShowSettings(true)}>Group settings</Button>}
         {isMember && <Button size="sm" variant="ghost" onClick={() => setPending({ kind: "leave" })}>Leave group</Button>}
       </div>
-    </div>
+    </div>}
 
-    {loadError && <p className="action-feedback error" role="alert">{loadError} <button type="button" className="underline" onClick={retry}>Try again</button></p>}
+    {loadError && (hasRoster
+      ? <LoadErrorBanner message={loadError} onRetry={() => void retry()} />
+      : !loading && <ErrorBlock message={loadError} onRetry={() => void retry()} role="alert" />)}
 
-    {can.canReviewRequests && requests.length > 0 && <JoinRequestsPanel requests={requests} busyKey={busyKey} onReview={review} onDecline={(row) => setPending({ kind: "decline", row })} />}
+    {showRequests && can.canReviewRequests && requests.length > 0 && <JoinRequestsPanel requests={requests} busyKey={busyKey} onReview={review} onDecline={(row) => setPending({ kind: "decline", row })} />}
+    {view === "requests" && !loading && !loadError && requests.length === 0 && <p className="workspace-empty mt-4">No one is waiting to join this group.</p>}
 
-    {loading ? <p className="workspace-empty mt-4">Loading the roster…</p> : members.length ? <RosterList members={members} userId={user.id} busyKey={busyKey} canChangeRoles={can.canChangeRoles} canRemoveRow={canRemoveRow} onChangeRole={changeRole} onRemove={(row) => setPending({ kind: "remove", row })} /> : !loadError && <p className="workspace-empty mt-4">No one is in this group yet.</p>}
+    {loading ? <SkeletonRows className="mt-4" rows={3} label={readingLabel} /> : showRoster && (members.length ? <RosterList members={members} userId={user.id} busyKey={busyKey} canChangeRoles={can.canChangeRoles} canRemoveRow={canRemoveRow} onChangeRole={changeRole} onRemove={(row) => setPending({ kind: "remove", row })} /> : !loadError && <p className="workspace-empty mt-4">No one is in this group yet.</p>)}
 
     <GroupConfirmDialogs group={group} myRole={myRole} pending={pending} busyKey={busyKey} onConfirm={confirmPending} onCancel={() => setPending(null)} />
 

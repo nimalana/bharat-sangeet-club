@@ -1,7 +1,7 @@
 // The parts of the Groups screens, rendered one by one with their props: the group list, the Discover cards, an open group's page,
 // the two dialogs, and the five parts of a group's people (requests, roster, confirmations, settings, the add-a-member picker).
 // The whole screens are in group-spaces.test.tsx and people-recordings.test.tsx; these check that each part does what its props say.
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AddMemberDialog } from "../../features/groups/components/add-member-dialog";
 import { CreateGroupDialog } from "../../features/groups/components/create-group-dialog";
@@ -19,6 +19,7 @@ import type { RosterRow } from "../../lib/api/groups";
 import type { Announcement, ArchiveItem, Subgroup, SubgroupMembership } from "../../lib/db";
 import { fake, ok } from "../support/fake-supabase";
 import { notifySpy, userOf } from "../support/helpers";
+import { keyboardUser } from "../support/keyboard";
 
 const MEMBER = "member" as const;
 const EXECUTIVE = "executive" as const;
@@ -104,6 +105,13 @@ describe("DiscoverGroups", () => {
   });
 });
 
+// A tab opens through the address (a microtask later), so a test waits for the tab to say it is the open one.
+const openTab = async (name: string | RegExp) => {
+  const tab = screen.getByRole("tab", { name });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
+};
+
 describe("GroupDetail", () => {
   function renderDetail(role: "member" | "executive" | "admin", over: Partial<Parameters<typeof GroupDetail>[0]> = {}) {
     fake.rpc("list_subgroup_roster").reply(ok([]));
@@ -112,18 +120,24 @@ describe("GroupDetail", () => {
     return callbacks;
   }
 
-  it("every button leads where it says, with the group's id", () => {
+  it("every button leads where it says, with the group's id: the buttons on top, and the one in each tab's own panel", async () => {
     notifySpy();
     const callbacks = renderDetail(MEMBER);
     fireEvent.click(screen.getByRole("button", { name: "← All groups" }));
     expect(callbacks.onBack).toHaveBeenCalledTimes(1);
-    for (const button of screen.getAllByRole("button", { name: "Open resources" })) fireEvent.click(button);
-    expect(callbacks.onOpenResources.mock.calls).toEqual([[7], [7]]);
+    fireEvent.click(screen.getByRole("button", { name: "Open resources" }));
     fireEvent.click(screen.getByRole("button", { name: "Open recordings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open recording room →" }));
-    expect(callbacks.onOpenRecordings.mock.calls).toEqual([[7], [7]]);
     fireEvent.click(screen.getByRole("button", { name: "View attendance" }));
-    expect(callbacks.onOpenAttendance).toHaveBeenCalledWith(7);
+    // The three tabs that have nothing of the other screens inside keep the panel they always had, with the same button.
+    await openTab("Resources");
+    fireEvent.click(within(screen.getByRole("tabpanel")).getByRole("button", { name: "Open resources" }));
+    expect(callbacks.onOpenResources.mock.calls).toEqual([[7], [7]]);
+    await openTab("Recordings");
+    fireEvent.click(within(screen.getByRole("tabpanel")).getByRole("button", { name: "Open recording room →" }));
+    expect(callbacks.onOpenRecordings.mock.calls).toEqual([[7], [7]]);
+    await openTab("Attendance");
+    fireEvent.click(within(screen.getByRole("tabpanel")).getByRole("button", { name: "View attendance" }));
+    expect(callbacks.onOpenAttendance.mock.calls).toEqual([[7], [7]]);
   });
 
   it("only those who may post to a group have Post update and Add recording", () => {
@@ -162,24 +176,32 @@ describe("GroupDetail", () => {
     expect(within(feed).queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("someone in the group can leave it; the people of the group are read for this group", async () => {
+  it("someone in the group can leave it; the people of the group are read for this group, when the Roster tab is opened", async () => {
     notifySpy();
     renderDetail(MEMBER, { isMember: true, myRole: "leader" });
+    // The people are read when the Roster tab is opened, not before.
+    expect(fake.rpc("list_subgroup_roster").calls).toHaveLength(0);
+    await openTab("Roster");
     expect(await screen.findByRole("button", { name: "Leave group" })).toBeInTheDocument();
     expect(fake.rpc("list_subgroup_roster").calls[0].payload).toEqual({ p_subgroup_id: 7 });
   });
 });
 
 describe("CreateGroupDialog and GroupUpdateDialog", () => {
-  it("a press on the backdrop or the × closes the group form; a press inside does not; submit calls back", () => {
+  // Both are on the shared Dialog: a name, Escape and the Close button close them, a click beside them does not (what was typed would be lost).
+  it("the group form is a dialog named by its heading; Escape and Close close it, a click beside it does not; submit calls back", async () => {
     const onClose = vi.fn();
     const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
     render(<CreateGroupDialog onClose={onClose} onSubmit={onSubmit} />);
+    const dialog = screen.getByRole("dialog", { name: "Create a group" });
     fireEvent.mouseDown(screen.getByLabelText("Name"));
+    fireEvent.click(screen.getByLabelText("Name"));
+    fireEvent.mouseDown(dialog.parentElement as HTMLElement);
+    fireEvent.click(dialog.parentElement as HTMLElement);
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.mouseDown(document.querySelector(".modal-backdrop") as HTMLElement);
+    await keyboardUser().keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "×" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledTimes(2);
     fireEvent.submit(screen.getByRole("heading", { name: "Create a group" }).closest("form")!);
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -194,18 +216,37 @@ describe("CreateGroupDialog and GroupUpdateDialog", () => {
     expect(screen.getByLabelText("Name")).toHaveAttribute("maxlength", "80");
   });
 
-  it("the update form names the group in capitals above and in the button; closes the same way", () => {
+  it("while the group is being created the button waits (disabled, busy) and nothing closes the dialog", async () => {
+    const onClose = vi.fn();
+    render(<CreateGroupDialog onClose={onClose} onSubmit={vi.fn()} saving />);
+    expect(screen.getByRole("button", { name: "Create group" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create group" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+    await keyboardUser().keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("the update form names the group in capitals above and in the button; closes the same way", async () => {
     const onClose = vi.fn();
     const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
     render(<GroupUpdateDialog groupName="Hindustani Vocal" onClose={onClose} onSubmit={onSubmit} />);
+    expect(screen.getByRole("dialog", { name: "Post a group update" })).toBeInTheDocument();
     expect(screen.getByText("HINDUSTANI VOCAL")).toHaveClass("eyebrow");
     expect(screen.getByRole("button", { name: "Publish to Hindustani Vocal" })).toBeInTheDocument();
     expect(screen.getByLabelText("Title")).toBeRequired();
     expect(screen.getByLabelText("Message")).toBeRequired();
-    fireEvent.mouseDown(document.querySelector(".modal-backdrop") as HTMLElement);
+    await keyboardUser().keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.submit(screen.getByRole("heading", { name: "Post a group update" }).closest("form")!);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("while the update is being posted the button waits and Escape does not close the dialog", async () => {
+    const onClose = vi.fn();
+    render(<GroupUpdateDialog groupName="Hindustani Vocal" onClose={onClose} onSubmit={vi.fn()} saving />);
+    expect(screen.getByRole("button", { name: "Publish to Hindustani Vocal" })).toBeDisabled();
+    await keyboardUser().keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
