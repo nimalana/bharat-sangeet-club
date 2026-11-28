@@ -26,7 +26,9 @@ export function TalamMeasure({ next, nextWhen, onNavigate }: { next?: ClubEvent;
   const measureRef = useRef<HTMLElement>(null);
   const reduceMotion = useReducedMotion();
 
+  // The pattern is picked at random after mount, so a render never depends on Math.random (the first paint shows "Finding a talam").
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPattern(talamPatterns[Math.floor(Math.random() * talamPatterns.length)]);
   }, []);
 

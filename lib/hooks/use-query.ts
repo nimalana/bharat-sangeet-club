@@ -60,6 +60,8 @@ export function useQuery<T>({ userId, key, load, onError, enabled = true }: Quer
     writeCache(userId, key, next);
   }, [enabled, gate, id, userId, key]);
 
+  // The read synchronizes remote Supabase state into this component: it sets state after the awaited read, not in the effect body.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void refetch(); }, [refetch]);
   return { data: shown.data, loading: shown.loading, failed: shown.failed, refetch };
 }

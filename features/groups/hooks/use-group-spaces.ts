@@ -52,6 +52,8 @@ export function useGroupSpaces(user: User) {
     setLoading(false);
   }, [loadGate, notify, user.id]);
 
+  // The loader synchronizes remote Supabase state into this client component: it sets state after the awaited read, not in the effect body.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   return { groups, memberships, items, announcements, requestCounts, loading, load, setMemberships };

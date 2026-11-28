@@ -40,6 +40,8 @@ export function useAdminData() {
     setAudit((current) => listOrKeep(current, auditResult));
     setLoading(false);
   }, [loadGate, notify]);
+  // The loader synchronizes remote Supabase state into this client component: it sets state after the awaited read, not in the effect body.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   return { members, memberships, announcements, audit, loading, load };
