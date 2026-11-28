@@ -41,10 +41,17 @@ for (const name of names) {
     const draw = (img) => { const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const g = c.getContext("2d"); g.drawImage(img, 0, 0); return g.getImageData(0, 0, img.width, img.height).data; };
     const p = draw(x); const q = draw(y);
     let different = 0;
-    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) > 24 || Math.abs(p[i + 1] - q[i + 1]) > 24 || Math.abs(p[i + 2] - q[i + 2]) > 24) different += 1;
-    return { ratio: different / (p.length / 4), pixels: p.length / 4 };
+    let [x0, y0, x1, y1] = [x.width, x.height, -1, -1];
+    for (let i = 0; i < p.length; i += 4) {
+      if (Math.abs(p[i] - q[i]) > 24 || Math.abs(p[i + 1] - q[i + 1]) > 24 || Math.abs(p[i + 2] - q[i + 2]) > 24) {
+        different += 1;
+        const px = (i / 4) % x.width; const py = Math.floor(i / 4 / x.width);
+        if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
+      }
+    }
+    return { ratio: different / (p.length / 4), pixels: p.length / 4, box: different ? `${x0},${y0} to ${x1},${y1}` : null };
   }, [a, b]);
-  rows.push(result.sizeDiffers ? { name, status: "size", ratio: 1, note: result.sizes.join(" vs ") } : { name, status: result.ratio > tolerance ? "differs" : "same", ratio: result.ratio });
+  rows.push(result.sizeDiffers ? { name, status: "size", ratio: 1, note: result.sizes.join(" vs ") } : { name, status: result.ratio > tolerance ? "differs" : "same", ratio: result.ratio, note: result.box ? `differing pixels lie within ${result.box}` : undefined });
 }
 for (const name of readdirSync(currentDir).filter((f) => /\.(jpe?g|png)$/.test(f))) if (!names.includes(name)) rows.push({ name, status: "new", ratio: null });
 await browser.close();

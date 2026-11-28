@@ -8,7 +8,7 @@ It is **not** part of `npm test`. It talks to the real **test** Supabase project
 signs in as the synthetic e2e accounts, creates and deletes rows there, runs `next build` and `next start`, and takes a few minutes.
 
 ```
-npm run test:browser            # the whole suite (31 tests + 2 skipped "known problem" tests), about 3 minutes
+npm run test:browser            # the whole suite: 39 tests, plus 6 skipped known-problem tests (see the end); about 3 minutes
 npm run test:browser:update     # same, and writes the screenshot baseline to tests/browser/__screenshots__
 npm run test:browser:compare    # pixel-diff ratio of the last run's screenshots against the baseline (never fails by itself)
 npm run test:browser:timings    # real load numbers, 5 runs per role and screen, then prints the tables (about 25 minutes)
@@ -85,7 +85,7 @@ what the role must not see is absent (no Admin entry, no ledger, no "New group",
 | `specs/deactivated.spec.mjs` | Only the deactivated notice, no data request; no screen reachable by address; direct reads answered with nothing | A deactivated member reaching anything; a data request being sent before the status is known |
 | `specs/public.spec.mjs` | Landing page with the public archive and nothing from members; a public concert's signed link is requested in `club-archive`; sign-in screen; an old `/meetings` link | The public archive leaking a members-only item; a broken public page; a data request on the public site |
 | `specs/write-journeys.spec.mjs` | 10 journeys, listed below | A journey breaking in the browser while every API test still passes |
-| `specs/findings.spec.mjs` | Product problems, `test.fixme`, see below | Nothing until fixed, then the problem coming back |
+| `specs/findings.spec.mjs` | Six product problems (F1 to F6), `test.fixme`, see the end | Nothing until fixed, then the problem coming back |
 | `specs/timings.spec.mjs` | Not in the default run; see `docs/BROWSER_TIMINGS.md` | Nothing: it measures |
 
 The 10 journeys (each runs once, as the role that does it, and proves the effect outside the screen where that matters):
@@ -98,7 +98,7 @@ The 10 journeys (each runs once, as the role that does it, and proves the effect
 6. executive marks an approved reimbursement paid through the confirm dialog
 7. executive creates a funding claim from an unclaimed expense
 8. executive removes a member's extra receipt: the toast reports success and the file is gone from storage
-9. executive deletes a resource: the file is removed from storage first, then the library no longer lists it
+9. executive deletes a resource: storage's own answer to the delete lists the file, the file's delete is sent before the row's, then the library no longer lists it (once the row is gone nobody can read the orphaned object, so "gone from storage" cannot be asked of storage afterwards)
 10. executive voids a club expense with a reason: it stays listed as voided and loses its actions
 
 The tests assert on rendered output (visible text, roles, labels, CSS class names the screens already use) and on calls made. They never
@@ -143,7 +143,7 @@ Output after a run: `OUT/report.json`, `OUT/results/<test>/` (trace and screensh
 
 `npm run test:browser:update` writes one full-page JPEG per role and screen at 1280x800 and 390x844 (44 files, about 2.3 MB, tracked in
 git) to `tests/browser/__screenshots__/`. `npm run test:browser:compare` compares the last run's pictures with it and prints, per
-file, the share of pixels that differ (a pixel differs when a colour channel moves by more than 24 of 255, which ignores JPEG noise).
+file, the share of pixels that differ (a pixel differs when a colour channel moves by more than 24 of 255, which ignores JPEG noise) and the box the differing pixels lie in. A picture of another size counts as 100 %.
 It is a report, not an assertion: dates and live data change. `--tolerance 0.002` sets what counts as the same, `--fail-over 0.01` makes
 the exit code non-zero for a script, `--json file` writes the rows, and two folders can be given instead of the defaults.
 
@@ -194,6 +194,6 @@ the run that found them; the numbers are in `docs/BROWSER_TIMINGS.md`).
 | F5 | minor | Attendance, Recordings, Resources, Finances, first open | The first Supabase request leaves 335 to 365 ms after the click, although the screen's script arrived after 60 to 90 ms and nothing is busy: first open costs 0.85 s (click) or 1.0 to 1.5 s (address) against 0.2 s for Groups. A revisit is 75 ms. | `docs/BROWSER_TIMINGS.md`, "Where real behaviour differs", point 1 | Profile the wait (suspected: React's 300 ms Suspense reveal throttle after the "Loading..." fallback). Load these scripts in the background once the Overview is up, or open the screen in a transition. |
 | F6 | minor | My Groups, every role | The one screen the per-account cache does not serve on a revisit: it waits for its requests every time (250 ms here, as long as the network makes it) while every other screen shows its last data within 75 to 105 ms. | `docs/BROWSER_TIMINGS.md`, revisit table | Put the Groups data through `lib/cache.ts` as the other screens do. |
 
-What the suite did **not** find is as important: no unexpected console error, page error, failed request or 4xx/5xx in any of the 31 default tests or the 275 timed runs, no role seeing
+What the suite did **not** find is as important: no unexpected console error, page error, failed request or 4xx/5xx in any of the 39 default tests or the 275 timed runs, no role seeing
 what it must not see (Admin entry, club ledger, "New group", date editing, another member's expense), the deactivated member reaching nothing, and all 10 journeys working through the real UI with their effects
 confirmed outside the screen (files really gone from storage, the toast reporting success).

@@ -163,7 +163,7 @@ test.describe("executive", () => {
     expect(await storageHasObject(page, "finance-private", ids.reqExecRemoves.receipt.path), "the receipt that stays").toBe(true);
   });
 
-  test("executive deletes a resource: the file is removed from storage first, then the library no longer lists it", async ({ page }) => {
+  test("executive deletes a resource: the file is removed from storage first, then the library no longer lists it", async ({ page, guard }) => {
     const { titles, ids } = fx();
     await openScreen(page, "documents");
     await page.getByRole("button", { name: new RegExp(titles.fileToDelete.replace(/[[\]]/g, "\\$&")) }).click();
@@ -173,10 +173,20 @@ test.describe("executive", () => {
     await detail.getByRole("button", { name: "Delete", exact: true }).click();
     // The confirmation is rendered inside the detail panel, so both dialogs contain its text: take the confirmation itself.
     const confirm = page.locator("#confirm-dialog-title", { hasText: "Delete this file for good?" }).locator("xpath=..");
+    // Once the row is gone nobody can read the orphaned object any more (the storage policy needs the row), so "the file is not
+    // there afterwards" cannot be asked of storage. What proves it is storage's own answer to the delete: it lists the object it removed.
+    const storageAnswer = page.waitForResponse((response) => response.request().method() === "DELETE" && /\/storage\/v1\/object\/club-resources(\?|$)/.test(response.url()));
     await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+    const answer = await storageAnswer;
+    expect(answer.status(), "storage's answer to the delete").toBe(200);
+    expect((await answer.json()).map((object) => object.name), "the objects storage says it removed").toContain(ids.fileToDeletePath);
     await expect(toast(page)).toHaveText(/The file was deleted/);
     await expect(page.getByRole("button", { name: new RegExp(titles.fileToDelete.replace(/[[\]]/g, "\\$&")) })).toHaveCount(0);
-    expect(await storageHasObject(page, "club-resources", ids.fileToDeletePath), "the file after the delete").toBe(false);
+    // Storage first, then the row (the policy only allows the file's delete while the row exists).
+    const fileCall = guard.requests.find((r) => r.method === "DELETE" && /\/storage\/v1\/object\/club-resources(\?|$)/.test(r.url));
+    const rowCall = guard.requests.find((r) => r.method === "DELETE" && /\/rest\/v1\/resources\?/.test(r.url));
+    expect(fileCall && rowCall, "both deletes were sent").toBeTruthy();
+    expect(fileCall.started, "the file's delete leaves before the row's").toBeLessThanOrEqual(rowCall.started);
   });
 
   test("executive voids a club expense with a reason: it stays listed as voided and loses its actions", async ({ page }) => {
