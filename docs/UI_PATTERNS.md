@@ -13,6 +13,7 @@ and `tests/support/*`. Nothing is used by a screen yet unless a section says so.
 - [4. States and mutations](#4-states-and-mutations): errors with Try again, loading, pending buttons, forms
 - [5. Upload progress](#5-upload-progress): `uploadWithProgress`, `UploadProgress`, and why it is a real progress bar
 - [6. Preview](#6-preview): `PreviewDialog` for an image, a PDF, a recording, a video
+- [7. State in the address](#7-state-in-the-address): `useUrlState` for the open tab, folder, selected group, month, filter
 
 ---
 
@@ -422,3 +423,59 @@ Close should enter the PDF, and Shift+Tab / Tab should reach Close and Open in a
 
 An `<a download>` on a cross-origin signed link is ignored by browsers (they navigate instead): for files that only download, "Open in a new tab" is the
 dependable link, and `Download {name}` works when the storage answers with a `Content-Disposition`.
+
+
+---
+
+## 7. State in the address
+
+`lib/hooks/use-url-state.ts`: one shared way to keep a piece of screen state in the address bar, so a reload keeps it, a link opens it and Back
+and Forward move through it (plan 3.2, P2-10: the selected group, the open folder, the finance tab, the calendar month, filters).
+
+```tsx
+const TABS = ["overview", "meetings", "excuses"] as const;
+const [tab, setTab] = useUrlState("tab", { parse: oneOf(TABS), defaultValue: "overview", history: "push" });
+const [groupId, setGroupId] = useUrlState("group", { parse: positiveInteger, defaultValue: null, history: "push" });
+const [search, setSearch] = useUrlState("q", { defaultValue: "", history: "replace" });
+```
+
+`useUrlState<T>(key, { defaultValue, history, parse?, serialize? }): [value, setValue]`
+
+| option | meaning |
+|---|---|
+| `defaultValue` | the value when the parameter is absent or invalid; **a constant** (it is compared by `serialize`, and an object made fresh at each render is a new value each time) |
+| `history` | **required**: `"push"` adds a history entry (Back returns to the previous value: a tab, a folder, a selection), `"replace"` overwrites the current one (a filter typed letter by letter: Back should leave the screen, not undo a letter) |
+| `parse(raw)` | text of the parameter to a value; return `undefined` (or `null`) for text that is not valid; it may throw. Default: the text itself. Helpers: `oneOf(["a","b"] as const)` and `positiveInteger` (an id: `7` yes; `0`, `-1`, `1.5`, `007`, `7abc` no, as `parseFolderParam` reads `?folder=`) |
+| `serialize(value)` | value to text. Default: `String(value)`. Write one for a value whose `String` is not what the address should hold (a month as `2026-11`) |
+
+What it does, each point a test in `tests/component/use-url-state.test.tsx`:
+
+- **The same format as the rest of the portal.** It reads `new URLSearchParams(window.location.search)`, writes `history.pushState({}, "", "<path>?<query>")`
+  (or `replaceState`) and listens to `popstate`, exactly as `usePortalNavigation` (`?page=`, `?signin=`) and `useResourceFolder` (`?folder=`) do. It keeps every
+  parameter it was not asked about (`?page=` first among them, in its place) and the hash. **It does not change how `?page=` works**: that is still
+  `lib/sections.ts` and the shell. A page change (`navigate()`) writes `?page=<name>` alone, so the parameters of the page you left do not follow you to the
+  next one; Back brings the old page and its parameters back (tested together with `usePortalNavigation`).
+- **The default is the clean address.** Setting the default removes the parameter (`/?page=attendance`, not `/?page=attendance&tab=overview`). An address that
+  spells the default out (`?tab=overview`) is read as the default and left alone.
+- **A bad parameter is the default, never an error.** Empty (`?tab=`), unknown (`?tab=zzz`), refused by `parse`, a `parse` that throws: the value is `defaultValue`.
+  Reading never writes to the address (no clean-up `replaceState` on mount).
+- **Back and Forward** update the value (`popstate`). Two hooks with the same key (a screen and its child) stay in step.
+- **SSR-safe.** Nothing reads `window` while rendering. The server render and a hydration (the prerendered public page) give `defaultValue` first and the
+  address's value in a second render straight after (`useSyncExternalStore` with a server snapshot), so there is no hydration mismatch. A screen that mounts
+  later on the client (every screen behind the sign-in) has the address's value in its first render: no flash of the default.
+- **One tick, one history entry.** `setTab("meetings"); setFolder(12);` in one handler is one entry, one Back undoes both. The same key set twice: the last value
+  wins; set and set back: nothing is written. If any of the updates asks for `"push"` the entry is pushed, otherwise it replaces. The updates of different
+  ticks (two clicks, or before and after an `await`) are different entries.
+- **A value that is already in the address writes nothing** (no empty history entry from a click on the tab that is already open).
+- `setValue(next)` has one identity for the life of the screen and always uses the options of the latest render. There is no updater form
+  (`setValue(prev => ...)`): the value you hold is the one in the address.
+
+Rules for the areas:
+
+- The key is the parameter's name and must not be `page`, `signin` or `folder` (the shell and the library own them); use a name of your screen (`tab`, `group`, `month`, `q`, `status`).
+- Put in the address what a person would send as a link (the tab, the selected group, the month, the status filter). Do not put in it a draft, a password, a person's
+  email or anything private: addresses are logged, shared and kept in the browser's history.
+- State that is derived from the address must not also be copied into `useState` (two truths): read it from `useUrlState`. A screen that cannot show a value yet
+  (the group is not loaded) shows the default until it can; do not write the default back.
+- A parameter that a page leaves behind is dropped by the shell's `navigate()` when the page changes; a screen that wants one to survive a page change sets it again after.
+- Test it through the real address (`window.history.replaceState({}, "", "/?page=attendance&tab=meetings")` before rendering, `window.location` after); `setup.ts` resets the address to `/` after every test.
