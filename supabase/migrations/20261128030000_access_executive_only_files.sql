@@ -164,7 +164,7 @@ begin
     if v_path is null then return new; end if;
   end if;
 
-  if v_changed and split_part(v_path, '/', 1) <> new.uploaded_by::text then
+  if v_changed and split_part(v_path, '/', 1) is distinct from new.uploaded_by::text then
     raise exception 'A file can only be registered from your own folder' using errcode = '42501';
   end if;
   return new;
